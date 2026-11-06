@@ -737,7 +737,7 @@ app.get('/api/connection', requireDm, (req, res) => {
   res.json({ addresses: [...new Set(addresses.map(i => 'http://' + i.address + ':' + PORT))] });
 });
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3010;
 server.listen(PORT, '0.0.0.0', () => {
   let lanIp = 'localhost';
   try {
