@@ -757,9 +757,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('D&D Remote Server running!');
   console.log('  DM Panel:    http://localhost:' + PORT);
-  console.log('  Player View: http://localhost:' + PORT + '/remote/player.html');
+  console.log('  Player View: http://localhost:' + PORT + '/player');
   console.log('');
   console.log('  LAN access (other devices):');
-  console.log('  Player View: http://' + lanIp + ':' + PORT + '/remote/player.html');
+  console.log('  Player View: http://' + lanIp + ':' + PORT + '/player');
   console.log('');
 });

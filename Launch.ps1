@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 try {
-    $address = 'http://localhost:3010'
+    $address = 'http://127.0.0.1:3010'
     $running = $false
     try { $health = Invoke-RestMethod "$address/api/health" -TimeoutSec 2; $running = $health.app -eq 'vtt-pocket' } catch {}
     if (!$running) {

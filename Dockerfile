@@ -16,13 +16,13 @@ COPY . .
 RUN mkdir -p public/assets/maps public/assets/audio
 
 # Expose the app port
-EXPOSE 3000
+EXPOSE 3010
 
 # Allow DM password override at runtime
 ENV DM_PASSWORD=dm1234
 
 # Health check — verify the server is responding
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/remote/player || exit 1
+  CMD wget -qO- http://localhost:3010/remote/player || exit 1
 
 CMD ["node", "server.js"]

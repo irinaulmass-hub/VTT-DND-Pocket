@@ -20,11 +20,11 @@ A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Nod
 
 | Who | URL | What they see |
 |-----|-----|---------------|
-| DM | `http://localhost:3000` | Full control panel |
-| Players / Projector | `http://<server-ip>:3000/remote/player` | Player view (maps, fog, audio, overlays) |
-| Map Builder | `http://localhost:3000/map-builder` | Tile-based map editor |
+| DM | `http://localhost:3010` | Full control panel |
+| Players / Projector | `http://<server-ip>:3010/remote/player` | Player view (maps, fog, audio, overlays) |
+| Map Builder | `http://localhost:3010/map-builder` | Tile-based map editor |
 
-> The DM panel runs on the DM's machine only. There is no separate remote DM interface — all DM controls are in the main panel at `http://localhost:3000`.
+> The DM panel runs on the DM's machine only. There is no separate remote DM interface — all DM controls are in the main panel at `http://localhost:3010`.
 
 The DM panel and player screen stay in sync via WebSocket. Everything the DM does — showing a map, playing audio, updating fog of war — is pushed to all connected player browsers instantly.
 
@@ -334,10 +334,10 @@ npm install
 node server.js
 ```
 
-Server starts on **port 3000**.
+Server starts on **port 3010**.
 
-- **DM Panel:** `http://localhost:3000` — password protected
-- **Player Screen:** `http://<your-ip>:3000/remote/player` — open to all devices on the network
+- **DM Panel:** `http://localhost:3010` — password protected
+- **Player Screen:** `http://<your-ip>:3010/remote/player` — open to all devices on the network
 
 To find your local IP on Windows:
 ```
@@ -353,7 +353,7 @@ A `Dockerfile` and `docker-compose.yml` are included if you prefer a containeriz
 docker compose up --build
 ```
 
-The server starts on **port 3000** as normal.
+The server starts on **port 3010** as normal.
 
 #### Mode 1 — Local dev (default, bind mounts)
 
@@ -431,7 +431,7 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 ## Project Structure
 
 ```
-├── server.js               # Express + WebSocket server (port 3000)
+├── server.js               # Express + WebSocket server (port 3010)
 ├── dm/
 │   ├── index.html          # DM control panel UI
 │   ├── app.js              # DM panel logic (scenes, audio, fog, initiative, drag-drop layout)
