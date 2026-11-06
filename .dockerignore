@@ -1,0 +1,14 @@
+node_modules/
+.git/
+.github/
+.vscode/
+dist/
+release/
+*.exe
+*.blockmap
+*.tar
+*.bak
+claude.md
+# Keep seeds and public structure but not uploaded assets
+# (those are mounted as volumes at runtime)
+public/assets/

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+release/
+data/
+.env
+*.exe
+*.blockmap
+*.tar
+*.bak
+.vscode/
+claude.md
+public/assets/
+
+*.log
+*.pid
+*.bak2
+update-project.cjs

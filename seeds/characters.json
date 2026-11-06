@@ -1,0 +1,38 @@
+{
+  "characters": [
+    {
+      "id": "c_lor_ogrov",
+      "name": "Лорд Огров",
+      "race": "Огр",
+      "cls": "Fighter",
+      "stats": { "str": 18, "dex": 8, "con": 16, "int": 6, "wis": 10, "cha": 7 },
+      "modifiers": { "str": 0, "dex": 0, "con": 0, "int": 0, "wis": 0, "cha": 0 },
+      "hp": 45,
+      "maxHp": 45,
+      "ac": 14,
+      "xp": 0,
+      "hasSpellcasting": false,
+      "spellSlots": null,
+      "claimedBy": null
+    },
+    {
+      "id": "c_mira_wizard",
+      "name": "Мира",
+      "race": "Человек",
+      "cls": "Wizard",
+      "stats": { "str": 8, "dex": 14, "con": 12, "int": 16, "wis": 13, "cha": 11 },
+      "modifiers": { "str": 0, "dex": 0, "con": 0, "int": 0, "wis": 0, "cha": 0 },
+      "hp": 18,
+      "maxHp": 18,
+      "ac": 12,
+      "xp": 0,
+      "hasSpellcasting": true,
+      "spellSlots": {
+        "1": { "max": 3, "used": 0 },
+        "2": { "max": 0, "used": 0 },
+        "3": { "max": 0, "used": 0 }
+      },
+      "claimedBy": null
+    }
+  ]
+}

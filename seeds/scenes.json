@@ -1,0 +1,255 @@
+[
+  {
+    "id": "phandalin/redbrand-hideout-1775400000000",
+    "tab": "Phandalin",
+    "label": "Redbrand Hideout",
+    "views": [
+      {
+        "id": "phandalin/redbrand-hideout-1775400000000-view-0",
+        "label": "RedBrand Hideout (Builder)",
+        "image": "/assets/maps/redbrand_hideout_builder.png",
+        "audio": null,
+        "fog": true
+      },
+      {
+        "id": "phandalin/redbrand-hideout-1775400000000-view-1",
+        "label": "Tresandor_Manor",
+        "image": "/assets/maps/tresandor_manor_exterior.webp",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "phandalin-orchard-1775350349884",
+    "tab": "Phandalin",
+    "label": "Town",
+    "views": [
+      {
+        "id": "phandalin-orchard-1775350349884-view-0",
+        "label": "Orchard approach",
+        "image": "/assets/maps/orchard_entry.jpg",
+        "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
+        "fog": false,
+        "audioLoop": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-1",
+        "label": "Orchard",
+        "image": "/assets/maps/orchard.jpg",
+        "audio": null,
+        "fog": false,
+        "fit": "cover"
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-2",
+        "label": "Barthens Provisions",
+        "image": "/assets/maps/barthen_provisions.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-3",
+        "label": "Alderleaf Farm",
+        "image": "/assets/maps/Alderleaf.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-4",
+        "label": "Halia's Home",
+        "image": "/assets/maps/HaliasHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-5",
+        "label": "Harbin Wester's Home",
+        "image": "/assets/maps/HarbinWestersHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-6",
+        "label": "Linene's Home",
+        "image": "/assets/maps/LinenesHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-7",
+        "label": "Lionshield Coster's",
+        "image": "/assets/maps/LionshieldCoster.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-8",
+        "label": "Old Owl Well",
+        "image": "/assets/maps/old owl well daytime a2.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-9",
+        "label": "Phandalin Town Map",
+        "image": "/assets/maps/phandalin_town.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-10",
+        "label": "Shrine of Luck",
+        "image": "/assets/maps/shrine-of-luck.webp",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-11",
+        "label": "Sister Garaeles",
+        "image": "/assets/maps/SisterGaraelesHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-12",
+        "label": "Town Master Haraell",
+        "image": "/assets/maps/TownMasterHall.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-13",
+        "label": "Umbridge Hill",
+        "image": "/assets/maps/UmbrageHill.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "travel-in-the-woods-1775354955380",
+    "tab": "Travel",
+    "label": "In the woods",
+    "views": [
+      {
+        "id": "travel-in-the-woods-1775354955380-view-0",
+        "label": "road",
+        "image": "/assets/maps/travel.webp",
+        "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
+        "fog": false,
+        "fit": "fill"
+      }
+    ]
+  },
+  {
+    "id": "phandalin-stonehill-inn-1775357679767",
+    "tab": "Phandalin",
+    "label": "StoneHill Inn",
+    "views": [
+      {
+        "id": "phandalin-stonehill-inn-1775357679767-view-0",
+        "label": "Downstairs",
+        "image": "/assets/maps/stonehill_ground.png",
+        "audio": "/assets/audio/Atmosphere - tavern_ambience_inside_laughter.mp3",
+        "fog": false,
+        "audioLoop": false
+      },
+      {
+        "id": "phandalin-stonehill-inn-1775357679767-view-1",
+        "label": "Upstairs",
+        "image": "/assets/maps/stonehill_upstairs.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "travel-camping-1775606145338",
+    "tab": "Travel",
+    "label": "Camping",
+    "views": [
+      {
+        "id": "travel-camping-1775606145338-view-0",
+        "label": "campfire",
+        "image": "/assets/maps/campfire2.jpg",
+        "audio": "/assets/audio/Atmosphere - Campfire.mp3",
+        "fog": false,
+        "fit": "contain"
+      }
+    ]
+  },
+  {
+    "id": "forest-1776033570794",
+    "tab": "Forest",
+    "label": "Forest",
+    "views": [
+      {
+        "id": "forest-1776033570794-view-0",
+        "label": "The Protected Keep",
+        "image": "/assets/maps/The_Keep.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "forest-1776088513695-view-0",
+        "label": "Mountain Valley",
+        "image": "/assets/maps/Hidden_Keep_2.png",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "custom-1776304706910",
+    "tab": "Custom",
+    "label": "Custom",
+    "views": [
+      {
+        "id": "custom-1776304706910-view-0",
+        "label": "Guantlet.png",
+        "image": "/assets/maps/Guantlet.png",
+        "audio": null,
+        "fog": true
+      },
+      {
+        "id": "custom-1777983980183-view-0",
+        "label": "looking_around",
+        "image": "/assets/maps/looking_around.png",
+        "fog": false
+      },
+      {
+        "id": "custom-1777984048317-view-0",
+        "label": "looking_around",
+        "image": "/assets/maps/old_owl_well_daytime_a2_builder.png",
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "new_old_owl_well-in-the-woods-1777983484934",
+    "tab": "new_old_owl_well",
+    "label": "in the woods",
+    "views": [
+      {
+        "id": "new_old_owl_well-in-the-woods-1777983484934-view-0",
+        "label": "thewell",
+        "image": "/assets/maps/old_owl_well_daytime_a2_builder.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "new_old_owl_well-1777984397518",
+    "label": "new_old_owl_well",
+    "tab": "new_old_owl_well",
+    "views": [
+      {
+        "id": "new_old_owl_well-1777984397518-view-0",
+        "label": "thewell",
+        "image": "/assets/maps/looking_around.png",
+        "fog": true
+      }
+    ]
+  }
+]

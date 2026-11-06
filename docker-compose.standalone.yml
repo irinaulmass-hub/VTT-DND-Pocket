@@ -1,0 +1,10 @@
+# Standalone mode: all assets baked into the image, no local bind mounts.
+# Use when shipping the container to a system without local files.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.standalone.yml up
+
+services:
+  dnd-app:
+    volumes:
+      - ./data:/app/data

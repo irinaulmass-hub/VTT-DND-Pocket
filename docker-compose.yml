@@ -1,0 +1,24 @@
+services:
+  dnd-app:
+    build: .
+    container_name: dnd-vtt
+    ports:
+      - "3000:3000"
+    environment:
+      # Override the DM password here (or via a .env file)
+      DM_PASSWORD: ${DM_PASSWORD:-dm1234}
+    volumes:
+      # Persist uploaded maps and audio between container restarts
+      - ./public/assets/maps:/app/public/assets/maps
+      - ./public/assets/audio:/app/public/assets/audio
+      # Persist seeds (scenes, players) between container restarts
+      - ./seeds:/app/seeds
+      # Persist server state (tokens, fog, drawings) between container restarts
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/remote/player"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

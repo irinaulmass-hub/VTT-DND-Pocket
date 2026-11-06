@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DM Control Panel</title>
+  <link rel="stylesheet" href="/dm/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>🎲 DM Control Panel</h1>
+    <div class="header-controls">
+      <div id="client-count-wrap" style="position:relative;display:inline-block;cursor:default;">
+        <span id="client-count">0 connected</span>
+        <div id="client-count-tooltip" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:140px;background:#1a1f2e;border:1px solid #30363d;border-radius:6px;padding:0.45rem 0.6rem;z-index:999;white-space:nowrap;font-size:0.75rem;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
+      </div>
+      <span id="status-dot" class="status-dot off"></span>
+      <a href="/map-builder" class="dm-logout-btn" title="Open Map Builder" style="color:#d4af37;border-color:#d4af37;">🗺️ Map Builder</a>
+      <a href="/dm-logout" class="dm-logout-btn" title="Lock DM panel">🔒 Lock</a>
+    </div>
+  </header>
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar">
+      <button class="sidebar-collapse-btn" id="sidebar-toggle" title="Toggle sidebar">‹</button>
+      <div class="sidebar-inner">
+        <div class="sb-section">
+          <div class="sb-section-hdr">
+            <span class="sb-chev">▾</span>Maps
+          </div>
+          <div class="sb-section-body">
+            <input type="text" id="map-search" class="sb-search" placeholder="🔍 Search maps…" />
+            <div id="map-list"></div>
+          </div>
+        </div>
+        <div class="sb-section">
+          <div class="sb-section-hdr">
+            <span class="sb-chev">▾</span>Audio
+            <button id="stop-audio-btn" class="btn btn-danger btn-small" style="margin-left:auto;padding:0.12rem 0.5rem;font-size:0.7rem;min-width:0;flex:none;">⏹</button>
+          </div>
+          <div class="sb-section-body">
+            <input type="text" id="audio-search" class="sb-search" placeholder="🔍 Search audio…" />
+            <div id="audio-list"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-resize-handle" id="sidebar-resize"></div>
+    </aside>
+    <main class="main-content">
+    <div class="panel-grid">
+    <!-- ── Map Control — hidden until a map is shown ── -->
+    <section class="panel col-6" id="section-map-control">
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+        <h2 style="margin:0;flex:none;">🗺️ Map Control — <span id="map-control-title" style="font-weight:normal;font-size:0.9rem;color:#aaa;">no map active</span></h2>
+        <div class="btn-row" style="margin:0;flex:none;">
+          <button id="blackout-btn" class="btn btn-danger" style="flex:none;">⬛ BLACKOUT</button>
+          <button id="clear-btn" class="btn btn-warning" style="flex:none;">🧹 CLEAR</button>
+          <button id="toggle-fog-btn" class="btn btn-secondary" style="flex:none;display:none;">🌫 Fog</button>
+          <button id="resend-map-btn" class="btn btn-secondary" style="flex:none;">🔄 Resend Map</button>
+          <button id="reset-map-btn" class="btn btn-secondary" style="flex:none;">🗑 Reset Map</button>
+          <button id="send-text-popup-btn" class="btn btn-secondary" style="flex:none;">📜 Text</button>
+          <button id="send-image-popup-btn" class="btn btn-secondary" style="flex:none;">🖼 Image</button>
+        </div>
+      </div>
+      <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
+        <div id="fog-controls-container"></div>
+        <div id="map-control-divider" style="background:#2a2f3a;align-self:stretch;"></div>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <div id="token-controls-container" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;"></div>
+          <div id="token-map-container"></div>
+          <div id="draw-controls-container" style="border-top:1px solid #21262d;padding-top:0.6rem;"></div>
+        </div>
+      </div>
+      <div id="feature-controls-container" style="margin-top:0.75rem;"></div>
+    </section>
+    <!-- ── Reference Panel ── -->
+    <section class="panel col-2" id="section-reference">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>📋 Reference<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:0.75rem;">
+          <!-- Global search -->
+          <div class="ref-search-wrap">
+            <input type="text" id="ref-global-search" placeholder="🔍 Search spells, items, feats, conditions…" autocomplete="off" />
+            <select id="ref-global-cat">
+              <option value="spells">Spells</option>
+              <option value="items">Items</option>
+              <option value="feats">Feats</option>
+              <option value="conditions">Conditions</option>
+            </select>
+            <button id="ref-global-search-btn" class="btn btn-small btn-primary">Go</button>
+          </div>
+          <div id="ref-global-results"></div>
+          <!-- Tabs -->
+          <div class="ref-tabs">
+            <button class="ref-tab active" data-tab="conditions">⚔️ Conditions</button>
+            <button class="ref-tab" data-tab="rules">📊 Rules</button>
+            <button class="ref-tab" data-tab="spells">✨ Spells</button>
+            <button class="ref-tab" data-tab="items">💰 Items</button>
+            <button class="ref-tab" data-tab="feats">🎯 Feats</button>
+          </div>
+          <!-- ── Conditions tab ── -->
+          <div class="ref-pane" id="ref-pane-conditions">
+            <h3 class="ref-section-hdr" style="margin-top:0.6rem;">⚔️ Active Conditions</h3>
+            <div id="ref-active-chart"></div>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">📖 Condition Dictionary</h3>
+            <input type="text" id="ref-cond-filter" placeholder="Filter conditions…" style="margin-bottom:0.5rem;" />
+            <div id="ref-dict-list"></div>
+            <details style="margin-top:0.75rem;">
+              <summary style="cursor:pointer;color:#888;font-size:0.8rem;user-select:none;">+ Add Custom Condition</summary>
+              <div class="ref-add-row" style="margin-top:0.5rem;">
+                <input type="text" id="ref-add-icon" placeholder="🎯" maxlength="4" title="Icon (emoji)" />
+                <input type="text" id="ref-add-name" placeholder="Condition name" />
+                <select id="ref-add-type">
+                  <option value="buff">Buff</option>
+                  <option value="debuff">Debuff</option>
+                </select>
+                <input type="text" id="ref-add-plus" placeholder="+ Benefit" />
+                <input type="text" id="ref-add-minus" placeholder="– Penalty" />
+                <button id="ref-add-btn" class="btn btn-small btn-secondary">+ Add</button>
+              </div>
+            </details>
+          </div>
+          <!-- ── Rules tab ── -->
+          <div class="ref-pane" id="ref-pane-rules" style="display:none">
+            <h3 class="ref-section-hdr" style="margin-top:0.6rem;">🎯 Difficulty Class (DC)</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Task Difficulty</th><th>DC</th></tr></thead>
+              <tbody>
+                <tr><td>Very Easy</td><td>5</td></tr>
+                <tr><td>Easy</td><td>10</td></tr>
+                <tr><td>Medium</td><td>15</td></tr>
+                <tr><td>Hard</td><td>20</td></tr>
+                <tr><td>Very Hard</td><td>25</td></tr>
+                <tr><td>Nearly Impossible</td><td>30</td></tr>
+              </tbody>
+            </table>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">⚔️ Attack &amp; Hit Rules</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Situation</th><th>Effect</th></tr></thead>
+              <tbody>
+                <tr><td>Natural 20</td><td class="ref-plus-cell">Critical Hit — roll damage dice twice</td></tr>
+                <tr><td>Natural 1</td><td class="ref-minus-cell">Automatic Miss (always fails)</td></tr>
+                <tr><td>Invisible attacker</td><td class="ref-plus-cell">Advantage on attack rolls</td></tr>
+                <tr><td>Blind attacker</td><td class="ref-minus-cell">Disadvantage on attack rolls</td></tr>
+                <tr><td>Prone target (melee ≤5ft)</td><td class="ref-plus-cell">Advantage on attacks</td></tr>
+                <tr><td>Prone target (ranged/&gt;5ft)</td><td class="ref-minus-cell">Disadvantage on attacks</td></tr>
+                <tr><td>Restrained target</td><td class="ref-plus-cell">Attackers have Advantage</td></tr>
+                <tr><td>Flanking (optional rule)</td><td class="ref-plus-cell">Advantage on melee attacks</td></tr>
+                <tr><td>Ranged into melee</td><td class="ref-minus-cell">Disadvantage on ranged attacks</td></tr>
+                <tr><td>Two-weapon fighting</td><td>Bonus action off-hand attack (no ability mod to damage)</td></tr>
+              </tbody>
+            </table>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">🛡️ Cover</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Cover Type</th><th>Bonus</th></tr></thead>
+              <tbody>
+                <tr><td>Half Cover</td><td class="ref-plus-cell">+2 AC &amp; Dex saving throws</td></tr>
+                <tr><td>Three-Quarters Cover</td><td class="ref-plus-cell">+5 AC &amp; Dex saving throws</td></tr>
+                <tr><td>Full Cover</td><td class="ref-plus-cell">Can't be directly targeted</td></tr>
+              </tbody>
+            </table>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">⏳ Concentration &amp; Spellcasting</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Situation</th><th>Rule</th></tr></thead>
+              <tbody>
+                <tr><td>Concentration check DC</td><td>10 or half damage taken (whichever is higher)</td></tr>
+                <tr><td>Concentration check save</td><td>Constitution saving throw</td></tr>
+                <tr><td>Casting while Concentrating</td><td class="ref-minus-cell">Drops current concentration spell</td></tr>
+                <tr><td>Counterspell DC</td><td>10 + spell's level (if 4th level or higher)</td></tr>
+                <tr><td>Spell attack vs. AC</td><td>d20 + spellcasting ability mod + proficiency</td></tr>
+                <tr><td>Verbal component</td><td>Can't cast if Silenced</td></tr>
+                <tr><td>Somatic component</td><td>Needs free hand (or arcane focus)</td></tr>
+              </tbody>
+            </table>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">💰 Common Item Costs</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Item</th><th>Cost</th><th>Weight</th></tr></thead>
+              <tbody>
+                <tr><td>Torch</td><td>1 cp</td><td>1 lb</td></tr>
+                <tr><td>Rations (1 day)</td><td>5 sp</td><td>2 lb</td></tr>
+                <tr><td>Rope, Hemp (50ft)</td><td>1 gp</td><td>10 lb</td></tr>
+                <tr><td>Healer's Kit</td><td>5 gp</td><td>3 lb</td></tr>
+                <tr><td>Potion of Healing</td><td>50 gp</td><td>0.5 lb</td></tr>
+                <tr><td>Potion of Greater Healing</td><td>100 gp</td><td>0.5 lb</td></tr>
+                <tr><td>Spell Component Pouch</td><td>25 gp</td><td>2 lb</td></tr>
+                <tr><td>Thieves' Tools</td><td>25 gp</td><td>1 lb</td></tr>
+                <tr><td>Identify (material cost)</td><td>100 gp pearl</td><td>—</td></tr>
+                <tr><td>Revivify (material cost)</td><td>300 gp diamonds</td><td>—</td></tr>
+                <tr><td>Raise Dead (material cost)</td><td>500 gp diamond</td><td>—</td></tr>
+                <tr><td>Resurrection (material cost)</td><td>1,000 gp diamond</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- ── Spells tab ── -->
+          <div class="ref-pane" id="ref-pane-spells" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-spell-q" placeholder="Spell name… (e.g. Fireball)" autocomplete="off" />
+              <select id="ref-spell-level">
+                <option value="">Any Level</option>
+                <option value="0">Cantrip</option>
+                <option value="1">1st</option>
+                <option value="2">2nd</option>
+                <option value="3">3rd</option>
+                <option value="4">4th</option>
+                <option value="5">5th</option>
+                <option value="6">6th</option>
+                <option value="7">7th</option>
+                <option value="8">8th</option>
+                <option value="9">9th</option>
+              </select>
+              <button id="ref-spell-btn" class="btn btn-small btn-primary">🔍</button>
+            </div>
+            <div id="ref-spell-results"></div>
+          </div>
+          <!-- ── Items tab ── -->
+          <div class="ref-pane" id="ref-pane-items" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-item-q" placeholder="Item name… (e.g. Longsword)" autocomplete="off" />
+              <select id="ref-item-type">
+              <option value="equipment">Weapons &amp; Armor</option>
+                <option value="magic">Magic Items</option>
+              </select>
+              <button id="ref-item-btn" class="btn btn-small btn-primary">🔍</button>
+            </div>
+            <div id="ref-item-results"></div>
+          </div>
+          <!-- ── Feats tab ── -->
+          <div class="ref-pane" id="ref-pane-feats" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-feat-q" placeholder="Feat name… (e.g. Alert)" autocomplete="off" />
+              <button id="ref-feat-btn" class="btn btn-small btn-primary">🔍</button>
+            </div>
+            <div id="ref-feat-results"></div>
+          </div>
+        </div>
+      </details>
+    </section>
+    <!-- ── Row 3: Send Text (wide) | Send Image (wide) — moved to Map Control popup buttons ── -->
+    <section class="panel col-2" id="section-send-text" style="display:none;">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:1rem;">
+          <input type="text" id="text-label" placeholder="Label (e.g. Room Description)" />
+          <textarea id="text-content" rows="4" placeholder="Type content here..."></textarea>
+          <div class="btn-row">
+            <button id="send-text-btn" class="btn btn-primary">📜 Send Text</button>
+          </div>
+        </div>
+      </details>
+    </section>
+    <section class="panel col-2" id="section-send-image" style="display:none;">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:1rem;">
+          <input type="text" id="image-label" placeholder="Label (e.g. Battle Map)" />
+          <input type="text" id="image-url" placeholder="Image URL" />
+          <div class="divider">— OR choose from library —</div>
+          <select id="image-map-select"><option value="">— Select a map —</option></select>
+          <div class="divider">— OR pick a file —</div>
+          <input type="file" id="image-file" accept="image/*" />
+          <div id="image-preview"></div>
+          <div class="btn-row">
+            <button id="send-image-btn" class="btn btn-primary">🗺️ Send Image</button>
+          </div>
+        </div>
+      </details>
+    </section>
+    <!-- ── Monster Lookup ── -->
+    <section class="panel col-2" id="section-monster">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠇</span>🐉 Monster Lookup<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:0.75rem;">
+          <div class="monster-search-row">
+            <input type="text" id="monster-search-input" placeholder="Search monster name (e.g. Goblin)…" />
+            <button id="monster-search-btn" class="btn btn-secondary">🔍 Search</button>
+            <button id="monster-clear-btn" class="btn btn-warning btn-small" style="white-space:nowrap;">&times; Clear</button>
+          </div>
+          <div id="monster-results-list"></div>
+          <div id="monster-stat-block"></div>
+        </div>
+      </details>
+    </section>
+    <!-- ── Scene Builder ── prep tool, collapsed by default ── -->
+    <section class="panel col-4" id="section-scene-builder">
+      <details>
+        <summary class="panel-summary">
+          <span class="drag-handle" title="Drag to reorder">⠿</span>Scene Builder
+          <span class="sb-chevron">▶</span>
+        </summary>
+        <div id="scene-builder" style="margin-top:1rem;">
+          <p style="color:#666;font-size:0.78rem;margin-bottom:0.75rem;">Hierarchy: <strong style="color:#d4af37">Area</strong> (e.g. Phandalin) &rsaquo; <strong style="color:#d4af37">Scene</strong> (e.g. Stonehill Inn) &rsaquo <strong style="color:#d4af37">Map</strong> (e.g. Ground Floor)</p>
+          <div class="scene-builder-row">
+            <input type="text" id="sb-tab" placeholder="Area (e.g. Phandalin)" />
+            <input type="text" id="sb-scene-label" placeholder="Scene (e.g. Stonehill Inn)" />
+            <button class="btn btn-secondary btn-small" id="sb-new-scene-btn">+ New Scene</button>
+          </div>
+          <div id="sb-scene-list"></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Party Manager (NEW) ── -->
+    <!-- ── Character Creator (DM) ── -->
+    <section class="panel col-4" id="section-char-creator">
+      <details open>
+        <summary class="panel-summary">
+          <span class="drag-handle" title="Drag to reorder">⠿</span>🧙 Создание персонажей
+          <span class="sb-chevron">▶</span>
+        </summary>
+        <div style="margin-top:0.75rem;">
+          <!-- Create form -->
+          <div class="char-form" id="char-create-form">
+            <div class="char-form-row">
+              <input type="text" id="cc-name" placeholder="Имя (Лорд Огров)" />
+              <input type="text" id="cc-race" placeholder="Раса" />
+              <input type="text" id="cc-cls" placeholder="Класс" list="cc-cls-list" />
+              <datalist id="cc-cls-list">
+                <option value="Fighter"><option value="Wizard"><option value="Cleric">
+                <option value="Rogue"><option value="Ranger"><option value="Barbarian">
+                <option value="Paladin"><option value="Bard"><option value="Sorcerer">
+                <option value="Warlock"><option value="Druid"><option value="Monk">
+              </datalist>
+            </div>
+            <div class="char-form-row char-stats-row">
+              <label>STR <input type="number" id="cc-str" value="10" min="1" max="30" /></label>
+              <label>DEX <input type="number" id="cc-dex" value="10" min="1" max="30" /></label>
+              <label>CON <input type="number" id="cc-con" value="10" min="1" max="30" /></label>
+              <label>INT <input type="number" id="cc-int" value="10" min="1" max="30" /></label>
+              <label>WIS <input type="number" id="cc-wis" value="10" min="1" max="30" /></label>
+              <label>CHA <input type="number" id="cc-cha" value="10" min="1" max="30" /></label>
+            </div>
+            <div class="char-form-row">
+              <label>Max HP <input type="number" id="cc-maxhp" value="10" min="1" style="width:70px" /></label>
+              <label>AC <input type="number" id="cc-ac" value="10" min="1" style="width:60px" /></label>
+              <label class="char-spell-toggle">
+                <input type="checkbox" id="cc-caster" /> Заклинатель
+              </label>
+              <label id="cc-slots-wrap" style="display:none;">
+                Ячейки 1 ур.
+                <input type="number" id="cc-slots1" value="3" min="0" max="9" style="width:50px" />
+              </label>
+            </div>
+            <button type="button" id="cc-create-btn" class="btn btn-primary">+ Создать персонажа</button>
+          </div>
+
+          <!-- Roster list -->
+          <div id="char-roster-list" class="char-roster-list" style="margin-top:1rem;">
+            <p class="ref-empty">Пока нет персонажей — создайте первого.</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Compact Character Sheets (live party) ── -->
+    <section class="panel col-4" id="section-party">
+      <details open>
+        <summary class="panel-summary">
+          <span class="drag-handle">⠿</span>👥 Карточки персонажей
+          <span class="sb-chevron">▶</span>
+        </summary>
+        <div style="margin-top:0.75rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+            <span id="party-count-label" style="font-size:0.78rem;color:#6b5e4a;">Нет активных</span>
+            <button id="party-refresh-btn" class="btn btn-small btn-secondary">↻</button>
+          </div>
+          <div id="party-list-container" class="char-sheet-list">
+            <p class="ref-empty">Персонажи появятся после входа игроков.</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    </div><!-- end panel-grid -->
+    </main>
+    <aside class="sidebar-right" id="sidebar-right">
+      <button class="sidebar-right-collapse-btn" id="sidebar-right-toggle" title="Toggle sidebar">›</button>
+      <div class="sidebar-right-resize-handle" id="sidebar-right-resize"></div>
+      <section class="panel" id="section-dice">
+        <h2>🎲 Dice Roller</h2>
+        <div class="dice-buttons">
+          <button class="btn-dice" data-die="4">d4</button>
+          <button class="btn-dice" data-die="6">d6</button>
+          <button class="btn-dice" data-die="8">d8</button>
+          <button class="btn-dice" data-die="10">d10</button>
+          <button class="btn-dice" data-die="12">d12</button>
+          <button class="btn-dice" data-die="20">d20</button>
+          <button class="btn-dice" data-die="100">d100</button>
+        </div>
+        <div class="dice-result-row">
+          <div id="dice-result"></div>
+          <label class="dice-broadcast-label"><input type="checkbox" id="dice-broadcast" /> Broadcast</label>
+        </div>
+      </section>
+      <section class="panel" id="section-initiative">
+        <h2>⚔️ Initiative Tracker</h2>
+        <div id="init-list"></div>
+        <div class="init-action-row">
+          <button id="init-send-btn" class="btn btn-primary init-action-btn">⚔️ Send</button>
+          <button id="init-next-btn" class="btn btn-secondary init-action-btn">⏭️ Next</button>
+          <button id="init-clear-btn" class="btn btn-warning init-action-btn">🧹 Mobs</button>
+          <button id="init-reset-btn" class="btn btn-danger init-action-btn" title="Remove all entries including players">🔄 Reset</button>
+        </div>
+        <div class="init-add">
+          <input type="text"   id="init-name" placeholder="Mob / NPC name" />
+          <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
+          <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
+        </div>
+        <details id="init-map-mobs-details" style="margin-top:0.5rem;">
+          <summary id="init-map-mobs-summary" style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">📍 Mobs on Map</summary>
+          <div id="init-map-mobs-list" style="margin-top:0.4rem;display:flex;flex-direction:column;gap:0.3rem;"></div>
+          <div style="font-size:0.7rem;color:#666;margin-top:0.35rem;">Click to fill name • Shift+click to add instantly with random roll</div>
+        </details>
+        <details id="init-players-details" style="margin-top:0.9rem;">
+          <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
+          <div id="init-player-list" style="margin-top:0.5rem;"></div>
+          <div class="init-add" style="margin-top:0.5rem;">
+            <input type="text" id="init-player-name" placeholder="Player name" />
+            <input type="text" id="init-player-class" placeholder="Class (e.g. Fighter)" />
+            <button id="init-player-add-btn" class="btn btn-small btn-secondary">+ Add Player</button>
+          </div>
+          <button id="init-add-all-btn" class="btn btn-small btn-primary" style="margin-top:0.4rem;width:100%;">
+            ⚡ Add All Players to Round
+          </button>
+          <button id="init-roll-all-btn" class="btn btn-small btn-secondary" style="margin-top:0.3rem;width:100%;">
+            🎲 Quick Roll d20 for All
+          </button>
+        </details>
+        <!-- Player dice roll log -->
+        <div id="player-dice-log-wrap" style="margin-top:0.9rem;display:none;">
+          <div style="font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.3rem;">🎲 Player Rolls</div>
+          <div id="player-dice-log" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:0.2rem;"></div>
+        </div>
+        <!-- Attack log -->
+        <div id="attack-log-wrap" style="margin-top:0.9rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+            <span style="font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;">⚔️ Attack Log</span>
+            <button id="attack-log-clear-btn" style="font-size:0.65rem;padding:0.1rem 0.4rem;background:none;border:1px solid #333;border-radius:3px;color:#555;cursor:pointer;">Clear</button>
+          </div>
+          <div id="attack-log" style="max-height:130px;overflow-y:auto;display:flex;flex-direction:column;gap:0.15rem;"></div>
+        </div>
+      </section>
+    </aside>
+  </div><!-- end app-layout -->
+  <script src="/dm/app.js"></script>
+<script src="/dm/pocket.js"></script></body>
+</html>

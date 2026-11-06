@@ -1,0 +1,19 @@
+{
+  "name": "vtt-dnd-pocket",
+  "version": "3.7.0",
+  "description": "A modular D&D VTT control console — web-only, served over intranet.",
+  "author": "Charles",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test test/sync.test.cjs"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.17.0"
+  },
+  "keywords": [],
+  "license": "ISC"
+}

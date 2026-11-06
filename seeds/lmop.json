@@ -1,0 +1,134 @@
+{
+  "id": "lmop-default",
+  "name": "Lost Mine of Phandelver",
+  "scenes": [
+    {
+      "id": "goblin-ambush",
+      "label": "Goblin Ambush (Road)",
+      "type": "map",
+      "mediaPath": "/assets/maps/goblin_ambush.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "4 goblins hidden. 2 in brush, 2 on trail. Arrows first round. Tracks lead to Cragmaw Hideout."
+    },
+    {
+      "id": "cragmaw-approach",
+      "label": "Cragmaw Hideout - Approach",
+      "type": "map",
+      "mediaPath": "/assets/maps/cragmaw_approach.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "Snare trap + pit trap. Goblin lookout on ledge."
+    },
+    {
+      "id": "cragmaw-hideout",
+      "label": "Cragmaw Hideout - Interior",
+      "type": "map",
+      "mediaPath": "/assets/maps/cragmaw_hideout.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "Wolves in kennel. Flood trap. Klarg + goblins in final chamber."
+    },
+    {
+      "id": "phandalin-town",
+      "label": "Phandalin Town",
+      "type": "map",
+      "mediaPath": "/assets/maps/phandalin_town.png",
+      "options": { "transition": "fade", "fit": "contain" },
+      "notes": "Use for general town scenes, NPC intros, and Redbrand trouble."
+    },
+    {
+      "id": "stonehill-inn",
+      "label": "Stonehill Inn",
+      "type": "map",
+      "mediaPath": "/assets/maps/stonehill_inn.png",
+      "options": { "transition": "fade", "fit": "contain" },
+      "notes": "Toblen Stonehill. Good for downtime scenes."
+    },
+    {
+      "id": "barthen-provisions",
+      "label": "Barthen's Provisions",
+      "type": "map",
+      "mediaPath": "/assets/maps/barthen_provisions.png",
+      "options": { "transition": "fade", "fit": "contain" },
+      "notes": "Sildar info dump. Supplies and rumors."
+    },
+    {
+      "id": "tresendar-manor",
+      "label": "Tresendar Manor Exterior",
+      "type": "map",
+      "mediaPath": "/assets/maps/tresendar_manor.png",
+      "options": { "transition": "fade", "fit": "contain" },
+      "notes": "Entry point for Redbrand Hideout."
+    },
+    {
+      "id": "redbrand-hideout",
+      "label": "Redbrand Hideout",
+      "type": "map",
+      "mediaPath": "/assets/maps/redbrand_hideout.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "Nothic in the crevasse. Glasstaff escape route. Prisoners in cells."
+    },
+    {
+      "id": "wave-echo-cave",
+      "label": "Wave Echo Cave",
+      "type": "map",
+      "mediaPath": "/assets/maps/wave_echo_cave.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "Large dungeon. Track Forge of Spells, Spectator, and Black Spider."
+    },
+    {
+      "id": "forge-of-spells",
+      "label": "Forge of Spells",
+      "type": "map",
+      "mediaPath": "/assets/maps/forge_of_spells.png",
+      "options": { "transition": "fade", "fit": "contain" },
+      "notes": "Spectator encounter. Magic surge effects."
+    },
+    {
+      "id": "tavern-ambience",
+      "label": "Tavern Ambience",
+      "type": "audio",
+      "mediaPath": "/assets/audio/tavern-ambience.wav",
+      "options": { "loop": true, "audioType": "ambience" },
+      "notes": "Use in Stonehill Inn or any tavern scene."
+    },
+    {
+      "id": "forest-ambience",
+      "label": "Forest Ambience",
+      "type": "audio",
+      "mediaPath": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
+      "options": { "loop": true, "audioType": "ambience" },
+      "notes": "Use for travel, ambush, or Cragmaw approach."
+    },
+    {
+      "id": "battle-music",
+      "label": "Battle Music",
+      "type": "audio",
+      "mediaPath": "/assets/audio/battle_theme.mp3",
+      "options": { "loop": true, "audioType": "music" },
+      "notes": "General combat theme."
+    },
+    {
+      "id": "black-screen",
+      "label": "Black Screen",
+      "type": "utility",
+      "mediaPath": "/assets/utility/black.png",
+      "options": { "transition": "fade", "fit": "cover" },
+      "notes": "Use for transitions or dramatic reveals."
+    }
+  ],
+  "buttons": [
+    { "id": "b1",  "sceneId": "goblin-ambush",    "row": 0, "col": 0 },
+    { "id": "b2",  "sceneId": "cragmaw-hideout",   "row": 0, "col": 1 },
+    { "id": "b3",  "sceneId": "phandalin-town",    "row": 0, "col": 2 },
+    { "id": "b4",  "sceneId": "redbrand-hideout",  "row": 0, "col": 3 },
+
+    { "id": "b5",  "sceneId": "wave-echo-cave",    "row": 1, "col": 0 },
+    { "id": "b6",  "sceneId": "forge-of-spells",   "row": 1, "col": 1 },
+    { "id": "b7",  "sceneId": "tavern-ambience",   "row": 1, "col": 2 },
+    { "id": "b8",  "sceneId": "battle-music",      "row": 1, "col": 3 },
+
+    { "id": "b9",  "sceneId": "forest-ambience",   "row": 2, "col": 0 },
+    { "id": "b10", "sceneId": "stonehill-inn",     "row": 2, "col": 1 },
+    { "id": "b11", "sceneId": "tresendar-manor",   "row": 2, "col": 2 },
+    { "id": "b12", "sceneId": "black-screen",      "row": 2, "col": 3 }
+  ]
+}
