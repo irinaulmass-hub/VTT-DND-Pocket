@@ -1,3 +1,13 @@
+# VTT DnD Pocket
+
+Мастер на компьютере → карточки игроков на телефонах → общая сцена на телевизоре.
+
+[Инструкция по запуску на русском](PLAYER-START.md). Двойной щелчок по ярлыку **VTT - DnD** открывает мастерскую без терминала.
+
+Мобильная карточка: `/player`. Общая сцена: `/tv`. Пароль мастера по умолчанию: `dm1234`.
+
+## Исходный проект
+
 # D&D VTT Control Console (v3.7.0 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
