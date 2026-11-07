@@ -13,6 +13,7 @@ public/assets/
 
 *.log
 *.pid
+backups/
 *.bak2
 update-project.cjs
 

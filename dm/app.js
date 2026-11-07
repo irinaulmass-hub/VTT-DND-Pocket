@@ -71,7 +71,7 @@ var selectedItemType = 'Chest'; // current item type for placement
 // ── Mob icons & colours ───────────────────────────────────────
 // ── Item icons ───────────────────────────────────────────────
 var ITEM_ICONS = {
-  'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
+  'Trap': '⚠', 'Scenery': '⌂', 'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
   'Weapon': '⚔️', 'Shield': '🛡️', 'Armor': '🥋', 'Key': '🗝️',
   'Gem': '💎', 'Staff': '🪄', 'Bow': '🏹', 'Ring': '💍',
   'Book': '📖', 'Lantern': '🪔', 'Barrel': '🛢️', 'Loot': '💰',
@@ -182,14 +182,17 @@ function restoreDmState(msg) {
     blackoutBtn.classList.remove('active');
   }
 
-  if (!msg.sceneView) return; // no active map — nothing to render
+  if (!msg.sceneView) {
+    if (lastSceneViewPayload) clearMasterMap();
+    return;
+  }
 
   var sv = msg.sceneView;
   var mapKey = sv.mapKey;
   var fogKey = sv.fogKey;
 
   // Restore playback variables
-  lastSceneViewPayload = { action: 'show-scene-view', image: sv.image, audio: sv.audio, audioLoop: sv.audioLoop !== false, fit: sv.fit || 'contain', fogKey: fogKey, mapKey: mapKey, label: sv.label || '' };
+  lastSceneViewPayload = { action: 'show-scene-view', image: sv.image, audio: sv.audio, audioLoop: sv.audioLoop !== false, fit: sv.fit || 'contain', fogKey: fogKey, mapKey: mapKey, label: sv.label || '', sceneId: sv.sceneId || null };
   lastMapPayload = lastSceneViewPayload;
   lastSceneWasSentImage = false;
   activeFogKey = fogKey || null;
@@ -197,38 +200,22 @@ function restoreDmState(msg) {
   currentViewImageUrl = sv.image || null;
   activeTokenMapKey = mapKey || null;
 
-  // Restore fog grid into window.fogStates so renderFogControls picks it up
-  if (fogKey && msg.fogStates && msg.fogStates[fogKey]) {
-    if (!window.fogStates) window.fogStates = {};
-    window.fogStates[fogKey] = msg.fogStates[fogKey];
-    fogGrid = window.fogStates[fogKey];
-    fogMapUrl = sv.image;
-    if (fogGrid && fogGrid.length) {
-      fogRows = fogGrid.length;
-      fogCols = (fogGrid[0] && fogGrid[0].length) ? fogGrid[0].length : fogCols;
-    }
-  }
-
-  // Restore token state for the active map
-  if (mapKey && msg.tokens && msg.tokens.length) {
-    tokenState[mapKey] = msg.tokens;
-  }
-  // Restore all maps' token states (persisted across restarts)
-  if (msg.allTokenStates && typeof msg.allTokenStates === 'object') {
-    Object.keys(msg.allTokenStates).forEach(function (k) {
-      if (!tokenState[k] || !tokenState[k].length) {
-        tokenState[k] = msg.allTokenStates[k];
-      }
-    });
-  }
-
-  // Restore draw strokes
-  var drawKey = msg.drawingMapKey || mapKey;
-  if (drawKey && msg.drawing && msg.drawing.length) {
-    if (!drawStrokes[drawKey]) drawStrokes[drawKey] = [];
-    drawStrokes[drawKey] = msg.drawing;
-    activeDrawMapKey = drawKey;
-  }
+  window.notesCurrentSceneId = sv.sceneId || '';
+  window.fogStates = msg.fogStates || {};
+  fogGrid = window.fogStates[fogKey || mapKey] || null;
+  fogMapUrl = sv.image;
+  fogRows = fogGrid?.length || 20;
+  fogCols = fogGrid?.[0]?.length || 20;
+  if (mapKey) tokenState[mapKey] = Array.isArray(msg.tokens) ? msg.tokens : [];
+  if (mapKey) drawStrokes[mapKey] = Array.isArray(msg.drawing) ? msg.drawing : [];
+  activeDrawMapKey = mapKey;
+  dmMapFeatures = msg.features || [];
+  dmMapMeta = msg.mapMeta || sv.mapMeta || null;
+  dmTriggeredFeat = Object.fromEntries(Object.entries(msg.featureStates || {}).filter(([, state]) => state === 'triggered').map(([id]) => [id, true]));
+  dmObjects = msg.objects || [];
+  dmObjStates = msg.objectStates || {};
+  dmTargets = msg.currentTargets || {};
+  gridEnabled = !!msg.gridEnabled;
 
   // Restore lock state
   loggedInPlayersList = Array.isArray(msg.loggedInPlayers) ? msg.loggedInPlayers : [];
@@ -267,47 +254,11 @@ function restoreDmState(msg) {
   if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
   renderDrawControls(sv.image, mapKey);
 
-  // Feature controls — use saved features if available, else re-fetch from map builder
-  var featureContainer = document.getElementById('feature-controls-container');
-  if (featureContainer) featureContainer.innerHTML = '';
-  // Restore combat targets
-  if (msg.currentTargets && typeof msg.currentTargets === 'object') {
-    dmTargets = msg.currentTargets;
-  }
-  if (typeof msg.gridEnabled === 'boolean') {
-    gridEnabled = msg.gridEnabled;
-  }
-
-  if (msg.features && msg.features.length) {
-    dmMapFeatures = msg.features;
-    dmMapMeta     = sv.mapMeta || null;
-    renderFeatureControls(mapKey, msg.features, sv.mapMeta || null);
-    updateDmFeatureOverlay();
-  } else {
-    var mapBaseName = (sv.image || '').replace(/.*\//, '').replace(/\.[^.]+$/, '');
-    if (mapBaseName) {
-      fetch('/api/map-builder/state?name=' + encodeURIComponent(mapBaseName))
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (state) {
-          var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
-          var mapObjects_ = (state && Array.isArray(state.objects)) ? state.objects : [];
-          var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
-          dmMapFeatures = mapFeatures;
-          dmMapMeta     = mapMeta;
-          dmTriggeredFeat = {};
-          dmObjects = mapObjects_;
-          dmObjStates = {};
-          // Re-push features + objects to server so it has them for broadcasts
-          wsSend({ action: 'update-features', features: mapFeatures, mapKey: mapKey, mapMeta: mapMeta });
-          wsSend({ action: 'update-objects', objects: mapObjects_ });
-          renderFeatureControls(mapKey, mapFeatures, mapMeta);
-          updateDmFeatureOverlay();
-          renderDmObjectLayer();
-        })
-        .catch(function () {});
-    }
-  }
+  renderFeatureControls(mapKey, dmMapFeatures, dmMapMeta);
+  updateDmFeatureOverlay();
+  renderDmObjectLayer();
   updateFogToggleBtn();
+  window.dispatchEvent(new Event('book-location-changed'));
 }
 
 function connectWebSocket() {
@@ -317,16 +268,13 @@ function connectWebSocket() {
     statusDot.classList.remove('off');
     statusDot.classList.add('on');
     ws.send(JSON.stringify({ action: 'dm-connect' }));
-    // Re-push scene state so server has it for any newly connecting players.
-    // This handles server restarts where in-memory state is lost.
-    if (lastSceneViewPayload) {
-      wsSend(lastSceneViewPayload);
-      if (activeFogKey) sendFogUpdate(activeFogKey);
-      if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
-    }
   };
   ws.onmessage = function (event) {
     var msg = JSON.parse(event.data);
+    if (msg.type === 'WORLD_UPDATE') {
+      window.dispatchEvent(new CustomEvent('world-update', { detail: msg }));
+      return;
+    }
     if (msg.type === 'auth-required') {
       // Session expired (server restarted). Reload so requireDm redirects to login.
       location.reload();
@@ -334,6 +282,10 @@ function connectWebSocket() {
     }
     if (msg.type === 'DM_STATE_RESTORE') {
       restoreDmState(msg);
+      return;
+    }
+    if (msg.type === 'CLEAR_SCENE') {
+      clearMasterMap();
       return;
     }
     if (msg.type === 'clients') {
@@ -439,6 +391,7 @@ function connectWebSocket() {
       return;
     }
     // ── Party Manager updates ─────────────────────────────────
+    if (msg.type === 'LOOT_CHANGED') window.dispatchEvent(new Event('loot-changed'));
     if (msg.type === 'PLAYER_LOGIN_OK' || msg.type === 'PLAYER_DATA_UPDATE') {
       if (msg.player && msg.player.name) {
         upsertPartyPlayer(msg.player);
@@ -508,17 +461,15 @@ clearBtn.addEventListener('click', function () {
 });
 resendMapBtn.addEventListener('click', function () {
   if (!lastMapPayload) return;
-  wsSend(lastMapPayload);
   if (activeFogKey) sendFogUpdate(activeFogKey);
-  if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
+  wsSend(lastMapPayload);
 });
 
 if (toggleFogBtn) toggleFogBtn.addEventListener('click', toggleMapFog);
 
-document.getElementById('reset-map-btn').addEventListener('click', function () {
-  // Wipe server scene state
-  fetch('/api/clear-scene', { method: 'POST' });
-  // Reset DM in-memory state — including fog/token/draw overlays so they don't bleed into the next map load
+function clearMasterMap() {
+  if (activeTokenMapKey) delete tokenState[activeTokenMapKey];
+  if (activeDrawMapKey) delete drawStrokes[activeDrawMapKey];
   lastSceneViewPayload = null;
   lastMapPayload = null;
   lastSceneWasSentImage = false;
@@ -530,8 +481,6 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   window.fogStates = {};   // clear all cached fog grids
   fogGrid = null;
   fogMapUrl = null;
-  drawStrokes = {};        // clear all annotation strokes
-  tokenState = {};         // clear all token positions
   dmMapFeatures   = [];    // clear feature overlay state
   dmMapMeta       = null;
   dmTriggeredFeat = {};
@@ -546,6 +495,13 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   var els = ['fog-controls-container','token-controls-container','token-map-container','draw-controls-container','feature-controls-container'];
   els.forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
   updateFogToggleBtn();
+  window.notesCurrentSceneId = '';
+  window.dispatchEvent(new Event('book-location-changed'));
+}
+
+document.getElementById('reset-map-btn').addEventListener('click', function () {
+  if (!activeTokenMapKey || !window.confirm('Сбросить туман, токены и ловушки текущей локации?')) return;
+  fetch('/api/clear-scene?reset=1', { method: 'POST' });
 });
 
 document.getElementById('send-text-popup-btn').addEventListener('click', function () {
@@ -817,6 +773,13 @@ function renderSceneGroup(container, scene, sIdx) {
       return function () { showSceneView(si, vi); };
     })(sIdx, realVIdx);
     rowBtns.appendChild(showBtn);
+    if (view.builderDraft) {
+      var draftLink = document.createElement('a');
+      draftLink.className = 'btn btn-secondary btn-small';
+      draftLink.textContent = 'Редактировать карту';
+      draftLink.href = '/map-builder?' + new URLSearchParams({ game: window.currentCampaignId || 'default', draft: view.builderDraft });
+      rowBtns.appendChild(draftLink);
+    }
 
     // Chain dropdown — only show when scene has more than one view
     // Use the full original scene.views list so chain targets are always correct
@@ -862,7 +825,8 @@ function renderScenesPanel() {
   fetch('/api/scenes')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      sceneData = data.scenes || [];
+      sceneData = (data.scenes || []).filter(function(scene){ return window.bookShowExamples || !scene.legacyExample; });
+      window.dispatchEvent(new Event('book-locations-loaded'));
       var mapList = document.getElementById('map-list');
       mapList.innerHTML = '';
 
@@ -943,20 +907,6 @@ function renderScenesPanel() {
         }
         btn.appendChild(document.createTextNode(tab));
         btn.onclick = function () {
-          if (activeFogKey) {
-            wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
-            activeFogKey = null;
-          }
-          document.getElementById('fog-controls-container').innerHTML = '';
-          document.getElementById('token-controls-container').innerHTML = '';
-          var dcEl = document.getElementById('draw-controls-container');
-          if (dcEl) dcEl.innerHTML = '';
-          var fcEl = document.getElementById('feature-controls-container');
-          if (fcEl) fcEl.innerHTML = '';
-          var mcg = document.getElementById('map-control-grid');
-          if (mcg) mcg.style.display = 'none';
-          var mct = document.getElementById('map-control-title');
-          if (mct) mct.textContent = 'no map active';
           currentTab = tab;
           renderScenesPanel();
         };
@@ -993,7 +943,6 @@ function toggleMapFog() {
   var fogControlsEl  = document.getElementById('fog-controls-container');
   if (activeFogKey) {
     // ── Turn fog OFF ───────────────────────────────────────────
-    wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
     wsSend({ action: 'set-fog-key', fogKey: null });
     activeFogKey = null;
     if (lastSceneViewPayload) lastSceneViewPayload.fogKey = null;
@@ -1015,90 +964,16 @@ function toggleMapFog() {
   updateFogToggleBtn();
 }
 
+function openBookLocation(viewId) {
+  if (!viewId || !ws || ws.readyState !== WebSocket.OPEN) return false;
+  if (activeFogKey) sendFogUpdate(activeFogKey);
+  wsSend({ action: 'open-location', viewId: viewId });
+  return true;
+}
+
 function showSceneView(sceneIdx, viewIdx) {
-  var scene  = sceneData[sceneIdx];
-  var view   = scene.views[viewIdx];
-  var fogKey = view.id || (sceneIdx + '-' + viewIdx);
-  currentViewFogKey   = fogKey;
-  currentViewImageUrl = view.image;
-  var useFog = view.fog === true;
-  var newFogKey = useFog ? fogKey : null;
-
-  // If switching away from a fog scene, clear the player's fog overlay
-  if (activeFogKey && activeFogKey !== newFogKey) {
-    wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
-  }
-  activeFogKey = newFogKey;
-
-  // Stop any playing audio before switching scene view
-  wsSend({ action: 'stop-audio' });
-
-  // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
-  lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey, label: view.label || '' };
-  lastSceneWasSentImage = false;
-  lastMapPayload = lastSceneViewPayload;
-  wsSend(lastSceneViewPayload);
-
-  // Only show fog controls if this view has fog enabled
-  var fogContainer = document.getElementById('fog-controls-container');
-  if (useFog) {
-    renderFogControls(view.image, fogKey);
-    // Send initial fog state immediately so player screen shows fog on Show
-    sendFogUpdate(fogKey);
-  } else {
-    fogContainer.innerHTML = '';
-  }
-
-  // Always show token controls for the active map
-  renderTokenControls(view.image, fogKey);
-  // Immediately sync tokens for this map (may be empty, which clears any old tokens on players)
-  sendTokenUpdate(fogKey);
-
-  // Draw / annotation controls — reset collapsed state on new map
-  if (activeDrawMapKey !== fogKey) { drawControlsExpanded = false; drawModeActive = false; }
-  renderDrawControls(view.image, fogKey);
-  sendDrawUpdate(fogKey);
-
-  // Show the Map Control panel and label it with the view name
-  var mapControlGrid  = document.getElementById('map-control-grid');
-  var mapControlTitle = document.getElementById('map-control-title');
-  if (mapControlGrid) {
-    mapControlGrid.style.display = 'grid';
-    mapControlGrid.style.gridTemplateColumns = useFog ? '2fr 1px 3fr' : '1fr';
-    var mcgDivider    = document.getElementById('map-control-divider');
-    var fogControlsEl = document.getElementById('fog-controls-container');
-    if (mcgDivider)    mcgDivider.style.display    = useFog ? '' : 'none';
-    if (fogControlsEl) fogControlsEl.style.display = useFog ? '' : 'none';
-  }
-  if (mapControlTitle) { mapControlTitle.textContent = view.label || 'Active Map'; }
-  updateFogToggleBtn();
-
-  // Feature controls — async fetch map state to get saved features
-  var featureContainer = document.getElementById('feature-controls-container');
-  if (featureContainer) featureContainer.innerHTML = '';
-  var mapBaseName = (view.image || '').replace(/.*\//, '').replace(/\.[^.]+$/, '');
-  if (mapBaseName) {
-    fetch('/api/map-builder/state?name=' + encodeURIComponent(mapBaseName))
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (state) {
-        var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
-        var mapObjs_  = (state && Array.isArray(state.objects)) ? state.objects : [];
-        var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
-        // Store on DM side so feature overlay can show cell positions
-        dmMapFeatures   = mapFeatures;
-        dmMapMeta       = mapMeta;
-        dmTriggeredFeat = {};
-        dmObjects   = mapObjs_;
-        dmObjStates = {};
-        // Push feature definitions + objects to server so reconnecting players receive them
-        wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
-        wsSend({ action: 'update-objects', objects: mapObjs_ });
-        renderFeatureControls(fogKey, mapFeatures, mapMeta);
-        updateDmFeatureOverlay();
-        renderDmObjectLayer();
-      })
-      .catch(function () { /* no state file — map may not be from builder */ });
-  }
+  var view = sceneData[sceneIdx]?.views?.[viewIdx];
+  if (view) openBookLocation(view.id);
 }
 
 // ============================================================
@@ -1684,8 +1559,8 @@ function renderFogControls(mapUrl, fogKey) {
 }
 
 function sendFogUpdate(fogKey) {
-  if (ws && ws.readyState === 1 && fogMapUrl) {
-    wsSend({ action: 'update-fog', mapUrl: fogMapUrl, fogGrid: fogGrid, fogKey: fogKey });
+  if (ws && ws.readyState === 1 && fogKey === activeFogKey && window.fogStates?.[fogKey]) {
+    wsSend({ action: 'update-fog', fogGrid: window.fogStates[fogKey], fogKey: fogKey });
   }
 }
 
@@ -2325,6 +2200,8 @@ function renderTokenControls(mapUrl, mapKey) {
   mapTarget.appendChild(mapHeaderRow);
 
   var mapWrap = document.createElement('div');
+  mapWrap.dataset.bookMap = mapKey;
+  mapWrap.dataset.bookMapUrl = mapUrl;
   mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;' +
     'margin-bottom:0.5rem;border:1px solid ' + (drawModeActive ? '#facc15' : '#444') + ';' +
     'cursor:' + (drawModeActive ? 'none' : 'crosshair') + ';';
@@ -2592,6 +2469,7 @@ function renderTokenControls(mapUrl, mapKey) {
     if (isHidden) titleParts.push('👁️‍🗨️ Hidden from players');
     if (dispConds.length) titleParts.push(dispConds.map(function (c) { return c.icon + ' ' + c.name; }).join(', '));
     dot.title = titleParts.join(' | ');
+    if (tok.templateId) dot.addEventListener('dblclick', function(e){e.stopPropagation();if(window.editBookToken)window.editBookToken(tok,mapKey,mapUrl);});
 
     // Hidden indicator badge
     if (isHidden) {
@@ -2704,6 +2582,7 @@ function renderTokenControls(mapUrl, mapKey) {
           };
           menu.appendChild(item);
         }
+        if (t.type === 'item') menuItem('🎁 Содержимое и добыча', function () { window.openLootEditor({tokenId:t.id,mapKey:mapKey,name:t.label || 'Сундук'}); });
         // Visibility toggle
         menuItem(t.hidden ? '👁️ Reveal (show to players)' : '🙈 Hide (from players)', function () {
           t.hidden = !t.hidden;

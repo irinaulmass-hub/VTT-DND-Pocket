@@ -7,6 +7,9 @@ var statusEl    = document.getElementById('status');
 var tapOverlay  = document.getElementById('tap-overlay');
 var popupEl     = document.getElementById('popup-overlay');
 var popupTimer  = null;
+var isTableScreen = document.documentElement.hasAttribute('data-table-view');
+var tableStatus = document.getElementById('table-status');
+var scenePaint = 0;
 
 var globalAudio    = null;
 var pendingAudio   = null;   // queued until tap-overlay is dismissed
@@ -61,6 +64,7 @@ function dismissTapOverlay() {
 
 // ── Tap overlay button handlers ───────────────────────────────
 (function () {
+  if (isTableScreen) return;
   var guestBtn    = document.getElementById('tap-guest-btn');
   var loginBtn    = document.getElementById('tap-login-btn');
   var backBtn     = document.getElementById('login-back-btn');
@@ -246,12 +250,18 @@ function dismissTapOverlay() {
 
 // ── Image display ────────────────────────────────────────────
 function showImage(imageUrl, fogKey, fit) {
+  var paint = ++scenePaint;
+  if (isTableScreen) {
+    document.documentElement.dataset.tableScene = '';
+    fit = 'contain';
+  }
   var existingImg = sceneEl.querySelector('img');
   // If the same image is already loaded, skip the fade/reload entirely.
   // This prevents a long blank screen on WiFi reconnect when state is replayed.
   // Overlays are cleared by the caller (SHOW_SCENE_VIEW) and will be re-applied
   // by the UPDATE_TOKENS / UPDATE_DRAWING messages that follow immediately.
   if (existingImg && existingImg.naturalWidth && currentImageUrl === imageUrl) {
+    sceneEl.classList.remove('fading');
     currentFogKey = fogKey || null;
     existingImg.style.objectFit = fit || 'contain';
     if (fogKey && fogStates[fogKey]) {
@@ -262,6 +272,7 @@ function showImage(imageUrl, fogKey, fit) {
   currentImageUrl = imageUrl;
   sceneEl.classList.add('fading');
   setTimeout(function () {
+    if (paint !== scenePaint) return;
     sceneEl.innerHTML = '';
     var img = document.createElement('img');
     img.draggable = false;
@@ -271,6 +282,7 @@ function showImage(imageUrl, fogKey, fit) {
     currentFogKey = fogKey || null;
 
     function afterLoad() {
+      if (paint !== scenePaint || !img.isConnected) return;
       if (fogKey && fogStates[fogKey]) {
         renderFogOverlay(fogStates[fogKey], img);
       }
@@ -284,13 +296,9 @@ function showImage(imageUrl, fogKey, fit) {
         renderDrawOverlay(currentDrawing, img);
       }
       if (currentFeatures.length) {
-        renderFeatureOverlay(currentFeatures, img);
-        // Re-apply any already-triggered features (e.g. on reconnect)
-        Object.keys(triggeredFeatures).forEach(function (fid) {
-          var feat = currentFeatures.find(function (f) { return f.id === fid; });
-          if (feat) showTriggeredFeature(feat, false); // false = no animation on reconnect
-        });
+        redrawFeatureLayer(img);
       }
+      renderObjectLayer(currentObjects, currentObjectStates, img);
     }
 
     if (img.complete && img.naturalWidth) {
@@ -303,9 +311,11 @@ function showImage(imageUrl, fogKey, fit) {
 }
 
 function clearScene() {
+  var paint = ++scenePaint;
   currentImageUrl = null;
   sceneEl.classList.add('fading');
   setTimeout(function () {
+    if (paint !== scenePaint) return;
     sceneEl.innerHTML = '';
     sceneEl.classList.remove('fading');
   }, 150);
@@ -374,7 +384,7 @@ function renderObjectLayer(objects, objStates, imgEl) {
       iconEl.textContent = obj.emoji || '\uD83D\uDD27';
     }
     div.appendChild(iconEl);
-    if (obj.interactive) {
+    if (obj.interactive && !isTableScreen) {
       var iBy = obj.interactBy || 'both';
       var canInteract = (iBy === 'both') || (iBy === 'players' && myPlayerName) || (iBy === 'dm');
       if (canInteract) {
@@ -492,7 +502,7 @@ function renderFogOverlay(fogGrid, imgEl) {
 // ── Token overlay ─────────────────────────────────────────────
 var TOKEN_COLORS = { red: '#dc2626', blue: '#2563eb', yellow: '#ca8a04', green: '#16a34a' };
 var ITEM_ICONS = {
-  'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
+  'Trap': '⚠', 'Scenery': '⌂', 'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
   'Weapon': '⚔️', 'Shield': '🛡️', 'Armor': '🥋', 'Key': '🗝️',
   'Gem': '💎', 'Staff': '🪄', 'Bow': '🏹', 'Ring': '💍',
   'Book': '📖', 'Lantern': '🪔', 'Barrel': '🛢️', 'Loot': '💰',
@@ -674,6 +684,11 @@ function renderTokenOverlay(tokens) {
       lbl.style.cssText = 'color:rgba(255,255,255,0.97);font-weight:bold;font-size:' +
         fontSize + 'px;font-family:sans-serif;user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
       dot.appendChild(lbl);
+    }
+
+    if (isItem && !isTableScreen) {
+      dot.style.pointerEvents = 'auto'; dot.style.cursor = 'pointer';
+      (function(itemId){ dot.addEventListener('click', function(e){ e.stopPropagation(); window.openLoot({tokenId:itemId,mapKey:currentMapKey || ''}); }); })(tok.id);
     }
 
     // ── Targeting: visual indicators ──────────────────────────
@@ -925,12 +940,26 @@ function renderFeatureOverlay(feats, imgEl) {
   sceneEl.appendChild(div);
 }
 
+function redrawFeatureLayer(imgEl, animateFeature) {
+  renderFeatureOverlay(currentFeatures, imgEl);
+  currentFeatures.forEach(function (feat) {
+    if (triggeredFeatures[feat.id]) showTriggeredFeature(feat, feat.id === animateFeature);
+  });
+}
+
 function showTriggeredFeature(feat, animate) {
   var cells = sceneEl.querySelectorAll('.feature-cell[data-feat-id="' + feat.id + '"]');
   if (!cells.length) return;
 
   if (animate === false) {
+    if (feat.type === 'reveal' || (feat.type === 'effect' && feat.effectSubtype === 'explosion')) return;
     cells.forEach(function (c) { c.style.opacity = '1'; });
+    if (feat.type === 'puzzle' && feat.linkedMap && !isTableScreen) {
+      cells.forEach(function (c) {
+        c.style.pointerEvents = 'auto';
+        c.onclick = function () { openPuzzleLightbox(feat); };
+      });
+    }
     return;
   }
 
@@ -969,7 +998,7 @@ function showTriggeredFeature(feat, animate) {
       c.style.background = feat.color || '#1e3a5f';
       c.style.opacity = '1';
       c.classList.add('feat-puzzle-anim');
-      if (feat.linkedMap) {
+      if (feat.linkedMap && !isTableScreen) {
         c.style.pointerEvents = 'auto';
         c.onclick = function () { openPuzzleLightbox(feat); };
       }
@@ -1163,8 +1192,7 @@ function openPuzzleLightbox(feat) {
   title.textContent = feat.name || '';
   lb.classList.add('open');
   var newSrc = feat.linkedMap || '';
-  // Derive the .map.json path from the image URL to get the sub-map's own objects
-  var jsonUrl = newSrc.replace(/\.[^/.]+$/, '') + '.map.json';
+  var jsonUrl = '/api/map-builder/puzzle?image=' + encodeURIComponent(newSrc);
   // Reset lightbox state when opening a new sub-map
   if (!img.src.endsWith(newSrc)) {
     _lbObjects = [];
@@ -1356,8 +1384,11 @@ function stopAudio() {
 
 // ── Text display ──────────────────────────────────────────────
 function showText(title, html) {
+  var paint = ++scenePaint;
+  if (isTableScreen) document.documentElement.dataset.tableScene = '';
   sceneEl.classList.add('fading');
   setTimeout(function () {
+    if (paint !== scenePaint) return;
     var wrapper = document.createElement('div');
     wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:3rem 4rem;';
     if (title) {
@@ -1379,6 +1410,10 @@ function showText(title, html) {
 
 // ── Message handler ───────────────────────────────────────────
 function handleMessage(msg) {
+  if (msg.type === 'WORLD_UPDATE') {
+    if (isTableScreen) window.dispatchEvent(new CustomEvent('world-update', { detail: msg }));
+    return;
+  }
   statusEl.textContent = msg.type;
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':
@@ -1468,21 +1503,32 @@ function handleMessage(msg) {
       stopAudio();
       break;
     case 'BLACKOUT':
+      var wasBlack = document.getElementById('blackout-overlay').style.display === 'block';
       document.getElementById('blackout-overlay').style.display = msg.active ? 'block' : 'none';
       if (msg.active) stopAudio();
+      if (isTableScreen && wasBlack && !msg.active) wsSend({action:'request-sync'});
       break;
     case 'CLEAR':
       document.getElementById('blackout-overlay').style.display = 'none';
       if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
       popupEl.classList.remove('visible');
-      break;
+      if (!isTableScreen) break;
+      // The shared display returns to its waiting state when the scene is cleared.
     case 'CLEAR_SCENE':
+      ++scenePaint;
+      delete document.documentElement.dataset.tableScene;
+      sceneEl.classList.remove('fading');
       sceneEl.innerHTML = '';
+      document.getElementById('object-layer').innerHTML = '';
+      currentMapKey = null;
       currentImageUrl = null;
       currentFogKey = null;
       currentTokens = [];
       currentDrawing = [];
       currentFeatures = [];
+      currentObjects = [];
+      currentObjectStates = {};
+      triggeredFeatures = {};
       allTargets = {};
       myTarget = null;
       break;
@@ -1498,7 +1544,7 @@ function handleMessage(msg) {
         if (msg.mapMeta) currentMapMeta = msg.mapMeta;
         var imgElF = sceneEl.querySelector('img');
         if (imgElF && imgElF.naturalWidth) {
-          renderFeatureOverlay(currentFeatures, imgElF);
+          redrawFeatureLayer(imgElF);
         }
       }
       break;
@@ -1507,17 +1553,11 @@ function handleMessage(msg) {
         var feat = msg.feature;
         if (feat) {
           triggeredFeatures[feat.id] = true;
-          // Use message data as fallback if local state was never set
-          if (msg.mapMeta && !currentMapMeta) currentMapMeta = msg.mapMeta;
-          if (msg.allFeatures && msg.allFeatures.length && !currentFeatures.length) {
-            currentFeatures = msg.allFeatures;
-          }
-          // Build overlay if not present, or if cells for this feature are missing
-          var hasCells = !!sceneEl.querySelector('.feature-cell[data-feat-id="' + feat.id + '"]');
-          if (!hasCells && currentMapMeta) {
-            renderFeatureOverlay(currentFeatures, sceneEl.querySelector('img'));
-          }
-          showTriggeredFeature(feat, true);
+          if (msg.mapMeta) currentMapMeta = msg.mapMeta;
+          currentFeatures = currentFeatures.filter(function (item) { return item.id !== feat.id; });
+          currentFeatures.push(feat);
+          var featureImage = sceneEl.querySelector('img');
+          if (featureImage && featureImage.naturalWidth) redrawFeatureLayer(featureImage, msg.replay ? null : feat.id);
         }
       }
       break;
@@ -1667,6 +1707,7 @@ function showPlayerCharCard(ch) {
         }
       }
       break;
+    case 'LOOT_CHANGED': window.dispatchEvent(new Event('loot-changed')); break;
     case 'PLAYER_DATA_UPDATE':
       if (msg.player && claimedCharacter &&
           (msg.player.id === claimedCharacter.id || msg.player.name === claimedCharacter.name || msg.player.name === myPlayerName)) {
@@ -1689,40 +1730,53 @@ function showPlayerCharCard(ch) {
   var btn = document.getElementById('fullscreen-btn');
   if (!btn) return;
   var hideTimer = null;
+  var controls = document.getElementById('table-controls');
+  function fullscreenActive() { return document.fullscreenElement || document.webkitFullscreenElement; }
 
   function showBtn() {
-    btn.classList.remove('hidden');
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(function () { btn.classList.add('hidden'); }, 4000);
+    if (isTableScreen) {
+      controls.classList.remove('idle');
+      if (fullscreenActive()) hideTimer = setTimeout(function () { controls.classList.add('idle'); }, 3500);
+    } else {
+      btn.classList.remove('hidden');
+      hideTimer = setTimeout(function () { btn.classList.add('hidden'); }, 4000);
+    }
   }
 
-  // Show on any mouse/touch movement
-  document.addEventListener('mousemove', showBtn);
-  document.addEventListener('touchstart', showBtn);
-
-  btn.addEventListener('click', function (e) {
-    e.stopPropagation(); // don't trigger the tap-overlay dismiss
-    var doc = document.documentElement;
-    if (!document.fullscreenElement) {
-      (doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen).call(doc);
-      btn.textContent = '✕';
-      btn.title = 'Exit fullscreen';
-    } else {
-      (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen).call(document);
-      btn.textContent = '⛶';
-      btn.title = 'Toggle fullscreen';
+  document.addEventListener('pointermove', showBtn);
+  document.addEventListener('pointerdown', showBtn);
+  btn.addEventListener('click', async function () {
+    try {
+      if (fullscreenActive()) {
+        var exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await exit.call(document);
+      } else {
+        var root = document.documentElement;
+        var enter = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (!enter) throw Error('Fullscreen unavailable');
+        await enter.call(root);
+      }
+    } catch (error) {
+      if (isTableScreen) tableStatus.textContent = 'Чтобы развернуть окно, нажмите F11.';
     }
   });
 
-  document.addEventListener('fullscreenchange', function () {
-    if (!document.fullscreenElement) {
-      btn.textContent = '⛶';
-      btn.title = 'Toggle fullscreen';
-    }
+  function updateFullscreen() {
+    var label = fullscreenActive() ? 'Выйти из полного экрана' : 'На весь экран';
+    btn.textContent = isTableScreen ? label : (fullscreenActive() ? '✕' : '⛶');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    showBtn();
+  }
+  document.addEventListener('fullscreenchange', updateFullscreen);
+  document.addEventListener('webkitfullscreenchange', updateFullscreen);
+  document.getElementById('fit-map-btn').addEventListener('click', function () {
+    var img = sceneEl.querySelector('img');
+    if (img) img.style.objectFit = 'contain';
+    redrawMapLayers();
   });
-
-  // Start hidden; appears on first mouse move
-  btn.classList.add('hidden');
+  updateFullscreen();
 }());
 
 // ── WebSocket ─────────────────────────────────────────────────
@@ -1783,12 +1837,17 @@ function connect() {
   // Guard: never open a second socket while one is already live or mid-handshake
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(protocol + '//' + location.host + '/ws');
+  ws = new WebSocket(protocol + '//' + location.host + '/ws' + (isTableScreen ? '?view=table' : ''));
+  if (isTableScreen) tableStatus.textContent = 'Подключение к столу мастера…';
 
   ws.onopen = function () {
     statusEl.textContent = 'connected';
     _lastMsgAt = Date.now(); // reset watchdog on fresh connection
     _retryDelay = 1000; // reset backoff on successful connect
+    if (isTableScreen) {
+      tableStatus.textContent = '';
+      return; // the server sends the current scene automatically
+    }
     // Server automatically pushes full state on connection.
     // Auto-restore login from sessionStorage (e.g. after page refresh)
     var savedName = sessionStorage.getItem('dnd_player_name');
@@ -1810,6 +1869,7 @@ function connect() {
 
   ws.onclose = function () {
     statusEl.textContent = 'reconnecting...';
+    if (isTableScreen) tableStatus.textContent = 'Связь прервалась. Восстанавливаем…';
     // If the login was in-flight when the socket dropped, re-enable the button
     resetLoginBtn();
     scheduleReconnect();
@@ -1840,25 +1900,21 @@ window.addEventListener('online', function () {
   connect();
 });
 
-// Re-render position-dependent overlays on resize / phone rotation
-var _resizeTimer = null;
+function redrawMapLayers() {
+  var img = sceneEl.querySelector('img');
+  if (!img || !img.naturalWidth) return;
+  renderFogOverlay(currentFogKey ? fogStates[currentFogKey] : null, img);
+  renderGridOverlay(img);
+  renderTokenOverlay(currentTokens);
+  renderDrawOverlay(currentDrawing, img);
+  redrawFeatureLayer(img);
+  renderObjectLayer(currentObjects, currentObjectStates, img);
+}
+
+var resizeFrame;
 window.addEventListener('resize', function () {
-  // Remove stale pixel-positioned overlays immediately so they don't appear
-  // at the wrong position (e.g. portrait coords visible in landscape corner)
-  sceneEl.querySelectorAll('.fog-overlay, .token-overlay, .feature-overlay')
-    .forEach(function (el) { el.remove(); });
-  clearTimeout(_resizeTimer);
-  _resizeTimer = setTimeout(function () {
-    // rAF ensures iOS has actually reflowed the viewport before we read offsetWidth/offsetHeight
-    requestAnimationFrame(function () {
-      var imgEl = sceneEl.querySelector('img');
-      if (currentFogKey && fogStates[currentFogKey]) {
-        renderFogOverlay(fogStates[currentFogKey], imgEl);
-      }
-      if (currentTokens.length) renderTokenOverlay(currentTokens);
-      if (currentFeatures && currentFeatures.length) renderFeatureOverlay(currentFeatures, imgEl);
-    });
-  }, 200);
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(redrawMapLayers);
 });
 
 // ── Player Dice Bar ───────────────────────────────────────────

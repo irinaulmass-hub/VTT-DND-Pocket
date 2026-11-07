@@ -28,13 +28,13 @@ function render() {
     return;
   }
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
-  const abilities = [...list(ch.abilities),...list(ch.spells)];
+  const abilities = [...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
   if (tab==='hero') {
     const hp=number(ch.hp), maxHp=number(ch.maxHp,10), eclipse=number(ch.eclipse), maxEclipse=number(ch.maxEclipse,10);
-    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Сменить персонажа</button>`;
+    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)} · опыт ${esc(ch.xp??0)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><small>Временные HP: ${esc(ch.tempHp??0)}</small><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Сменить персонажа</button>`;
   } else if (tab==='inventory') {
     const money = typeof ch.money === 'object' && ch.money ? Object.entries(ch.money).map(([k,v])=>`${v} ${k}`).join(' · ') : ch.money ?? 0;
-    content.innerHTML=`<p class="eyebrow">Всё для приключения</p><h2>Инвентарь</h2><div class="money">Монеты · ${esc(money)}</div>${rows(list(ch.inventory),'inventory')}`;
+    content.innerHTML=`<p class="eyebrow">Всё для приключения</p><h2>Инвентарь</h2><button class="choose" data-open-loot>Сундуки и добыча</button><div class="money">Монеты · ${esc(money)}</div>${rows(list(ch.inventory),'inventory')}`;
   } else if (tab==='abilities') {
     const slots = Object.entries(ch.spellSlots || {}).filter(([,s])=>number(s.max)>0);
     content.innerHTML=`<p class="eyebrow">Ваши возможности</p><h2>Умения и магия</h2>${slots.length?'<h3>Ячейки заклинаний</h3><div class="chips">'+slots.map(([l,s])=>`<span class="chip">${esc(l)} ур. · ${Math.max(0,number(s.max)-number(s.used))}/${esc(s.max)}</span>`).join('')+'</div>':''}${rows(abilities,'abilities')}`;
@@ -44,14 +44,15 @@ function render() {
 }
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
+  if(b.hasAttribute('data-open-loot'))window.openLoot();
   if(b.dataset.character){selected=b.dataset.character;localStorage.setItem('pocket-character',selected);render();}
   if(b.hasAttribute('data-switch')){selected=null;localStorage.removeItem('pocket-character');render();}
   if(b.dataset.tab){tab=b.dataset.tab;render();window.scrollTo(0,0);}
   if(b.dataset.detail){
     const ch=roster.find(c=>c.id===selected); if(!ch)return;
-    const items=b.dataset.detail==='inventory'?list(ch.inventory):b.dataset.detail==='combat'?list(ch.attacks):[...list(ch.abilities),...list(ch.spells)];
+    const items=b.dataset.detail==='inventory'?list(ch.inventory):b.dataset.detail==='combat'?list(ch.attacks):[...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
     const item=items[Number(b.dataset.index)]; if(!item)return;
-    document.querySelector('#detail-content').innerHTML=`${safeImage(item.image)?`<img src="${safeImage(item.image)}" alt="">`:''}<h2>${esc(title(item))}</h2><p class="details-text">${esc(item.description || item.summary || 'Описание пока не добавлено.')}</p>${item.quantity!=null?`<p>Количество: ${esc(item.quantity)}</p>`:''}${item.recovery?`<p class="muted">Восстановление: ${esc(item.recovery)}</p>`:''}`;
+    document.querySelector('#detail-content').innerHTML=`${safeImage(item.image)?`<img src="${safeImage(item.image)}" alt="">`:''}<h2>${esc(title(item))}</h2><p class="details-text">${esc(item.description || item.summary || 'Описание пока не добавлено.')}</p>${item.properties?`<p class="details-text">${esc(item.properties)}</p>`:''}${item.rarity?`<p>Редкость: ${esc(window.LootUI?.rarities[item.rarity]?.[0] || item.rarity)}</p>`:''}${item.quantity!=null?`<p>Количество: ${esc(item.quantity)}</p>`:''}${item.recovery?`<p class="muted">Восстановление: ${esc(item.recovery)}</p>`:''}`;
     document.querySelector('#detail').showModal();
   }
 });
@@ -59,7 +60,7 @@ document.querySelector('#close-detail').onclick=()=>document.querySelector('#det
 function connect(){
   socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
   socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'request-characters'}));};
-  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='CHARACTERS_UPDATE'){roster=msg.characters||[];render();}if(msg.type==='ping')socket.send(JSON.stringify({action:'pong'}));};
+  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='LOOT_CHANGED')window.dispatchEvent(new Event('loot-changed'));if(msg.type==='CHARACTERS_UPDATE'){roster=msg.characters||[];render();}if(msg.type==='ping')socket.send(JSON.stringify({action:'pong'}));};
   socket.onclose=()=>{status.textContent='○ Переподключение…';setTimeout(connect,2000);};
   socket.onerror=()=>socket.close();
 }

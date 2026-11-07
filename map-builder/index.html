@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
+  <script src="/remote/campaign.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Map Builder — DM Console</title>
+  <title>Старый редактор сцен · Книга мастера</title>
   <link rel="stylesheet" href="/map-builder/styles.css" />
 </head>
 <body>
@@ -11,8 +12,9 @@
 <!-- ── Header ──────────────────────────────────────────────── -->
 <header>
   <div class="header-left">
-    <a href="/" class="back-btn">← DM Panel</a>
-    <h1>🗺️ Map Builder</h1>
+    <a href="/" class="back-btn" id="builder-back">← Книга мастера</a>
+    <a href="/?view=maps#world-map-editor" class="back-btn" id="builder-world">Большая карта мира →</a>
+    <h1>Старый редактор сцен</h1>
   </div>
   <div class="header-center">
     <label>Grid <input type="number" id="grid-cols" value="20" min="4" max="60" /> × <input type="number" id="grid-rows" value="15" min="4" max="40" /></label>
@@ -396,5 +398,6 @@
 </div>
 
 <script src="/map-builder/builder.js"></script>
+<script src="/remote/russian-ui.js"></script>
 </body>
 </html>

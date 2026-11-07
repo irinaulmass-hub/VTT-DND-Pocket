@@ -3022,6 +3022,13 @@ document.getElementById('open-cancel-btn').addEventListener('click', () => {
   document.getElementById('open-modal').classList.add('hidden');
 });
 
+async function openSavedMap(name) {
+  const response = await fetch('/api/map-builder/state?name=' + encodeURIComponent(name));
+  if (!response.ok) throw Error('Не удалось открыть сохранённую карту');
+  loadMapState(await response.json());
+  document.getElementById('save-filename').value = name + '.png';
+}
+
 document.getElementById('open-confirm-btn').addEventListener('click', async () => {
   const statusEl = document.getElementById('open-status');
   statusEl.style.color = '#d1d5db';
@@ -3032,11 +3039,7 @@ document.getElementById('open-confirm-btn').addEventListener('click', async () =
     if (!name) { statusEl.textContent = 'Select a map first.'; return; }
     statusEl.textContent = 'Loading…';
     try {
-      const r = await fetch('/api/map-builder/state?name=' + encodeURIComponent(name));
-      if (!r.ok) throw new Error((await r.json()).error || 'Load failed');
-      const state = await r.json();
-      loadMapState(state);
-      document.getElementById('save-filename').value = name + '.png';
+      await openSavedMap(name);
       document.getElementById('open-modal').classList.add('hidden');
     } catch (e) {
       statusEl.style.color = '#ef4444';
@@ -3060,3 +3063,10 @@ document.getElementById('open-confirm-btn').addEventListener('click', async () =
 
 // ── Bootstrap ─────────────────────────────────────────────────
 initGrid();
+const selectedDraft = new URLSearchParams(location.search).get('draft');
+if (selectedDraft) {
+  openSavedMap(selectedDraft).catch(error => {
+    document.getElementById('open-modal').classList.remove('hidden');
+    document.getElementById('open-status').textContent = error.message;
+  });
+}

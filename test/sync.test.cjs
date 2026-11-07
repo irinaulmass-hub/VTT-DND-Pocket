@@ -7,16 +7,25 @@ const path=require('node:path');
 const WebSocket=require('ws');
 const root=path.resolve(__dirname,'..');
 function message(ws,predicate){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{ws.off('message',handler);reject(Error('WebSocket update timeout'));},4000);function handler(raw){const msg=JSON.parse(raw);if(predicate(msg)){clearTimeout(timer);ws.off('message',handler);resolve(msg);}}ws.on('message',handler);});}
-function open(cookie){return new Promise((resolve,reject)=>{const ws=new WebSocket('ws://127.0.0.1:3098/ws',cookie?{headers:{Cookie:cookie}}:{});ws.once('open',()=>resolve(ws));ws.once('error',reject);});}
+function open(cookie,game,view){return new Promise((resolve,reject)=>{const url=new URL('ws://127.0.0.1:3098/ws');if(game)url.searchParams.set('game',game);if(view)url.searchParams.set('view',view);const ws=new WebSocket(url,cookie?{headers:{Cookie:cookie}}:{});ws.once('open',()=>resolve(ws));ws.once('error',reject);});}
 test('master authority, live updates, reconnect and persistence',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vtt-pocket-test-'));
- const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:'3098',DATA_DIR:dir,DM_PASSWORD:'test-only'},stdio:'ignore'});
+ let assistantPayload;
+ const ollama=require('node:http').createServer((req,res)=>{let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{res.setHeader('Content-Type','application/json');if(req.url==='/api/tags')res.end(JSON.stringify({models:[{name:'test-model'}]}));else{assistantPayload=JSON.parse(body);res.end(JSON.stringify({message:{content:'Три слуха для таверны'}}));}});});
+ await new Promise(r=>ollama.listen(0,'127.0.0.1',r));
+ const launch=()=>spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,PORT:'3098',DATA_DIR:dir,DM_PASSWORD:'test-only',OLLAMA_URL:'http://127.0.0.1:'+ollama.address().port},stdio:'ignore'});
+ let child=launch();
+ const stop=async()=>{if(child.exitCode!==null||child.signalCode!==null)return;const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await exited;};
  const sockets=[];
- try{
+ const catalogImages=[];
+ const base='http://127.0.0.1:3098';
+ async function waitForServer() {
   let ready=false;
-  for(let i=0;i<60;i++){try{ready=(await fetch('http://127.0.0.1:3098/api/health')).ok;if(ready)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+  for(let i=0;i<60;i++){try{ready=(await fetch(base+'/api/health')).ok;if(ready)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   assert.ok(ready,'server starts');
-  const base='http://127.0.0.1:3098';
+ }
+ try{
+  await waitForServer();
   assert.match(await (await fetch(base+'/player')).text(),/sheet.js/);
   assert.match(await (await fetch(base+'/tv')).text(),/player.js/);
   assert.equal((await fetch(base+'/data/characters.json')).status,404);
@@ -34,7 +43,269 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/characters/'+ch.id,{method:'PUT',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(patch)})).status,200);
   const update=(await next).characters[0];assert.equal(update.eclipse,3);assert.equal(update.inventory[0].name,'Ключ');
   const dm=await open(cookie);sockets.push(dm);next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&m.characters[0].hp===23);dm.send(JSON.stringify({action:'update-character',characterId:ch.id,patch:{hp:23}}));await next;
+  assert.deepEqual((await (await fetch(base+'/api/players')).json()).players, (await (await fetch(base+'/api/characters')).json()).characters);
+  next=message(player,m=>m.type==='CHARACTERS_UPDATE' && m.characters[0].xp===125);
+  dm.send(JSON.stringify({action:'update-player-data',playerName:ch.name,patch:{xp:125,tempHp:7}}));
+  assert.equal((await next).characters[0].tempHp,7);
+  let leaked=false;
+  const observe=raw=>{if(JSON.parse(raw).type==='BLIND_ROLL_RESULT')leaked=true;};player.on('message',observe);
+  next=message(dm,m=>m.type==='BLIND_ROLL_RESULT');
+  dm.send(JSON.stringify({action:'dm-blind-roll',characterId:ch.id,skill:'Восприятие',modifier:3}));
+  const blind=await next;assert.ok(blind.roll>=1 && blind.roll<=20);assert.equal(blind.total,blind.roll+3);
+  player.send(JSON.stringify({action:'dm-blind-roll',characterId:ch.id,modifier:0}));
+  next=message(player,m=>m.type==='CHARACTERS_UPDATE');player.send(JSON.stringify({action:'request-characters'}));await next;
+  assert.equal(leaked,false);player.off('message',observe);
+  assert.equal((await fetch(base+'/api/campaigns',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Forbidden'})})).status,302);
+  const campaign=await (await fetch(base+'/api/campaigns',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Вторая игра'})})).json();
+  assert.deepEqual((await (await fetch(base+'/api/characters?game='+campaign.id)).json()).characters,[]);
+  assert.deepEqual((await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes,[]);
+  assert.equal((await fetch(base+'/api/characters?game=../bad')).status,404);
+  const other=await open(cookie,campaign.id);sockets.push(other);
+  let crossTalk=false;const crossObserve=raw=>{if(['CHARACTERS_UPDATE','UPDATE_TOKENS'].includes(JSON.parse(raw).type))crossTalk=true;};player.on('message',crossObserve);
+  const otherChar=await (await fetch(base+'/api/characters?game='+campaign.id,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Другой герой',maxHp:15})})).json();
+  next=message(other,m=>m.type==='CHARACTERS_UPDATE' && m.characters[0]?.hp===12);
+  other.send(JSON.stringify({action:'update-character',characterId:otherChar.id,patch:{hp:12}}));await next;
+  next=message(other,m=>m.type==='UPDATE_TOKENS');other.send(JSON.stringify({action:'update-tokens',mapKey:'other-map',tokens:[{id:'other-token',x:0.5,y:0.5}]}));await next;
+  await new Promise(r=>setTimeout(r,50));assert.equal(crossTalk,false);
+  next=message(player,m=>m.type==='CHARACTERS_UPDATE');player.send(JSON.stringify({action:'request-characters'}));const unchanged=await next;
+  // The explicitly requested roster above is expected; other campaign broadcasts are not.
+  player.off('message',crossObserve);
+  assert.ok(unchanged.characters.every(c=>c.name!=='Другой герой'));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'characters.json'))).characters[0].hp,12);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentTokens[0].id,'other-token');
+  const otherReconnected=await open(undefined,campaign.id);sockets.push(otherReconnected);
+  next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,12);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(dir,'campaigns.json'))).some(c=>c.id===campaign.id));
+
+  // DM-only notes: separate campaign/scene scopes and optimistic concurrency.
+  assert.equal((await fetch(base+'/api/notes')).status,401);
+  assert.equal((await fetch(base+'/api/notes?game='+campaign.id)).status,401);
+  assert.equal((await fetch(base+'/api/notes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Unauthorized',revision:0})})).status,401);
+  const noteHeaders={Cookie:cookie,'Content-Type':'application/json'};
+  const writeNote=(suffix,text,revision)=>fetch(base+'/api/notes'+suffix,{method:'PUT',headers:noteHeaders,body:JSON.stringify({text,revision})});
+  const readNote=async suffix=>{const response=await fetch(base+'/api/notes'+suffix,{headers:{Cookie:cookie}});assert.match(response.headers.get('cache-control'),/no-store/);return response.json();};
+  assert.equal((await readNote('')).text,'');
+  assert.equal((await writeNote('','Секрет кампании',0)).status,200);
+  assert.equal((await writeNote('','Потерянная правка',0)).status,409);
+  assert.equal((await readNote('')).text,'Секрет кампании');
+  assert.equal((await writeNote('?scene=forest','Засада в лесу',0)).status,200);
+  assert.equal((await readNote('?scene=forest')).text,'Засада в лесу');
+  assert.equal((await readNote('?scene=inn')).text,'');
+  assert.equal((await readNote('?game='+campaign.id)).text,'');
+  assert.equal((await writeNote('?game='+campaign.id,'Другой сюжет',0)).status,200);
+  assert.equal((await readNote('')).text,'Секрет кампании');
+  assert.equal((await writeNote('','',1)).status,200);
+  assert.equal((await readNote('')).text,'');
+  assert.equal((await writeNote('','Invalid',-1)).status,400);
+  assert.equal((await writeNote('','x'.repeat(200001),2)).status,400);
+  assert.equal((await fetch(base+'/data/notes.json')).status,404);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'notes.json'))).entries['scene:forest'].text,'Засада в лесу');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'notes.json'))).entries.campaign.text,'Другой сюжет');
+  assert.equal((await fetch(base+'/api/assistant/models')).status,401);
+  const ai=await fetch(base+'/api/assistant/chat?game='+campaign.id,{method:'POST',headers:noteHeaders,body:JSON.stringify({model:'test-model',question:'Слухи?',includeNotes:true})});
+  assert.equal(ai.status,200);assert.equal((await ai.json()).answer,'Три слуха для таверны');
+  assert.match(assistantPayload.messages[1].content,/Другой сюжет/);assert.doesNotMatch(assistantPayload.messages[1].content,/Засада в лесу/);
+  // Loot is private until revealed; one snapshot contains both stock and inventory.
+  const lootHeaders={Cookie:cookie,'Content-Type':'application/json'};
+  const writeLoot=(url,method,body,asDm=true)=>fetch(base+url,{method,redirect:'manual',headers:asDm?lootHeaders:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const getLoot=async (suffix='',asDm=false)=>(await (await fetch(base+'/api/loot'+suffix,{headers:asDm?{Cookie:cookie}:{}})).json()).containers;
+  assert.equal((await writeLoot('/api/loot','POST',{name:'Forbidden'},false)).status,302);
+  const chest=await (await writeLoot('/api/loot','POST',{name:'Тайник',tokenId:'chest-one',mapKey:'forest'})).json();
+  assert.ok(chest.id);assert.equal(chest.revealed,false);
+  assert.equal((await writeLoot('/api/loot','POST',{name:'Duplicate',tokenId:'chest-one',mapKey:'forest'})).status,409);
+  let filled=await (await writeLoot('/api/loot/'+chest.id,'PUT',{revision:0,name:'Тайник',revealed:false,items:[{name:'Секретное зелье',quantity:3,rarity:'rare',properties:'Лечение',description:'Синий флакон'}]})).json();
+  assert.equal(filled.items.length,1);
+  assert.deepEqual(await getLoot(),[]);
+  assert.equal((await getLoot('',true))[0].items[0].name,'Секретное зелье');
+  assert.equal(JSON.stringify(await (await fetch(base+'/api/characters')).json()).includes('Секретное зелье'),false);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{revision:1,itemId:filled.items[0].id,quantity:1,characterId:ch.id},false)).status,404);
+  filled=await (await writeLoot('/api/loot/'+chest.id,'PUT',{...filled,revealed:true})).json();
+  assert.equal((await getLoot('?tokenId=chest-one&mapKey=forest')).length,1);
+  assert.equal((await getLoot('?tokenId=chest-one&mapKey=other')).length,0);
+  assert.equal((await getLoot('?game='+campaign.id)).length,0);
+  assert.equal((await getLoot())[0].transfers,undefined);
+  const take={revision:filled.revision,itemId:filled.items[0].id,quantity:1,characterId:ch.id};
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:-1},false)).status,400);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:4},false)).status,409);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,characterId:otherChar.id},false)).status,404);
+  const outcomes=await Promise.all([writeLoot('/api/loot/'+chest.id+'/take','POST',take,false),writeLoot('/api/loot/'+chest.id+'/take','POST',take,false)]);
+  assert.deepEqual(outcomes.map(r=>r.status).sort(),[200,409]);
+  assert.equal((await writeLoot('/api/loot/'+chest.id,'PUT',filled)).status,409,'stale editor cannot restore taken stock');
+  let remaining=(await getLoot())[0];assert.equal(remaining.items[0].quantity,2);
+  next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&m.characters.find(c=>c.id===ch.id).inventory.filter(i=>i.sourceContainer===chest.id).length===2);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,revision:remaining.revision,quantity:2},false)).status,200);
+  const received=(await next).characters.find(c=>c.id===ch.id).inventory.filter(i=>i.sourceContainer===chest.id);
+  assert.equal(received.reduce((sum,i)=>sum+i.quantity,0),3);assert.equal(received[0].rarity,'rare');assert.equal(received[0].properties,'Лечение');
+  remaining=(await getLoot())[0];assert.equal(remaining.items.length,0);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,revision:remaining.revision},false)).status,409);
+  const snapshot=JSON.parse(fs.readFileSync(path.join(dir,'characters.json')));
+  assert.equal(snapshot.lootContainers.find(c=>c.id===chest.id).items.length,0);
+  assert.equal(snapshot.lootContainers.find(c=>c.id===chest.id).transfers.length,2);
+  assert.equal(snapshot.characters.find(c=>c.id===ch.id).inventory.filter(i=>i.sourceContainer===chest.id).reduce((sum,i)=>sum+i.quantity,0),3);
+  // Custom libraries remain DM-only and campaign-scoped.
+  assert.equal((await fetch(base+'/api/library',{redirect:'manual'})).status,302);
+  const templateBody={kind:'creature',name:'Страж шахты',hp:17,ac:13,description:'Тестовая карточка',notes:'Секретный проход'};
+  const template=await (await fetch(base+'/api/library',{method:'POST',headers:noteHeaders,body:JSON.stringify(templateBody)})).json();
+  assert.ok(template.id);
+  assert.equal((await (await fetch(base+'/api/library?game='+campaign.id,{headers:{Cookie:cookie}})).json()).entries.length,0);
+  // Shared entries are master-only snapshots. Imported copies belong to the destination campaign.
+  assert.equal((await fetch(base+'/api/catalog',{redirect:'manual'})).status,302);
+  const shared=(await (await fetch(base+'/api/catalog',{method:'POST',headers:noteHeaders,body:JSON.stringify({cardId:template.id,tags:['шахта']})})).json());
+  const imported=(await (await fetch(base+'/api/catalog/'+shared.id+'/import?game='+campaign.id,{method:'POST',headers:noteHeaders})).json()).card;
+  assert.notEqual(imported.id,template.id);assert.equal(imported.notes,'Секретный проход');
+  const edited=await fetch(base+'/api/library/'+imported.id+'?game='+campaign.id,{method:'PUT',headers:noteHeaders,body:JSON.stringify({...imported,hp:4})});
+  assert.equal(edited.status,200);
+  const original=(await (await fetch(base+'/api/library',{headers:noteHeaders})).json()).entries.find(item=>item.id===template.id);
+  assert.equal(original.hp,17);
+  const mapImport=await fetch(base+'/api/catalog/starter-farm/import?game='+campaign.id,{method:'POST',headers:noteHeaders});
+  assert.equal(mapImport.status,201);
+  const mapCopy=await mapImport.json();
+  assert.match(mapCopy.draft,/^[\da-f-]+-catalog-[\da-f-]+$/);
+  catalogImages.push(path.join(root,'public','assets','maps',mapCopy.draft+'.png'));
+  const draftUrl='/api/map-builder/state?name='+mapCopy.draft;
+  assert.equal((await fetch(base+draftUrl,{headers:noteHeaders})).status,404);
+  const copiedDraft=(await (await fetch(base+draftUrl+'&game='+campaign.id,{headers:noteHeaders})).json());
+  assert.equal(copiedDraft.bgImage,'/api/catalog/starter-farm/image');
+  assert.equal((await fetch(base+copiedDraft.bgImage,{redirect:'manual'})).status,302);
+  const localScenes=(await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes;
+  assert.equal(localScenes[0].views[0].builderDraft,mapCopy.draft);
+  assert.equal((await fetch(base+'/api/library/'+template.id,{method:'PUT',headers:noteHeaders,body:JSON.stringify({...templateBody,revision:99})})).status,409);
+  const copy=await (await fetch(base+'/api/characters/'+ch.id+'/duplicate',{method:'POST',headers:{Cookie:cookie}})).json();assert.notEqual(copy.id,ch.id);assert.equal(copy.hp,23);assert.equal(copy.claimedBy,null);
+  next=message(player,m=>m.type==='UPDATE_TOKENS');
+  dm.send(JSON.stringify({action:'update-tokens',mapKey:'private-test',tokens:[{id:'secret-trap',label:'Секретная ловушка',hidden:true,x:0.1,y:0.2},{id:'visible-chest',label:'Сундук',x:0.3,y:0.3}]}));
+  assert.deepEqual((await next).tokens.map(t=>t.id),['visible-chest']);
+  next=message(dm,m=>m.type==='UPDATE_TOKENS');dm.send(JSON.stringify({action:'request-sync'}));assert.equal((await next).tokens.length,2);
+  next=message(player,m=>m.type==='UPDATE_TOKENS');player.send(JSON.stringify({action:'request-sync'}));assert.equal((await next).tokens.length,1);
+  // A table window shares the master's browser cookie, but its connection is read-only.
+  const table=await open(cookie,campaign.id,'table');sockets.push(table);
+  const tableMessages=[];table.on('message',raw=>tableMessages.push(JSON.parse(raw)));
+  const pendingTrap={id:'pending-trap',type:'trap',cells:[[2,3]],description:'Где находится засада'};
+  const publicEffect={id:'public-effect',type:'effect',cells:[[1,1]],description:'Заметка мастера'};
+  next=message(table,m=>m.type==='SHOW_SCENE_VIEW');
+  other.send(JSON.stringify({action:'show-scene-view',image:'/assets/maps/winden-farm.png',mapKey:'table-map',fogKey:'table-map',features:[pendingTrap,publicEffect],mapMeta:{cols:4,rows:4}}));
+  assert.deepEqual((await next).features,[]);
+  next=message(table,m=>m.type==='UPDATE_FOG'&&m.fogGrid?.[0]?.[0]===true);
+  other.send(JSON.stringify({action:'update-fog',fogKey:'table-map',fogGrid:[[true,false],[false,false]]}));
+  assert.deepEqual((await next).fogGrid,[[true,false],[false,false]]);
+  next=message(table,m=>m.type==='UPDATE_TOKENS'&&m.tokens.length);
+  other.send(JSON.stringify({action:'update-tokens',mapKey:'table-map',tokens:[{id:'hidden-test',hidden:true},{id:'party-test',x:0.2,y:0.2}]}));
+  assert.deepEqual((await next).tokens.map(t=>t.id),['party-test']);
+  next=message(table,m=>m.type==='TRIGGER_FEATURE');
+  other.send(JSON.stringify({action:'trigger-feature',featureId:publicEffect.id,mapKey:'table-map'}));
+  const triggered=(await next);assert.equal(triggered.feature.id,publicEffect.id);assert.equal(triggered.feature.description,undefined);assert.equal(triggered.allFeatures,undefined);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentFeatureStates[publicEffect.id],'triggered');
+  const tableAgain=await open(cookie,campaign.id,'table');sockets.push(tableAgain);
+  tableAgain.on('message',raw=>tableMessages.push(JSON.parse(raw)));
+  next=message(tableAgain,m=>m.type==='UPDATE_TOKENS');tableAgain.send(JSON.stringify({action:'request-sync'}));
+  assert.equal((await next).tokens.length,1);
+  const beforeReadOnlyCheck=tableMessages.length;
+  next=message(tableAgain,m=>m.type==='GRID_TOGGLE');tableAgain.send(JSON.stringify({action:'clear-scene'}));tableAgain.send(JSON.stringify({action:'request-sync'}));await next;
+  assert.ok(tableMessages.some(m=>m.type==='SHOW_SCENE_VIEW'&&m.mapKey==='table-map'));
+  assert.ok(tableMessages.every(m=>m.type!=='DM_STATE_RESTORE'));
+  assert.ok(tableMessages.slice(beforeReadOnlyCheck).every(m=>m.type!=='CLEAR_SCENE'));
+  assert.doesNotMatch(JSON.stringify(tableMessages),/hidden-test|pending-trap|Заметка мастера/);
+  assert.equal((await fetch(base+'/api/adventure',{redirect:'manual'})).status,302);
+  assert.equal((await fetch(base+'/api/adventure/source.pdf',{redirect:'manual'})).status,302);
+  const adventure=await (await fetch(base+'/api/adventure',{headers:{Cookie:cookie}})).json();assert.equal(adventure.pages.length,36);assert.match(adventure.pages[1].text,/2024/);
+  const storyState={...adventure.state,current:'road',done:['intro'],notes:{road:'Партия нашла фургон'}};
+  assert.equal((await fetch(base+'/api/adventure/state',{method:'PUT',headers:noteHeaders,body:JSON.stringify(storyState)})).status,200);
+  assert.equal((await fetch(base+'/api/adventure/state',{method:'PUT',headers:noteHeaders,body:JSON.stringify(storyState)})).status,409);
+  const otherAdventure=await (await fetch(base+'/api/adventure?game='+campaign.id,{headers:{Cookie:cookie}})).json();
+  assert.equal(otherAdventure.state,null);assert.deepEqual(otherAdventure.pages,[]);
+  assert.equal((await fetch(base+'/api/adventure/source.pdf?game='+campaign.id,{headers:{Cookie:cookie}})).status,404);
+  const packedCampaign=await (await fetch(base+'/api/campaigns',{method:'POST',headers:noteHeaders,body:JSON.stringify({name:'Винден из набора',pack:'goblin-wars'})})).json();
+  const packedAdventure=await (await fetch(base+'/api/adventure?game='+packedCampaign.id,{headers:{Cookie:cookie}})).json();
+  assert.equal(packedAdventure.state.current,'intro');assert.equal(packedAdventure.pages.length,36);
+  assert.equal((await (await fetch(base+'/api/library?game='+packedCampaign.id,{headers:{Cookie:cookie}})).json()).entries.length,23);
+  assert.equal((await (await fetch(base+'/api/scenes?game='+packedCampaign.id,{headers:{Cookie:cookie}})).json()).scenes.length,2);
+  const draftDir=path.join(dir,'campaigns',campaign.id,'map-drafts');
+  fs.mkdirSync(draftDir,{recursive:true});
+  fs.writeFileSync(path.join(draftDir,'private.map.json'),JSON.stringify({features:[pendingTrap]}));
+  assert.equal((await fetch(base+'/api/map-builder/state?game='+campaign.id+'&name=private',{redirect:'manual'})).status,302);
+  assert.equal((await fetch(base+'/api/map-builder/state?name=private',{headers:{Cookie:cookie}})).status,404);
+  assert.deepEqual((await (await fetch(base+'/api/map-builder/state?game='+campaign.id+'&name=private',{headers:{Cookie:cookie}})).json()).features,[pendingTrap]);
+  const seededLibrary=(await (await fetch(base+'/api/library',{headers:{Cookie:cookie}})).json()).entries;assert.ok(seededLibrary.some(e=>e.name==='Харамах'&&e.hp===21));assert.ok(seededLibrary.some(e=>e.name==='Грум-Грум'&&e.sourcePage===35));
+  const heroChoices={cls:'Barbarian',species:'elf',elfSkill:'perception',background:'soldier',level:1,skills:['nature','survival'],base:{str:15,dex:14,con:13,int:8,wis:12,cha:10},boost:{str:2,con:1}};
+  const automatic=await fetch(base+'/api/characters/automatic',{method:'POST',headers:noteHeaders,body:JSON.stringify({name:'Эльф-варвар',choices:heroChoices})});assert.equal(automatic.status,201);const autoHero=await automatic.json();assert.equal(autoHero.hp,14);assert.equal(autoHero.xp,0);
+  await fetch(base+'/api/characters/'+autoHero.id,{method:'PUT',headers:noteHeaders,body:JSON.stringify({hp:9,xp:125,resources:autoHero.resources.map(r=>({...r,used:2}))})});
+  const advancedResponse=await fetch(base+'/api/characters/'+autoHero.id+'/advance',{method:'POST',headers:noteHeaders,body:JSON.stringify({fromLevel:1,level:2})});assert.equal(advancedResponse.status,200);const advanced=await advancedResponse.json();assert.equal(advanced.maxHp,23);assert.equal(advanced.hp,18);assert.equal(advanced.xp,125);assert.equal(advanced.resources[0].used,2);
+  assert.equal((await fetch(base+'/api/characters/'+autoHero.id+'/advance',{method:'POST',headers:noteHeaders,body:JSON.stringify({fromLevel:1,level:2})})).status,409);
+  const rested=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'short'})})).json();assert.equal(rested.resources[0].used,1);assert.equal(rested.hp,18);
+  const longRest=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'long'})})).json();assert.equal(longRest.resources[0].used,0);assert.equal(longRest.hp,23);
   player.close();const reconnected=await open();sockets.push(reconnected);next=message(reconnected,m=>m.type==='CHARACTERS_UPDATE');reconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,23);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'characters.json'))).characters[0].hp,23);
- }finally{for(const ws of sockets)ws.terminate();child.kill();await new Promise(r=>child.once('exit',r));fs.rmSync(dir,{recursive:true,force:true});}
+
+  const linksPath='/api/locations/links?game='+packedCampaign.id;
+  const farm='gw-farm-view', mine='gw-mine-view';
+  assert.equal((await fetch(base+linksPath,{redirect:'manual'})).status,302);
+  const linkBody={from:farm,to:mine,returnLink:true};
+  const createLink=()=>fetch(base+linksPath,{method:'POST',headers:noteHeaders,body:JSON.stringify(linkBody)}).then(r=>r.json());
+  assert.equal((await createLink()).links.length,2);
+  assert.equal((await createLink()).links.length,2);
+  assert.deepEqual((await (await fetch(base+'/api/locations/links',{headers:noteHeaders})).json()).links,[]);
+  const routeMaster=await open(cookie,packedCampaign.id);sockets.push(routeMaster);
+  function travel(socket,viewId) {
+   const restored=message(socket,m=>m.type==='DM_STATE_RESTORE'&&m.sceneView?.mapKey===viewId);
+   socket.send(JSON.stringify({action:'open-location',viewId}));
+   return restored;
+  }
+  await travel(routeMaster,farm);
+  const fog=[[true,false],[false,false]];
+  for(const update of [
+   {action:'update-fog',fogKey:farm,fogGrid:fog},
+   {action:'update-tokens',mapKey:farm,tokens:[{id:'farm-hero',x:0.3,y:0.7}]},
+   {action:'update-features',mapKey:farm,mapMeta:{cols:2,rows:2},features:[pendingTrap]},
+   {action:'trigger-feature',mapKey:farm,featureId:pendingTrap.id},
+   {action:'update-objects',objects:[{id:'farm-gate',row:0,col:0,interactive:true,clickAction:'rotate'}]},
+   {action:'interact-object',objId:'farm-gate'},
+  ]) routeMaster.send(JSON.stringify(update));
+  assert.deepEqual((await travel(routeMaster,mine)).tokens,[]);
+
+  const worldGame='?game='+campaign.id;
+  const worldBase=base+'/api/worlds';
+  const worldWrite=(endpoint,method,data)=>fetch(worldBase+endpoint+worldGame,{method,headers:noteHeaders,body:JSON.stringify(data)});
+  assert.equal((await fetch(worldBase+worldGame,{redirect:'manual'})).status,302);
+  const world=await (await worldWrite('','POST',{name:'Деревня у озера',sample:true})).json();
+  const tiles=require('../remote/world-model');
+  tiles.set(world.chunks,-70,-41,'path');
+  world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
+  const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
+  assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
+  assert.equal((await worldWrite('/'+world.id,'PUT',world)).status,409);
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
+  await next;
+  const tableWorld=()=>fetch(worldBase+'/table'+worldGame+'&chunks=0%2C0').then(r=>r.json());
+  assert.deepEqual((await tableWorld()).chunks['0,0'],{});
+  const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
+  assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
+  const firstView=await tableWorld();
+  assert.equal(tiles.get(firstView.chunks,0,0),'path');
+  assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door'));
+  tiles.set(savedWorld.chunks,0,0,'water');
+  assert.equal((await worldWrite('/'+world.id,'PUT',savedWorld)).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
+  assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
+  for(const socket of sockets) socket.terminate();
+  await stop();
+  child=launch();
+  await waitForServer();
+  const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
+  const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
+  const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
+  const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
+  next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
+  display.send(JSON.stringify({action:'request-sync'}));
+  assert.equal((await next).mapKey,mine);
+  const returned=await travel(resumed,farm);
+  assert.deepEqual(returned.fogStates[farm],fog);
+  assert.equal(returned.tokens[0].id,'farm-hero');
+  assert.equal(returned.featureStates[pendingTrap.id],'triggered');
+  assert.equal(returned.objectStates['farm-gate'].currentRotation,90);
+  assert.equal((await (await fetch(base+linksPath,{headers:{Cookie:newCookie}})).json()).links.length,2);
+  const resumedWorld=await tableWorld();
+  assert.equal(resumedWorld.tokens[0].x,9);
+  assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
+  assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');
+ }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });
