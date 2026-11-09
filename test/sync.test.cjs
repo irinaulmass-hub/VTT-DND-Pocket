@@ -315,5 +315,20 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(resumedWorld.tokens[0].x,9);
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');
+  const resumedWorldWrite=(endpoint,body)=>fetch(worldBase+endpoint+worldGame,{
+    method:'POST',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify(body),
+  });
+  assert.equal(await fetch(worldBase+'/table').then(r=>r.json()),null);
+  assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:true});
+  assert.equal(await tableWorld(),null);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(worldDir,'..','active-world.json'))),{id:null});
+  assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:false});
+  const republish=await resumedWorldWrite('/'+world.id+'/publish',{revision:savedWorld.revision+1,fog:true});
+  assert.equal(republish.status,200);
+  const republished=await tableWorld();
+  assert.deepEqual(republished.tokens,resumedWorld.tokens);
+  assert.deepEqual(republished.seen,resumedWorld.seen);
+  assert.equal(tiles.get(republished.chunks,0,0),'water');
+
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });

@@ -1,26 +1,14 @@
 'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const map = require('./remote/world-model');
+const createWorldStore = require('./world-store');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
-  const idPattern = /^[a-f0-9-]{36}$/;
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
-  const read = (file, fallback = null) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : fallback;
-  function write(file, data) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file + '.tmp', JSON.stringify(data));
-    fs.renameSync(file + '.tmp', file);
-  }
-  const directory = () => gameFile('worlds');
-  const file = (id, suffix) => path.join(directory(), id + suffix + '.json');
-  const draft = id => idPattern.test(id) ? read(file(id, '')) : null;
-  const activeFile = () => gameFile('active-world.json');
-  const active = () => read(activeFile())?.id || null;
-  const play = () => { const id = active(); return id ? read(file(id, '-live')) : null; };
+  const store = createWorldStore(gameFile);
+
   function notice(data) {
     const tokens = data?.tokens || [];
     const party = tokens.length ? {
@@ -31,8 +19,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   }
   const announce = data => broadcast(notice(data));
   function hide() {
-    if (!active()) return false;
-    write(activeFile(), { id: null });
+    if (!store.readActiveId()) return false;
+    store.writeActiveId(null);
     announce(null);
     return true;
   }
@@ -66,21 +54,17 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const json = express.json({ limit: '8mb' });
 
   app.get('/api/worlds', requireDm, route((req, res) => {
-    const dir = directory();
-    const worlds = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true })
-      .filter(entry => entry.isFile() && entry.name.endsWith('.json') && idPattern.test(entry.name.slice(0, -5)))
-      .map(entry => { const { id, name: title } = read(path.join(dir, entry.name)); return { id, name: title }; }) : [];
-    res.json({ worlds });
+    res.json({ worlds: store.listDrafts() });
   }));
   app.post('/api/worlds', requireDm, json, route((req, res) => {
     const name = typeof req.body?.name === 'string' && req.body.name.trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'Введите название карты' });
     const data = { id: randomUUID(), name, revision: 0, ...(req.body.sample === true ? map.sample() : { chunks: {}, objects: [] }) };
-    write(file(data.id, ''), data);
+    store.writeDraft(data);
     res.status(201).json(data);
   }));
   app.get('/api/worlds/live', requireDm, route((req, res) => {
-    const data = play();
+    const data = store.readActiveWorld();
     if (!data) return res.json(null);
     const { id, name, revision } = data.map;
     res.json({
@@ -89,7 +73,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     });
   }));
   app.get('/api/worlds/table', route((req, res) => {
-    const data = play();
+    const data = store.readActiveWorld();
     if (!data) return res.json(null);
     const requested = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
     if (requested.length > 100 || requested.some(key => !chunkPattern.test(key))) return res.status(400).json({ error: 'Некорректный участок карты' });
@@ -112,37 +96,37 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     });
   }));
   app.get('/api/worlds/:id', requireDm, route((req, res) => {
-    const data = draft(req.params.id);
+    const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     res.json(data);
   }));
   app.put('/api/worlds/:id', requireDm, json, route((req, res) => {
-    const data = draft(req.params.id);
+    const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Черновик изменён в другом окне. Откройте его заново.' });
     if (!validMap(req.body)) return res.status(400).json({ error: 'Проверьте слои карты и количество тайлов' });
     const objects = req.body.objects.map(({ id, kind, x, y, turn, hidden }) => ({ id, kind, x, y, turn, hidden: hidden === true }));
     const next = { ...data, revision: data.revision + 1, chunks: req.body.chunks, objects };
-    write(file(data.id, ''), next);
+    store.writeDraft(next);
     res.json(next);
   }));
   app.post('/api/worlds/:id/publish', requireDm, json, route((req, res) => {
-    const data = draft(req.params.id);
+    const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Сначала сохраните актуальный черновик' });
-    const previous = read(file(data.id, '-live'));
+    const previous = store.readPublished(data.id);
     const next = {
       tokens: [], seen: {}, frame: { x: 0, y: 0, scale: 24, serial: 0 }, ...previous,
       map: data, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
     };
-    write(file(data.id, '-live'), next);
-    write(activeFile(), { id: data.id });
+    store.writePublished(data.id, next);
+    store.writeActiveId(data.id);
     revealScreen();
     announce(next);
     res.json(next);
   }));
   app.post('/api/worlds/live/change', requireDm, json, route((req, res) => {
-    const data = play();
+    const data = store.readActiveWorld();
     if (!data || req.body?.id !== data.map.id) return res.status(409).json({ error: 'На экране уже другая карта' });
     const { action, x, y, characterId, scale } = req.body;
     if (!map.valid(x) || !map.valid(y)) return res.status(400).json({ error: 'Проверьте координаты' });
@@ -161,10 +145,10 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       }
     } else return res.status(400).json({ error: 'Действие недоступно' });
     data.revision++;
-    write(file(data.map.id, '-live'), data);
+    store.writePublished(data.map.id, data);
     announce(data);
     res.json({ tokens: data.tokens, revision: data.revision, frame: data.frame });
   }));
   app.post('/api/worlds/live/hide', requireDm, route((req, res) => res.json({ hidden: hide() })));
-  return { hide, notice: () => notice(play()) };
+  return { hide, notice: () => notice(store.readActiveWorld()) };
 };
