@@ -393,10 +393,10 @@ function sendView(client, data) {
       data = { ...data, targets };
     }
   }
-  if (client.characterId && data.type === 'CHARACTERS_UPDATE') {
+  if (!game().dmClients.has(client) && data.type === 'CHARACTERS_UPDATE') {
     data = { ...data, characters: data.characters.filter(ch => ch.id === client.characterId) };
   }
-  if (client.characterId && data.type === 'PLAYER_DATA_UPDATE' && data.player.id !== client.characterId) return;
+  if (!game().dmClients.has(client) && data.type === 'PLAYER_DATA_UPDATE' && data.player.id !== client.characterId) return;
   client.send(JSON.stringify(data));
 }
 
@@ -607,6 +607,7 @@ function initializeConnection(ws, req, context) {
         ws.close(1008, 'Access revoked');
         return;
       }
+      if (!isDm && ['interact-object','interact-lightbox-object'].includes(message.action) && !ws.characterId) return;
       if (message.action === 'open-location') {
         if (!isDm) return;
         const location = typeof message.viewId === 'string' && findLocation(message.viewId);
@@ -969,7 +970,17 @@ require('./advancement')(app, {express,loadCharacters,saveCharacters,requireDm,b
 require('./adventure')(app, { express, fs, path, gameFile, requireDm, hasWindenPack });
 const library = require('./library')(app, { express, crypto, gameFile, requireDm, hasWindenPack });
 
-require('./loot')(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast });
+function assignedCharacter(req) {
+  const header = req.headers.authorization || '';
+  return header.startsWith('Bearer ') ? playerAccess.resolve(header.slice(7)) : null;
+}
+function visibleCharacters(req) {
+  const characters = loadCharacters().characters;
+  if (isDmAuthed(req)) return characters;
+  const id = assignedCharacter(req);
+  return characters.filter(character => character.id === id);
+}
+require('./loot')(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast, assignedCharacter });
 
 // ── Character REST API ────────────────────────────────────────
 app.post('/api/characters/automatic', requireDm, express.json({ limit: '32kb' }), (req, res) => {
@@ -979,7 +990,7 @@ app.post('/api/characters/automatic', requireDm, express.json({ limit: '32kb' })
 });
 
 app.get('/api/characters', (req, res) => {
-  res.json({ characters: loadCharacters().characters });
+  res.setHeader('Cache-Control', 'no-store'); res.json({ characters: visibleCharacters(req) });
 });
 
 app.post('/api/characters', requireDm, express.json({ limit: '64kb' }), (req, res) => {
@@ -1046,7 +1057,7 @@ app.delete('/api/characters/:id', requireDm, (req, res) => {
 
 // Legacy API uses the same character store. Omissions do not delete characters.
 function loadPlayers() { return loadCharacters().characters; }
-app.get('/api/players', (req, res) => res.json({ players: loadPlayers() }));
+app.get('/api/players', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ players: visibleCharacters(req) }); });
 app.post('/api/players', requireDm, express.json({ limit: '64kb' }), (req, res) => {
   if (!Array.isArray(req.body.players) || req.body.players.some(p => !p || typeof p.name !== 'string' || !p.name.trim())) return res.status(400).json({ error: 'Named players required' });
   const data = loadCharacters();

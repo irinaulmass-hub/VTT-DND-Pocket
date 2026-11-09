@@ -2,7 +2,11 @@
 (() => {
  const rarities={common:['Обычный','#c6cdc8'],uncommon:['Необычный','#7ddd8e'],rare:['Редкий','#83b7ff'],'very-rare':['Очень редкий','#d3a0ff'],legendary:['Легендарный','#ffce74']};
  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- async function request(url,options){const response=await fetch(url,options);if(response.redirected)throw Error('Войдите в панель мастера.');const data=await response.json();if(!response.ok)throw Error(data.error||'Не удалось загрузить добычу.');return data;}
+ async function request(url,options){
+ const token=location.pathname==='/player'?localStorage.getItem('player-invitation'):null;
+ const headers=new Headers(options?.headers);
+ if(token)headers.set('Authorization','Bearer '+token);
+ const response=await fetch(url,{...options,headers});if(response.redirected)throw Error('Войдите в панель мастера.');const data=await response.json();if(!response.ok)throw Error(data.error||'Не удалось загрузить добычу.');return data;}
  window.LootUI={rarities,esc,request};
  const dialog=document.createElement('dialog');dialog.className='loot-dialog';dialog.lang='ru';dialog.setAttribute('translate','no');dialog.setAttribute('aria-label','Добыча');
  dialog.innerHTML='<h2>Сундуки и добыча</h2><div class="loot-actions"><button data-refresh>Обновить</button><button data-close>Закрыть</button></div><label>Получатель <select data-character aria-label="Получатель добычи"></select></label><p role="status"></p><div data-containers></div>';

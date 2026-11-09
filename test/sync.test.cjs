@@ -32,7 +32,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/characters',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:'{}'})).status,302);
   const login=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const cookie=login.headers.get('set-cookie').split(';')[0];
-  const ch=(await (await fetch(base+'/api/characters')).json()).characters[0];
+  const ch=(await (await fetch(base+'/api/characters',{headers:{Cookie:cookie}})).json()).characters[0];
   const invitationResponse=await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:ch.id})});
   assert.equal(invitationResponse.status,201);
   const invitation=await invitationResponse.json();
@@ -50,7 +50,18 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const rejection=message(rejected,m=>m.type==='ACCESS_REVOKED');
   rejected.send(JSON.stringify({action:'player-auth',token:invitation.token}));
   await rejection;
+  const playerToken=(await (await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:ch.id})})).json()).token;
+  assert.deepEqual((await (await fetch(base+'/api/characters')).json()).characters,[]);
+  const guest=await open();sockets.push(guest);
+  const emptyRoster=message(guest,m=>m.type==='CHARACTERS_UPDATE');
+  guest.send(JSON.stringify({action:'request-characters'}));
+  assert.deepEqual((await emptyRoster).characters,[]);
   const player=await open();sockets.push(player);
+  const authenticated=message(player,m=>m.type==='CHARACTERS_UPDATE');
+  player.send(JSON.stringify({action:'player-auth',token:playerToken}));
+  assert.deepEqual((await authenticated).characters.map(c=>c.id),[ch.id]);
+  const own=await fetch(base+'/api/characters',{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json());
+  assert.deepEqual(own.characters.map(c=>c.id),[ch.id]);
   player.send(JSON.stringify({action:'update-character',characterId:ch.id,patch:{hp:1}}));
   // Roundtrip through the same connection ensures the rejected write was processed.
   let next=message(player,m=>m.type==='CHARACTERS_UPDATE');player.send(JSON.stringify({action:'request-characters'}));
@@ -90,8 +101,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.ok(unchanged.characters.every(c=>c.name!=='Другой герой'));
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'characters.json'))).characters[0].hp,12);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentTokens[0].id,'other-token');
+  const otherToken=await fetch(base+'/api/player-access?game='+campaign.id,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:otherChar.id})}).then(r=>r.json());
+  assert.deepEqual((await fetch(base+'/api/characters?game='+campaign.id,{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json())).characters,[]);
   const otherReconnected=await open(undefined,campaign.id);sockets.push(otherReconnected);
-  next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,12);
+  next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'player-auth',token:otherToken.token}));assert.equal((await next).characters[0].hp,12);
   assert.ok(JSON.parse(fs.readFileSync(path.join(dir,'campaigns.json'))).some(c=>c.id===campaign.id));
 
   // DM-only notes: separate campaign/scene scopes and optimistic concurrency.
@@ -124,7 +137,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.match(assistantPayload.messages[1].content,/Другой сюжет/);assert.doesNotMatch(assistantPayload.messages[1].content,/Засада в лесу/);
   // Loot is private until revealed; one snapshot contains both stock and inventory.
   const lootHeaders={Cookie:cookie,'Content-Type':'application/json'};
-  const writeLoot=(url,method,body,asDm=true)=>fetch(base+url,{method,redirect:'manual',headers:asDm?lootHeaders:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const writeLoot=(url,method,body,asDm=true)=>fetch(base+url,{method,redirect:'manual',headers:asDm?lootHeaders:{'Content-Type':'application/json',Authorization:'Bearer '+playerToken},body:JSON.stringify(body)});
   const getLoot=async (suffix='',asDm=false)=>(await (await fetch(base+'/api/loot'+suffix,{headers:asDm?{Cookie:cookie}:{}})).json()).containers;
   assert.equal((await writeLoot('/api/loot','POST',{name:'Forbidden'},false)).status,302);
   const chest=await (await writeLoot('/api/loot','POST',{name:'Тайник',tokenId:'chest-one',mapKey:'forest'})).json();
@@ -144,7 +157,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const take={revision:filled.revision,itemId:filled.items[0].id,quantity:1,characterId:ch.id};
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:-1},false)).status,400);
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:4},false)).status,409);
-  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,characterId:otherChar.id},false)).status,404);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,characterId:otherChar.id},false)).status,403);
   const outcomes=await Promise.all([writeLoot('/api/loot/'+chest.id+'/take','POST',take,false),writeLoot('/api/loot/'+chest.id+'/take','POST',take,false)]);
   assert.deepEqual(outcomes.map(r=>r.status).sort(),[200,409]);
   assert.equal((await writeLoot('/api/loot/'+chest.id,'PUT',filled)).status,409,'stale editor cannot restore taken stock');
@@ -249,7 +262,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/characters/'+autoHero.id+'/advance',{method:'POST',headers:noteHeaders,body:JSON.stringify({fromLevel:1,level:2})})).status,409);
   const rested=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'short'})})).json();assert.equal(rested.resources[0].used,1);assert.equal(rested.hp,18);
   const longRest=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'long'})})).json();assert.equal(longRest.resources[0].used,0);assert.equal(longRest.hp,23);
-  player.close();const reconnected=await open();sockets.push(reconnected);next=message(reconnected,m=>m.type==='CHARACTERS_UPDATE');reconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,23);
+  player.close();const reconnected=await open();sockets.push(reconnected);next=message(reconnected,m=>m.type==='CHARACTERS_UPDATE');reconnected.send(JSON.stringify({action:'player-auth',token:playerToken}));assert.equal((await next).characters[0].hp,23);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'characters.json'))).characters[0].hp,23);
 
   const linksPath='/api/locations/links?game='+packedCampaign.id;
