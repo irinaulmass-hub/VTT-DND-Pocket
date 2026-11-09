@@ -4,10 +4,11 @@
   const size = 32;
   const limit = 8192;
   const tileLimit = 150000;
+  const objectLimit = 3000;
   const terrain = {
     grass: ['Трава', '#7e9b55'], dirt: ['Земля', '#aa875c'], path: ['Тропа', '#c8a371'],
     forest: ['Лес', '#3e6340'], water: ['Вода', '#477f89'], stone: ['Камень', '#909289'], wood: ['Доски', '#a06e47'],
-    denseForest: ['Густой лес', '#435537'],
+    denseForest: ['Густой лес', '#435537'], woodland: ['Лесная подстилка', '#737d54'],
     caveFloor: ['Пещерный пол', '#625e56'], mud: ['Грязь', '#705740'],
   };
   const props = {
@@ -48,6 +49,15 @@
       return { x: (prop.x+x)/2+.5, y: (prop.y+y)/2+.5, width, height };
     }
     return { x: prop.x + (width%2 ? .5 : 1), y: prop.y + (height%2 ? .5 : 1), width, height };
+  }
+  function cellBounds(prop) {
+    const { x, y, width, height } = footprint(prop);
+    return {
+      left: Math.ceil(x - width / 2 - .5),
+      right: Math.ceil(x + width / 2 - .5) - 1,
+      top: Math.ceil(y - height / 2 - .5),
+      bottom: Math.ceil(y + height / 2 - .5) - 1,
+    };
   }
   function structures(objects) {
     const walls = new Set();
@@ -123,7 +133,7 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, tileLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint };
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint, cellBounds };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

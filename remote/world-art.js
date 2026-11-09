@@ -47,7 +47,7 @@
   const surrounding = [...sides, ...corners];
   const sand = [144,134,103];
   const shallow = [104,151,147];
-  const baseMaterial = type => ['forest','denseForest','path'].includes(type) ? 'grass' : type;
+  const baseMaterial = type => ['forest','denseForest','woodland','path'].includes(type) ? 'grass' : type;
   function smooth(x) {
     x = Math.max(0, Math.min(1, x));
     return x*x*(3-2*x);
@@ -162,6 +162,78 @@
     }
     ctx.restore();
   }
+  const crowns = new Map();
+  const crownPalettes = [
+    ['#354333', '#586744', '#788554', '#a6a870'],
+    ['#384535', '#626d44', '#89935d', '#b0ad76'],
+    ['#344538', '#526c50', '#718b64', '#a3ad7c'],
+    ['#453f2b', '#766d41', '#958751', '#bbaa70'],
+  ];
+
+  function crownShape(ctx, x, y, radius, seed, fill, outline) {
+    const rnd = random(seed);
+    const points = Array.from({ length: 12 }, (_, index) => {
+      const angle = index * Math.PI / 6;
+      const edge = radius * (.81 + rnd() * .24);
+      return [x + Math.cos(angle) * edge, y + Math.sin(angle) * edge * .89];
+    });
+    const [firstX, firstY] = points[0], [lastX, lastY] = points.at(-1);
+    ctx.beginPath();
+    ctx.moveTo((firstX + lastX) / 2, (firstY + lastY) / 2);
+    for (const [index, [px, py]] of points.entries()) {
+      const [nx, ny] = points[(index + 1) % points.length];
+      ctx.quadraticCurveTo(px, py, (px + nx) / 2, (py + ny) / 2);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (outline) {
+      ctx.lineWidth = .014;
+      ctx.strokeStyle = outline;
+      ctx.stroke();
+    }
+  }
+
+  function paintCrown(ctx, prop) {
+    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107) ^ (prop.turn << 3)) >>> 0) % 32;
+    const key = prop.kind + variant;
+    let sprite = crowns.get(key);
+    if (!sprite) {
+      sprite = document.createElement('canvas');
+      sprite.width = sprite.height = 192;
+      const art = sprite.getContext('2d');
+      art.setTransform(80, 0, 0, 80, 96, 88);
+      const shrub = prop.kind === 'bush';
+      const rnd = random(variant * 71 + (shrub ? 29 : 0));
+      const radius = (shrub ? .31 : .67) + rnd() * (shrub ? .15 : .21);
+      const palette = crownPalettes[(variant + (shrub ? 1 : 0)) % crownPalettes.length];
+
+      art.shadowColor = '#232d2266';
+      art.shadowBlur = 8;
+      ellipse(art, radius * .31, radius * .42, radius * .95, radius * .65, '#232d2255');
+      art.shadowBlur = 0;
+      if (!shrub) ellipse(art, .02, radius * .71, .05, .10, '#554433');
+      crownShape(art, 0, 0, radius, variant, palette[0], '#303b30');
+      const lobes = shrub ? 4 : 6;
+      for (let i = 0; i < lobes; i++) {
+        const angle = i * Math.PI * 2 / lobes + rnd() * .47;
+        const x = Math.cos(angle) * radius * .42, y = Math.sin(angle) * radius * .37;
+        crownShape(art, x, y, radius * (.43 + rnd() * .20), variant * 17 + i,
+          palette[x + y < .05 ? 2 : 1], '#303b3055');
+      }
+      crownShape(art, -radius * .12, -radius * .14, radius * .53, variant + 37, palette[2], '#35433255');
+      for (let i = 0; i < 20; i++) {
+        const angle = rnd() * Math.PI * 2, distance = Math.sqrt(rnd()) * radius * .72;
+        const x = Math.cos(angle) * distance, y = Math.sin(angle) * distance * .89;
+        leaf(art, x, y, angle, radius * (.08 + rnd() * .15), x + y < 0 ? palette[3] : palette[1]);
+      }
+      crowns.set(key, sprite);
+    }
+    const shiftX = ((variant % 7) - 3) * .038;
+    const shiftY = ((variant % 5) - 2) * .045;
+    ctx.drawImage(sprite, -1.2 + shiftX, -1.1 + shiftY, 2.4, 2.4);
+  }
+
   function roof(ctx, width, height, tavern) {
     const w=width/2, h=height/2;
     polygon(ctx,[[-w,-h+.06],[w-.12,-h],[w,h-.08],[-w+.08,h]],'#48382d');
@@ -198,7 +270,7 @@
     const ctx = canvas.getContext('2d');
     ctx.scale(64,64);
     const forest = type === 'forest' || type === 'denseForest';
-    ctx.fillStyle = colors[type === 'path' || forest ? 'grass' : type] || terrain[type][1];
+    ctx.fillStyle = colors[type === 'path' || type === 'woodland' || forest ? 'grass' : type] || terrain[type][1];
     ctx.fillRect(0,0,1,1);
     if (type === 'grass' || type === 'path' || type === 'forest' || type === 'dirt') {
       ellipse(ctx,.29+seed*.06,.33,.22,.17,'#d9c28c18');
@@ -230,6 +302,14 @@
         foliage(ctx,.75,.26,.24,seed*13+53);
       }
       if (!cover) foliage(ctx,.5+dx*.30,.5+dy*.30,.14,seed+7,true);
+    } else if (type === 'woodland') {
+      const rnd = random(seed * 211 + 19);
+      ctx.fillStyle = '#394d3720';
+      ctx.fillRect(0, 0, 1, 1);
+      for (let i = 0; i < 13; i++) {
+        const x = .08 + rnd() * .84, y = .08 + rnd() * .84;
+        leaf(ctx, x, y, rnd() * Math.PI * 2, .02 + rnd() * .045, i % 3 ? '#b2a36a70' : '#3e503d70');
+      }
     } else if (type === 'caveFloor' || type === 'mud') {
       const rnd = random(seed*65+19);
       for (let i=0;i<9;i++) {
@@ -361,7 +441,8 @@
     ctx.save();
     const center = WorldMap.footprint(prop);
     ctx.translate(center.x,center.y);
-    ctx.rotate((prop.kind === 'door' ? (layout?.doorAxis(prop) ?? prop.turn) : prop.turn)*Math.PI/2);
+    const vegetation = prop.kind === 'tree' || prop.kind === 'bush';
+    if (!vegetation) ctx.rotate((prop.kind === 'door' ? (layout?.doorAxis(prop) ?? prop.turn) : prop.turn)*Math.PI/2);
     if (prop.hidden) ctx.globalAlpha=.65;
     const decor = window.WorldDecor.paint[prop.kind];
     if (window.WorldSprites?.has(prop.kind)) {
@@ -373,9 +454,8 @@
       ctx.restore();
     } else if (prop.kind==='door') {
       door(ctx, prop.open);
-    } else if (prop.kind==='tree' || prop.kind==='bush') {
-      const seed = ((Math.imul(prop.x,53)^Math.imul(prop.y,107))>>>0)%17;
-      foliage(ctx,0,0,prop.kind==='tree'?.59:.47,seed,prop.kind==='bush');
+    } else if (vegetation) {
+      paintCrown(ctx, prop);
     } else {
       const building=prop.kind==='house'||prop.kind==='tavern';
       ctx.fillStyle='#272d2475';ctx.fillRect(-w/2+.10,-h/2+.16,w,h);

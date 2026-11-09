@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createRandomV1, validGenerators, generatePath } = require('../remote/world-generators');
+const { createRandomV1, validGenerators, generatePath, generateForest } = require('../remote/world-generators');
 
-const { get, size, valid } = require('../remote/world-model');
+const { get, set, size, valid, cellBounds, objectLimit } = require('../remote/world-model');
 
 const road = {
   id: 'road-1', kind: 'path', version: 1, seed: 0,
@@ -112,4 +112,52 @@ test('Path bends are reproducible and excessive routes fail before applying', ()
   assert.throws(() => generatePath({ ...road, params: { ...road.params, width: 1,
     points: Array.from({ length: 200 }, (_, index) => ({ x: index % 2 ? 1000 : 0, y: 0 })),
   } }), /Линия слишком велика/);
+});
+
+const forest = {
+  id: 'west-grove', kind: 'forest', version: 1, seed: 36,
+  params: { density: 85, points: [{ x: -10, y: -8 }, { x: 12, y: -8 }, { x: 12, y: 0 },
+    { x: 0, y: 0 }, { x: 0, y: 13 }, { x: -10, y: 13 }] },
+};
+
+test('Forest Plot reproduces groves in a concave contour and preserves existing features', () => {
+  const map = { chunks: {}, objects: [{ id: 'home', kind: 'house', x: -4, y: 5, turn: 0 }] };
+  set(map.chunks, -1, 0, 'water');
+  set(map.chunks, -1, 1, 'path');
+  set(map.chunks, -1, 2, 'stone');
+  const original = structuredClone(map);
+  const first = generateForest(forest, map);
+  assert.ok(validGenerators([forest, road]));
+  assert.deepEqual(generateForest(forest, map), first);
+  assert.notDeepEqual(generateForest({ ...forest, seed: 3 }, map).plants, first.plants);
+  assert.ok(first.plants.some(prop => prop.kind === 'tree'));
+  assert.ok(first.plants.some(prop => prop.kind === 'bush'));
+  assert.equal(new Set(first.plants.map(prop => prop.id)).size, first.plants.length);
+  assert.equal(get(first.chunks, 2, 2), undefined, 'outside the concave boundary');
+  assert.equal(get(first.chunks, -7, 3), 'woodland');
+  for (const [x, y] of [[-1, 0], [-1, 1], [-1, 2], [-4, 5], [-3, 6]]) {
+    assert.equal(get(first.chunks, x, y), undefined);
+    assert.ok(first.plants.every(plant => plant.x !== x || plant.y !== y));
+  }
+  for (const plant of first.plants) {
+    const bounds = cellBounds(map.objects[0]);
+    assert.ok(plant.x < bounds.left || plant.x > bounds.right || plant.y < bounds.top || plant.y > bounds.bottom);
+    assert.equal(get(first.chunks, plant.x, plant.y), 'woodland');
+  }
+  assert.deepEqual(map, original);
+  const applied = { chunks: { ...map.chunks }, objects: [...map.objects, ...first.plants] };
+  for (const [key, cells] of Object.entries(first.chunks)) applied.chunks[key] = { ...applied.chunks[key], ...cells };
+  assert.deepEqual(generateForest(forest, applied).plants, [], 'reapplying the same plot adds no duplicate plants');
+});
+
+test('Forest Plot rejects invalid contours and respects the object limit', () => {
+  const withParams = patch => ({ ...forest, params: { ...forest.params, ...patch } });
+  for (const invalid of [
+    withParams({ density: 101 }),
+    withParams({ points: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 5, y: 0 }] }),
+    withParams({ points: [{ x: 0, y: 0 }, { x: 9, y: 9 }, { x: 0, y: 8 }, { x: 6, y: 0 }] }),
+    withParams({ points: [{ x: 0, y: 0 }, { x: 64, y: 0 }, { x: 0, y: 64 }] }),
+  ]) assert.equal(validGenerators([invalid]), false);
+  const objects = Array.from({ length: objectLimit }, (_, i) => ({ id: 'tree-' + i, kind: 'tree', x: 100 + i, y: 100, turn: 0 }));
+  assert.throws(() => generateForest(forest, { chunks: {}, objects }), /лимит объектов/);
 });

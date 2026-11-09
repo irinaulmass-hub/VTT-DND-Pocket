@@ -7,17 +7,7 @@ const barriers = new Set(['wall', 'palisade', 'fence']);
 const solid = new Set(['house', 'tavern', 'barn', 'well', 'boulder', 'tree', 'wagon', 'wreckedWagon']);
 const sightRadius = 4;
 
-const { sceneScope, locationMapId } = map;
-
-function cellBounds(prop) {
-  const { x, y, width, height } = map.footprint(prop);
-  return {
-    left: Math.ceil(x - width / 2 - .5),
-    right: Math.ceil(x + width / 2 - .5) - 1,
-    top: Math.ceil(y - height / 2 - .5),
-    bottom: Math.ceil(y + height / 2 - .5) - 1,
-  };
-}
+const { sceneScope, locationMapId, cellBounds } = map;
 
 function covers(prop, x, y) {
   const bounds = cellBounds(prop);

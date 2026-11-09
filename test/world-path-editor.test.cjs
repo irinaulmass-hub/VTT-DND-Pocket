@@ -6,8 +6,10 @@ const vm = require('node:vm');
 const world = require('../remote/world-model');
 const { generatePath } = require('../remote/world-generators');
 
-test('the master can preview, apply, undo, save, and reopen a Path recipe', async () => {
+test('the master can preview, apply, undo, save, and reopen Path and Forest Plot recipes', async () => {
   const tool = { dataset: { tool: 'generate-path' }, setAttribute() {} };
+  const forestTool = { dataset: { tool: 'generate-forest' }, setAttribute() {} };
+  let nextId = 0;
   class Element {
     nodes = new Map();
     elements = { parentMap: { value: '' }, toMapId: { value: '', replaceChildren() {} }, elevation: {} };
@@ -17,7 +19,7 @@ test('the master can preview, apply, undo, save, and reopen a Path recipe', asyn
       if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
       return this.nodes.get(selector);
     }
-    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool] : []; }
+    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool, forestTool] : []; }
     replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
     setAttribute() {}
     toggleAttribute() {}
@@ -42,7 +44,7 @@ test('the master can preview, apply, undo, save, and reopen a Path recipe', asyn
       getElementById: id => root.querySelector(id),
       body: { dataset: {} },
     },
-    crypto: { randomUUID: () => 'path-id' }, characterRoster: [],
+    crypto: { randomUUID: () => 'recipe-' + (++nextId) }, characterRoster: [],
     MutationObserver: class { observe() {} },
     Option: class { constructor(label, value) { Object.assign(this, { label, value }); } },
     confirm: () => true,
@@ -124,4 +126,35 @@ test('the master can preview, apply, undo, save, and reopen a Path recipe', asyn
   control('path-apply').onclick();
   await control('save').onclick();
   assert.equal(writes.length, 3, 'reapplying the same saved line creates no duplicate or write');
+
+  const beforeForest = structuredClone(saved);
+  forestTool.onclick();
+  control('forest-density').value = '90';
+  for (const [x, y] of [[-7, -5], [8, -5], [8, 6], [-7, 6]]) canvas.click(x, y);
+  assert.equal(canvas.outline().length, 4);
+  control('path-preview').onclick();
+  assert.equal(world.get(rendered.chunks, -1, 0), 'water');
+  assert.ok(rendered.objects.some(prop => prop.kind === 'tree'));
+  assert.deepEqual(saved, beforeForest, 'a forest preview leaves the saved draft alone');
+
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(saved.generators[1].kind, 'forest');
+  assert.ok(saved.objects.length > 0);
+  const savedForest = structuredClone(saved);
+  control('undo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.chunks, beforeForest.chunks);
+  assert.deepEqual(saved.objects, beforeForest.objects);
+  assert.deepEqual(saved.generators, beforeForest.generators);
+  control('redo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.objects, savedForest.objects);
+  await reopen();
+  control('path-saved').value = savedForest.generators[1].id;
+  control('path-saved').onchange();
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(writes.length, 6, 'a saved forest does not generate a second set of plants');
 });

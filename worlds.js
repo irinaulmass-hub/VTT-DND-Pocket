@@ -13,7 +13,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
-  const { tileLimit } = map;
+  const { tileLimit, objectLimit } = map;
 
   const movement = createWorldMovement(store, gameFile);
   const discoveries = createWorldDiscoveries(gameFile);
@@ -82,7 +82,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   }
 
   function validMap(body) {
-    if (!object(body?.chunks) || !Array.isArray(body.objects) || body.objects.length > 3000) return false;
+    if (!object(body?.chunks) || !Array.isArray(body.objects) || body.objects.length > objectLimit) return false;
     if (!validChunks(body.chunks)) return false;
     const ids = new Set();
     return body.objects.every(prop => {

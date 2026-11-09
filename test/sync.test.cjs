@@ -458,12 +458,19 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     id:'road-main',kind:'path',version:1,seed:0,
     params:{terrain:'path',width:3,points:[{x:-33,y:0},{x:32,y:1}]},
   };
-  world.generators=[roadRecipe];
+  const forestRecipe={
+    id:'forest-north',kind:'forest',version:1,seed:39,
+    params:{density:78,points:[{x:-76,y:-55},{x:-65,y:-55},{x:-65,y:-45},{x:-76,y:-45}]},
+  };
+  const forestPlot=require('../remote/world-generators').generateForest(forestRecipe,world);
+  for (const [key,cells] of Object.entries(forestPlot.chunks)) world.chunks[key]={...world.chunks[key],...cells};
+  world.objects.push(...forestPlot.plants);
+  world.generators=[roadRecipe,forestRecipe];
   const invalidRecipe={...roadRecipe,version:2};
   assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidRecipe]})).status,400);
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
   assert.equal(savedWorld.revision,world.revision+1,'invalid recipes do not consume the draft revision');
-  assert.deepEqual(savedWorld.generators,[roadRecipe]);
+  assert.deepEqual(savedWorld.generators,world.generators);
   assert.deepEqual(savedWorld.chunks,world.chunks,'saving a recipe does not paint the map');
   assert.equal((await fetch(worldBase+'/'+world.id+worldGame,{redirect:'manual'})).status,302);
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
@@ -773,13 +780,13 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(updatedDraft.chunks,0,0),'water');
   assert.equal(updatedDraft.chunks['7,7'],undefined);
   assert.deepEqual(updatedDraft.objects,savedWorld.objects);
-  assert.deepEqual(updatedDraft.generators,[roadRecipe],'patching chunks preserves generator metadata');
+  assert.deepEqual(updatedDraft.generators,world.generators,'patching chunks preserves generator metadata');
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='secret-marker'),{x:29,y:0});
   updatedDraft.objects.find(prop=>prop.id==='another-secret').x=13;
   delete updatedDraft.generators;
   const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
-  assert.deepEqual(editedWorld.generators,[roadRecipe],'an older editor may omit generator metadata');
+  assert.deepEqual(editedWorld.generators,world.generators,'an older editor may omit generator metadata');
   assert.equal(editedWorld.revision,savedWorld.revision+2);
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
@@ -838,7 +845,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const reopenDraft=id=>fetch(worldBase+'/'+id+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
   assert.deepEqual((await reopenDraft(legacyId)).generators,[roadRecipe],'import preserves the legacy draft recipe');
-  assert.deepEqual((await reopenDraft(world.id)).generators,[roadRecipe],'the recipe survives server restart');
+  const reopenedWorld=await reopenDraft(world.id);
+  assert.deepEqual(reopenedWorld.generators,world.generators,'both recipes survive server restart');
+  assert.equal(tiles.get(reopenedWorld.chunks,-76,-55),'woodland');
+  assert.deepEqual(reopenedWorld.objects.filter(prop=>prop.id.startsWith('forest-')),forestPlot.plants);
   const resumedWorld=await tableWorld();
   assert.deepEqual(await tableStatus(),savedWorldStatus,'the projection version persists across server restart');
   assert.deepEqual(resumedWorld.version,savedWorldStatus.version);

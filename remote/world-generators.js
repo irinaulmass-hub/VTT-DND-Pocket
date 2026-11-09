@@ -1,13 +1,16 @@
 'use strict';
 
 ((root) => {
-  const { limit, valid, get, set } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
+  const { limit, objectLimit, valid, get, set, cellBounds } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
 
   const seedMax = 0xffffffff;
   const maxRecipes = 128;
   const maxPathPoints = 256;
   const maxPathCells = 16384;
   const maxPathSteps = 65536;
+  const maxForestPoints = 64;
+  const maxForestArea = 4096;
+  const forestGround = new Set([undefined, 'grass', 'forest', 'denseForest', 'woodland']);
 
   function hasFields(value, fields) {
     return value !== null && typeof value === 'object' && !Array.isArray(value) &&
@@ -34,10 +37,53 @@
     return true;
   }
 
+  function forestBounds(points) {
+    const xs = points.map(point => point.x), ys = points.map(point => point.y);
+    return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
+  }
+
+  const orientation = (a, b, c) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+
+  function crossing(a, b, c, d) {
+    return Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x)) <= Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) &&
+      Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y)) <= Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) &&
+      orientation(a, b, c) * orientation(a, b, d) <= 0 && orientation(c, d, a) * orientation(c, d, b) <= 0;
+  }
+
+  function validForestParams(params) {
+    if (!hasFields(params, ['density', 'points']) || !Number.isInteger(params.density) ||
+        params.density < 10 || params.density > 100 || !Array.isArray(params.points) ||
+        params.points.length < 3 || params.points.length > maxForestPoints) return false;
+    const seen = new Set();
+    for (const point of params.points) {
+      if (!hasFields(point, ['x', 'y']) || !valid(point.x) || !valid(point.y)) return false;
+      const key = point.x + ',' + point.y;
+      if (seen.has(key)) return false;
+      seen.add(key);
+    }
+    const { left, right, top, bottom } = forestBounds(params.points);
+    if ((right - left + 1) * (bottom - top + 1) > maxForestArea) return false;
+    const twiceArea = params.points.reduce((area, point, index) => {
+      const next = params.points[(index + 1) % params.points.length];
+      return area + point.x * next.y - point.y * next.x;
+    }, 0);
+    if (!twiceArea) return false;
+    const { points } = params;
+    for (let i = 0; i < points.length; i++) {
+      for (let j = i + 2; j < points.length; j++) {
+        if (i === 0 && j === points.length - 1) continue;
+        if (crossing(points[i], points[i + 1], points[j], points[(j + 1) % points.length])) return false;
+      }
+    }
+    return true;
+  }
+
   function validRecipe(recipe) {
     return hasFields(recipe, ['id', 'kind', 'version', 'seed', 'params']) &&
       typeof recipe.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(recipe.id) &&
-      recipe.kind === 'path' && recipe.version === 1 && validSeed(recipe.seed) && validPathParams(recipe.params);
+      recipe.version === 1 && validSeed(recipe.seed) &&
+      ((recipe.kind === 'path' && validPathParams(recipe.params)) ||
+       (recipe.kind === 'forest' && validForestParams(recipe.params)));
   }
 
   function validGenerators(recipes) {
@@ -84,7 +130,7 @@
   }
 
   function generatePath(recipe) {
-    if (!validRecipe(recipe)) throw new RangeError('Проверь точки, ширину и seed линии');
+    if (recipe?.kind !== 'path' || !validRecipe(recipe)) throw new RangeError('Проверь точки, ширину и seed линии');
     const { points, terrain, width } = recipe.params;
     const random = createRandomV1(recipe.seed);
     const radius = (width - 1) / 2;
@@ -132,7 +178,70 @@
     return { chunks, count };
   }
 
-  const api = { validGenerators, createRandomV1, generatePath, maxPathPoints };
+  function contains(points, x, y) {
+    let inside = false;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i], b = points[(i + 1) % points.length];
+      const cross = (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x);
+      if (!cross && x >= Math.min(a.x, b.x) && x <= Math.max(a.x, b.x) &&
+          y >= Math.min(a.y, b.y) && y <= Math.max(a.y, b.y)) return true;
+      if ((a.y > y) !== (b.y > y) && x < a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y)) inside = !inside;
+    }
+    return inside;
+  }
+
+  function generateForest(recipe, draft) {
+    if (recipe?.kind !== 'forest' || !validRecipe(recipe)) {
+      throw new RangeError('Проверь seed, плотность и контур. Участок должен занимать до 4096 клеток по габаритам.');
+    }
+    const { points, density } = recipe.params;
+    const { left, right, top, bottom } = forestBounds(points);
+    const occupied = {};
+    const objectIds = new Set();
+    for (const prop of draft.objects) {
+      objectIds.add(prop.id);
+      const bounds = cellBounds(prop);
+      for (let row = Math.max(top, bounds.top); row <= Math.min(bottom, bounds.bottom); row++) {
+        for (let col = Math.max(left, bounds.left); col <= Math.min(right, bounds.right); col++) set(occupied, col, row, prop.kind);
+      }
+    }
+
+    const chunks = {}, plants = [];
+    const random = createRandomV1(recipe.seed);
+    const grove = (x, y) => {
+      let hash = Math.imul(x, 0x9e3779b1) ^ Math.imul(y, 0x85ebca77) ^ recipe.seed;
+      hash = Math.imul(hash ^ (hash >>> 16), 0x7feb352d);
+      return ((hash ^ (hash >>> 15)) >>> 0) / 0x100000000;
+    };
+    const prefix = Array.from(recipe.id).reduce((hash, letter) =>
+      Math.imul(hash ^ letter.charCodeAt(0), 16777619), 2166136261) >>> 0;
+    let count = 0;
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+      const roll = random(), turn = Math.floor(random() * 4);
+      if (!contains(points, x, y) || !forestGround.has(get(draft.chunks, x, y)) || get(occupied, x, y)) continue;
+      set(chunks, x, y, 'woodland');
+      count++;
+      const cx = Math.floor(x / 7), cy = Math.floor(y / 7);
+      const fx = x / 7 - cx, fy = y / 7 - cy;
+      const north = grove(cx, cy) * (1 - fx) + grove(cx + 1, cy) * fx;
+      const south = grove(cx, cy + 1) * (1 - fx) + grove(cx + 1, cy + 1) * fx;
+      const cover = north * (1 - fy) + south * fy;
+      const chance = density / 100 * (.04 + .93 * cover);
+      if (roll >= chance) continue;
+      const nearTree = get(occupied, x - 1, y) === 'tree' || get(occupied, x, y - 1) === 'tree';
+      const kind = roll < chance * .77 && !nearTree ? 'tree' : 'bush';
+      const id = 'forest-' + prefix.toString(36) + '-' + x + '_' + y;
+      if (objectIds.has(id)) continue;
+      if (draft.objects.length + plants.length >= objectLimit) {
+        throw new RangeError('Лес превысит лимит объектов. Уменьши плотность или размер участка.');
+      }
+      plants.push({ id, kind, x, y, turn, hidden: false });
+      set(occupied, x, y, kind);
+    }
+    return { chunks, count, plants };
+  }
+
+  const api = { validGenerators, createRandomV1, generatePath, generateForest, maxPathPoints, maxForestPoints };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;
 })(globalThis);

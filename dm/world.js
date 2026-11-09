@@ -2,7 +2,7 @@
 
 (() => {
   const { size, tileLimit, terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
-  const { generatePath, maxPathPoints, validGenerators } = window.WorldGenerators;
+  const { generatePath, generateForest, maxPathPoints, maxForestPoints, validGenerators } = window.WorldGenerators;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
   editor.className = 'book-widget book-world-editor';
@@ -42,6 +42,7 @@
         <div class="book-toolbar">
           <button class="book-button" data-tool="pan">Рука</button>
           <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
+          <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
           <button class="book-button" data-tool="select">Двигать объекты</button>
           <button class="book-button" data-tool="delete-object">Удалять объекты</button>
@@ -49,15 +50,16 @@
           <button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
         </div>
-        <section data-world-path hidden aria-label="Генератор дорог и рек">
+        <section data-world-path hidden aria-label="Параметры генератора">
           <div class="book-toolbar">
-            <select class="book-select" data-world-path-saved aria-label="Сохранённый рецепт Path"></select>
-            <label>Покрытие <select class="book-select" data-world-path-terrain>
+            <select class="book-select" data-world-path-saved aria-label="Сохранённый рецепт"></select>
+            <label data-world-path-terrain-label>Покрытие <select class="book-select" data-world-path-terrain>
               <option value="path">Дорога</option><option value="water">Река</option>
             </select></label>
-            <label>Ширина <select class="book-select" data-world-path-width>
+            <label data-world-path-width-label>Ширина <select class="book-select" data-world-path-width>
               ${[1, 3, 5, 7, 9, 11, 13, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
             </select></label>
+            <label data-world-forest-density-label hidden>Плотность <input class="book-select" type="number" min="10" max="100" step="1" value="65" data-world-forest-density> %</label>
             <label>Seed <input class="book-select" type="number" min="0" max="4294967295" step="1" value="0" data-world-path-seed></label>
           </div>
           <div class="book-toolbar">
@@ -113,39 +115,47 @@
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   const undo = [], redo = [];
   let availableMaps = [];
-  let pathPoints = [], pathPreview = null;
+  let generatorPoints = [], generatorPreview = null;
+  const generatorKind = () => tool === 'generate-forest' ? 'forest' : 'path';
 
-  function paintPathControls() {
-    e('path').hidden = tool !== 'generate-path';
+  function paintGeneratorControls() {
+    e('path').hidden = tool !== 'generate-path' && tool !== 'generate-forest';
     if (e('path').hidden) return;
+    const kind = generatorKind();
+    e('path-terrain-label').hidden = e('path-width-label').hidden = kind === 'forest';
+    e('forest-density-label').hidden = kind !== 'forest';
     const saved = e('path-saved');
     const selectedId = saved.value;
-    const recipes = (draft.generators || []).filter(recipe => recipe.kind === 'path' && recipe.version === 1);
-    saved.replaceChildren(new Option('Новая линия', ''), ...recipes.map((recipe, index) =>
-      new Option((recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
+    const recipes = (draft.generators || []).filter(recipe => recipe.kind === kind && recipe.version === 1);
+    saved.replaceChildren(new Option(kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
+      new Option((kind === 'forest' ? 'Лес' : recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
         ' · seed ' + recipe.seed, recipe.id)));
     if (recipes.some(recipe => recipe.id === selectedId)) saved.value = selectedId;
-    e('path-count').textContent = 'Точек на линии: ' + pathPoints.length;
-    e('path-preview').disabled = pathPoints.length < 2;
-    e('path-apply').disabled = !pathPreview;
+    e('path-count').textContent = 'Опорных точек: ' + generatorPoints.length;
+    e('path-preview').disabled = generatorPoints.length < (kind === 'forest' ? 3 : 2);
+    e('path-apply').disabled = !generatorPreview;
   }
 
-  function clearPathPreview() {
-    pathPreview = null;
+  function clearGeneratorPreview() {
+    generatorPreview = null;
     e('path-saved').value = '';
   }
 
-  function previewPath() {
-    if (!draft || busy || tool !== 'generate-path' || pathPoints.length < 2) return;
-    pathPreview = null;
+  function previewGenerator() {
+    if (!draft || busy || e('path').hidden || e('path-preview').disabled) return;
+    generatorPreview = null;
     try {
       const savedId = e('path-saved').value;
+      const kind = generatorKind();
+      const forest = kind === 'forest';
       const recipe = {
         id: savedId || crypto.randomUUID?.() || 'path-' + Date.now() + '-' + Math.random().toString(36).slice(2),
-        kind: 'path', version: 1, seed: e('path-seed').valueAsNumber,
-        params: { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: pathPoints },
+        kind, version: 1, seed: e('path-seed').valueAsNumber,
+        params: forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
+          { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: generatorPoints },
       };
-      const { chunks, count } = generatePath(recipe);
+      const { chunks, count, plants = [] } = forest ? generateForest(recipe, draft) : generatePath(recipe);
+      if (!count && !savedId) throw new RangeError('В контуре нет свободной земли для леса');
       const generators = draft.generators || [];
       const nextGenerators = savedId ? generators : [...generators, recipe];
       if (!validGenerators(nextGenerators)) throw new RangeError('В черновике уже 128 рецептов');
@@ -165,8 +175,10 @@
       }
       const total = Object.values(draft.chunks).reduce((sum, cells) => sum + Object.keys(cells).length, 0);
       if (total + added > tileLimit) throw new RangeError('Превышен лимит тайлов на карте');
-      pathPreview = { id: recipe.id, chunks, tiles, generators: { before: generators, after: nextGenerators } };
-      status('Предпросмотр: ' + count + ' кл. Примени его, чтобы добавить линию в черновик.');
+      const objects = plants.length ? { before: draft.objects, after: [...draft.objects, ...plants] } : null;
+      generatorPreview = { id: recipe.id, chunks, tiles, objects, generators: { before: generators, after: nextGenerators } };
+      status('Предпросмотр · ' + count + ' кл.' + (forest ? ' · растений ' + plants.length : '') +
+        '. Примени его, чтобы добавить результат в черновик.');
     } catch (error) {
       status(error.message);
     }
@@ -175,12 +187,12 @@
 
   function paint() {
     if (!draft) return;
-    if (pathPreview) {
+    if (generatorPreview) {
       const chunks = { ...draft.chunks };
-      for (const [key, cells] of Object.entries(pathPreview.chunks)) chunks[key] = { ...chunks[key], ...cells };
-      editorView.data({ ...draft, chunks });
+      for (const [key, cells] of Object.entries(generatorPreview.chunks)) chunks[key] = { ...chunks[key], ...cells };
+      editorView.data({ ...draft, chunks, objects: generatorPreview.objects?.after || draft.objects });
     } else editorView.data(draft);
-    paintPathControls();
+    paintGeneratorControls();
     const object = draft.objects.find(item => item.id === selected);
     e('object').hidden = !object;
     if (object) {
@@ -193,10 +205,10 @@
     editor.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === tool)));
   }
   function apply(change, backwards = false) {
-    if (change.objects) draft.objects = backwards ? change.before : change.after;
-    else for (const tile of change.tiles) set(draft.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
+    if (change.objects) draft.objects = backwards ? change.objects.before : change.objects.after;
+    for (const tile of change.tiles || []) set(draft.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
     if (change.generators) draft.generators = backwards ? change.generators.before : change.generators.after;
-    pathPreview = null;
+    generatorPreview = null;
     dirty = true;
     status('Есть несохранённые изменения');
     paint();
@@ -207,7 +219,7 @@
     redo.length = 0;
     apply(change);
   }
-  function objects(after) { edit({ objects: true, before: draft.objects, after }); }
+  function objects(after) { edit({ objects: { before: draft.objects, after } }); }
   function updateSelected(patch) {
     if (!draft || busy || !draft.objects.some(item => item.id === selected)) return;
     objects(draft.objects.map(item => item.id === selected ? { ...item, ...patch } : item));
@@ -309,13 +321,15 @@
 
   function click(x, y, point) {
     if (!draft || busy) return;
-    if (tool === 'generate-path') {
-      const previous = pathPoints.at(-1);
-      if (previous?.x === x && previous.y === y) return;
-      if (pathPoints.length >= maxPathPoints) return status('На одной линии может быть не больше ' + maxPathPoints + ' точек');
-      pathPoints = [...pathPoints, { x, y }];
-      clearPathPreview();
-      status(pathPoints.length < 2 ? 'Укажи ещё одну точку на карте.' : 'Добавь ещё точки или нажми «Предпросмотр».');
+    if (tool === 'generate-path' || tool === 'generate-forest') {
+      const forest = generatorKind() === 'forest';
+      const maxPoints = forest ? maxForestPoints : maxPathPoints;
+      const usedPoints = forest ? generatorPoints : generatorPoints.slice(-1);
+      if (usedPoints.some(point => point.x === x && point.y === y)) return;
+      if (generatorPoints.length >= maxPoints) return status('Допустимо не больше ' + maxPoints + ' опорных точек');
+      generatorPoints = [...generatorPoints, { x, y }];
+      clearGeneratorPreview();
+      status(generatorPoints.length < (forest ? 3 : 2) ? 'Укажи ещё точки на карте.' : 'Добавь ещё точки или нажми «Предпросмотр».');
       paint();
       return;
     }
@@ -376,7 +390,8 @@
   }
   const editorView = createWorldView(e('canvas'), {
     grid: true, click, pan: () => tool === 'pan', selected: () => selected,
-    marks: () => tool === 'generate-path' ? pathPoints : first ? [first] : [],
+    marks: () => tool === 'generate-path' || tool === 'generate-forest' ? generatorPoints : first ? [first] : [],
+    outline: () => tool === 'generate-forest' ? generatorPoints : null,
     pickProp(x, y) {
       if (!draft || busy || tool !== 'select') return;
       const item = objectAt(x, y);
@@ -400,8 +415,8 @@
     draft = data;
     dirty = false;
     first = selected = undefined;
-    pathPoints = [];
-    clearPathPreview();
+    generatorPoints = [];
+    clearGeneratorPreview();
     undo.length = redo.length = 0;
     e('editor').hidden = false;
     transitionForm.reset();
@@ -467,8 +482,12 @@
     run(async () => open(await request('/api/worlds/' + encodeURIComponent(id))));
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
+    if (tool !== button.dataset.tool) {
+      generatorPoints = [];
+      clearGeneratorPreview();
+    }
     tool = button.dataset.tool;
-    pathPreview = null;
+    if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
     if (tool === 'generate-path') status('Укажи опорные точки на карте и нажми «Предпросмотр».');
     if (tool === 'transition') status('Нажми на исходную клетку перехода');
     if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
@@ -480,42 +499,45 @@
   e('path-saved').onchange = () => {
     if (!draft || busy) return;
     const recipe = (draft.generators || []).find(item => item.id === e('path-saved').value);
-    pathPoints = recipe?.params.points || [];
-    pathPreview = null;
+    generatorPoints = recipe?.params.points || [];
+    generatorPreview = null;
     if (recipe) {
-      e('path-terrain').value = recipe.params.terrain;
-      e('path-width').value = String(recipe.params.width);
+      if (recipe.kind === 'forest') e('forest-density').value = String(recipe.params.density);
+      else {
+        e('path-terrain').value = recipe.params.terrain;
+        e('path-width').value = String(recipe.params.width);
+      }
       e('path-seed').value = String(recipe.seed);
-      const [{ x, y }] = pathPoints;
+      const [{ x, y }] = generatorPoints;
       editorView.setCamera({ ...editorView.camera(), x: x + .5, y: y + .5 });
       status('Рецепт загружен. Нажми «Предпросмотр».');
     }
     paint();
   };
-  for (const field of ['path-terrain', 'path-width', 'path-seed']) {
+  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density']) {
     e(field).oninput = () => {
-      clearPathPreview();
-      if (pathPoints.length >= 2) status('Нажми «Предпросмотр» для обновлённой линии.');
+      clearGeneratorPreview();
+      if (generatorPoints.length >= 2) status('Нажми «Предпросмотр» для обновлённого участка.');
       paint();
     };
   }
   e('path-reset').onclick = () => {
     if (!draft || busy) return;
-    pathPoints = [];
-    clearPathPreview();
+    generatorPoints = [];
+    clearGeneratorPreview();
     status('Укажи новые опорные точки на карте.');
     paint();
   };
-  e('path-preview').onclick = previewPath;
+  e('path-preview').onclick = previewGenerator;
   e('path-apply').onclick = () => {
-    if (!draft || busy || !pathPreview) return;
-    const { id, tiles, generators } = pathPreview;
-    if (!tiles.length && generators.before === generators.after) {
-      pathPreview = null;
+    if (!draft || busy || !generatorPreview) return;
+    const { id, tiles, objects, generators } = generatorPreview;
+    if (!tiles.length && !objects && generators.before === generators.after) {
+      generatorPreview = null;
       paint();
-      return status('Линия уже есть в черновике.');
+      return status('Результат уже есть в черновике.');
     }
-    edit({ tiles, generators });
+    edit({ tiles, objects, generators });
     e('path-saved').value = id;
   };
   e('rect').onchange = () => { first = undefined; paint(); };
@@ -525,8 +547,8 @@
   e('delete').onclick = () => removeObject(selected);
   e('secret').onchange = () => updateSelected({ hidden: e('secret').checked });
   async function save() {
-    if (pathPreview) {
-      pathPreview = null;
+    if (generatorPreview) {
+      generatorPreview = null;
       paint();
     }
     if (!dirty) return;
