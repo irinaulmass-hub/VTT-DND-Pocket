@@ -346,6 +346,42 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(listing.status,200);
   assert.deepEqual((await listing.json()).worlds,[{id:world.id,name:world.name}]);
   assert.equal(fs.readFileSync(backup,'utf8'),'backup contents');
+  const positionBase=base+'/api/character-positions/';
+  const ownPositionUrl=base+'/api/player-position'+worldGame;
+  const positionUrl=id=>positionBase+encodeURIComponent(id)+worldGame;
+  const setPosition=(id,position,headers=noteHeaders)=>fetch(positionUrl(id),{
+    method:'PUT',headers,redirect:'manual',body:JSON.stringify(position),
+  });
+  const readPosition=(id,masterCookie)=>fetch(positionUrl(id),{headers:{Cookie:masterCookie}}).then(r=>r.json());
+  const readOwnPosition=token=>fetch(ownPositionUrl,{headers:{Authorization:'Bearer '+token}}).then(r=>r.json());
+  const firstPosition={worldId:world.id,sceneId:'overworld',floorId:'ground',x:-33,y:31};
+  assert.deepEqual(await readPosition(otherChar.id,cookie),{position:null});
+  assert.deepEqual(await readOwnPosition(otherToken.token),{position:null});
+  assert.equal((await fetch(ownPositionUrl)).status,401);
+  assert.equal((await fetch(ownPositionUrl,{headers:{Authorization:'Bearer '+playerToken}})).status,401);
+  assert.equal((await fetch(positionUrl(otherChar.id),{redirect:'manual'})).status,302);
+  assert.equal((await setPosition(otherChar.id,firstPosition,{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token})).status,302);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:0.5})).status,400);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,floorId:'upstairs'})).status,404);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,sceneId:'unknown'})).status,404);
+  assert.equal((await setPosition(ch.id,firstPosition)).status,404);
+  assert.equal((await fetch(positionBase+encodeURIComponent(ch.id),{method:'PUT',headers:noteHeaders,body:JSON.stringify(firstPosition)})).status,404);
+  const secondHero=await fetch(base+'/api/characters'+worldGame,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify({name:'Разведчик'}),
+  }).then(r=>r.json());
+  const secondWorld=await worldWrite('','POST',{name:'Северный мир'}).then(r=>r.json());
+  const secondPosition={...firstPosition,worldId:secondWorld.id,x:32,y:-1};
+  assert.equal((await setPosition(secondHero.id,secondPosition)).status,200);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:10})).status,200);
+  assert.equal((await setPosition(otherChar.id,firstPosition)).status,200);
+  const firstSaved={position:{characterId:otherChar.id,...firstPosition}};
+  const secondSaved={position:{characterId:secondHero.id,...secondPosition}};
+  assert.deepEqual(await readOwnPosition(otherToken.token),firstSaved);
+  assert.deepEqual(await readPosition(secondHero.id,cookie),secondSaved);
+  assert.equal((await fetch(ownPositionUrl+'&characterId='+secondHero.id,{
+    headers:{Authorization:'Bearer '+otherToken.token},
+  }).then(r=>r.json())).position.characterId,otherChar.id);
+
   const tiles=require('../remote/world-model');
   tiles.set(world.chunks,-70,-41,'path');
   world.chunks['7,7']={0:'dirt'};
@@ -357,7 +393,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
   await next;
   const tableWorld=()=>fetch(worldBase+'/table'+worldGame+'&chunks=0%2C0').then(r=>r.json());
-  assert.deepEqual((await tableWorld()).chunks['0,0'],{});
+  const freshTable=await tableWorld();
+  assert.deepEqual(freshTable.chunks['0,0'],{});
+  assert.deepEqual(freshTable.tokens,[]);
+  assert.equal(freshTable.positions,undefined);
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
   assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
   const firstView=await tableWorld();
@@ -406,6 +445,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
+  assert.deepEqual(await readOwnPosition(otherToken.token),firstSaved);
+  assert.deepEqual(await readPosition(secondHero.id,newCookie),secondSaved);
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');

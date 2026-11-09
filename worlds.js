@@ -3,12 +3,18 @@
 const { randomUUID } = require('node:crypto');
 const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
+const registerCharacterPositions = require('./character-positions');
 
-module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, revealScreen }) => {
+module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
   const tileLimit = 150000;
+
+  registerCharacterPositions(app, {
+    express, requireDm, gameFile, loadCharacters, assignedCharacter,
+    worldExists: id => !!store.readDraft(id, []),
+  });
 
   function notice(data) {
     const tokens = data?.tokens || [];

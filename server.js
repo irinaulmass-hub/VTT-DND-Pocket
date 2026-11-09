@@ -1124,7 +1124,7 @@ app.get('/map-builder', requireDm, (req, res) => {
 
 const legacyMapDir = path.join(__dirname, 'public', 'assets', 'maps');
 const worlds = require('./worlds')(app, {
-  express, requireDm, gameFile, broadcast, loadCharacters,
+  express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter,
   revealScreen() {
     game().currentState.blackout = false;
     saveState();

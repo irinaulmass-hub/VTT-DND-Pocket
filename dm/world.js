@@ -51,6 +51,11 @@
           <button class="book-button" data-world-delete>Удалить выбранный</button>
           <label><input type="checkbox" data-world-secret> Видно только мастеру</label>
         </div>
+        <div class="book-toolbar">
+          <select class="book-select" data-world-position-hero aria-label="Герой для личной позиции"></select>
+          <button class="book-button" data-tool="position">Записать личную позицию</button>
+          <small data-world-position-info role="status"></small>
+        </div>
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
         <div class="book-toolbar">
           <button class="book-button" data-world-save>Сохранить черновик</button>
@@ -118,8 +123,43 @@
     objects(draft.objects.filter(item => item.id !== id));
     status('Объект удалён. Вернуть его можно кнопкой «Отменить».');
   }
+  const positionUrl = id => '/api/character-positions/' + encodeURIComponent(id);
+  let positionGeneration = 0;
+  function describePosition(position) {
+    const place = position.worldId === draft?.id ? '' : 'в другом мире ';
+    e('position-info').textContent = 'Личная позиция ' + place + '(' + position.x + ', ' + position.y + ')';
+  }
+  async function readPosition() {
+    const generation = ++positionGeneration;
+    const id = e('position-hero').value;
+    e('position-info').textContent = '';
+    if (!id) return;
+    try {
+      const { position } = await request(positionUrl(id));
+      if (generation !== positionGeneration) return;
+      if (position) describePosition(position);
+      else e('position-info').textContent = 'Позиция ещё не задана';
+    } catch (error) {
+      if (generation === positionGeneration) e('position-info').textContent = error.message;
+    }
+  }
+  e('position-hero').onchange = readPosition;
+
   function click(x, y, point) {
     if (!draft || busy) return;
+    if (tool === 'position') {
+      const id = e('position-hero').value;
+      if (!id) return status('Выбери героя');
+      const generation = ++positionGeneration;
+      run(async () => {
+        const { position } = await request(positionUrl(id), json('PUT', {
+          worldId: draft.id, sceneId: 'overworld', floorId: 'ground', x, y,
+        }));
+        if (generation === positionGeneration) describePosition(position);
+        status('Личная позиция сохранена');
+      });
+      return;
+    }
     if (tool === 'select' || tool === 'delete-object') {
       const item = objectAt(point.x, point.y);
       if (tool === 'delete-object') return removeObject(item?.id);
@@ -181,6 +221,7 @@
     first = selected = undefined;
     undo.length = redo.length = 0;
     e('editor').hidden = false;
+    readPosition();
     editorView.setCamera({ x: 0, y: 0, scale: 24 });
     paint();
     status('Открыт черновик «' + data.name + '»');
@@ -215,6 +256,7 @@
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     tool = button.dataset.tool;
+    if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы записать его личную позицию');
     first = undefined;
     paint();
     if (tool === 'select') status('Перетащи объект мышью. Щёлкни по нему, чтобы выделить.');
@@ -279,10 +321,17 @@
     moveToken: (token, x, y) => change('token', x, y, { characterId: token.id }),
   });
   function heroes() {
-    const value = p('hero').value;
-    p('hero').replaceChildren(new Option('Поставить жетон героя', ''), ...characterRoster.map(hero => new Option(hero.name, hero.id)));
-    if ([...p('hero').options].some(option => option.value === value)) p('hero').value = value;
+    for (const [select, placeholder] of [
+      [p('hero'), 'Поставить жетон героя'],
+      [e('position-hero'), 'Герой для личной позиции'],
+    ]) {
+      const value = select.value;
+      select.replaceChildren(new Option(placeholder, ''), ...characterRoster.map(hero => new Option(hero.name, hero.id)));
+      if (characterRoster.some(hero => hero.id === value)) select.value = value;
+      else if (value && select === e('position-hero')) readPosition();
+    }
   }
+  heroes();
   new MutationObserver(heroes).observe(document.getElementById('party-list-container'), { childList: true, subtree: true });
   async function sync() {
     const generation = ++liveGeneration;
