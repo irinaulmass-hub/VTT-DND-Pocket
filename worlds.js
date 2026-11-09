@@ -11,9 +11,26 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const store = createWorldStore(gameFile);
   const tileLimit = 150000;
 
-  const { getPosition } = registerCharacterPositions(app, {
+  const barriers = new Set(['wall', 'palisade', 'fence']);
+
+  function canStep({ worldId, x, y }) {
+    // Use the published geometry when available, without loading the world's tiles.
+    const layout = store.readPublished(worldId, [])?.map || store.readDraft(worldId, []);
+    if (!layout) return false;
+    return !layout.objects.some(prop =>
+      (prop.kind === 'door' && prop.x === x && prop.y === y) ||
+      (barriers.has(prop.kind) && map.wallCells(prop).some(([col, row]) => col === x && row === y)));
+  }
+
+  const { getPosition, getExploration } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     worldExists: id => !!store.readDraft(id, []),
+    canStep,
+    explorationNotice(id) {
+      if (store.readActiveId() !== id) return null;
+      const data = store.readPublished(id, []);
+      return data?.fog ? notice(data) : null;
+    },
   });
 
   function notice(data) {
@@ -98,15 +115,18 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.json(null);
     const chunks = {};
     const seen = {};
+    const explored = data.fog ? getExploration(activeId, 'overworld', 'ground') : {};
     for (const key of keys) {
-      if (data.fog && data.seen[key]) seen[key] = data.seen[key];
+      if (data.fog && (data.seen[key] || explored[key])) {
+        seen[key] = { ...data.seen[key], ...explored[key] };
+      }
       const tiles = data.map.chunks[key];
       if (!tiles) continue;
-      chunks[key] = data.fog ? Object.fromEntries(Object.entries(tiles).filter(([offset]) => data.seen[key]?.[offset])) : tiles;
+      chunks[key] = data.fog ? Object.fromEntries(Object.entries(tiles).filter(([offset]) => seen[key]?.[offset])) : tiles;
     }
     const visible = prop => {
       const [key, offset] = map.address(prop.x, prop.y);
-      return keys.has(key) && (!data.fog || !!data.seen[key]?.[offset]);
+      return keys.has(key) && (!data.fog || !!seen[key]?.[offset]);
     };
     res.json({
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,

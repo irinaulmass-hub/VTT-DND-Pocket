@@ -376,6 +376,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await setPosition(otherChar.id,firstPosition)).status,200);
   const firstSaved={position:{characterId:otherChar.id,...firstPosition,revision:2}};
   const secondSaved={position:{characterId:secondHero.id,...secondPosition,revision:1}};
+  const legacyPositionsFile=path.join(worldDir,'..','character-positions.json');
+  const legacyPositions=JSON.parse(fs.readFileSync(legacyPositionsFile,'utf8')).positions;
+  fs.writeFileSync(legacyPositionsFile,JSON.stringify(legacyPositions));
   assert.deepEqual(await readOwnPosition(otherToken.token),firstSaved);
   assert.deepEqual(await readPosition(secondHero.id,cookie),secondSaved);
   assert.equal((await fetch(ownPositionUrl+'&characterId='+secondHero.id,{
@@ -437,6 +440,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   tiles.set(world.chunks,-70,-41,'path');
   world.chunks['7,7']={0:'dirt'};
   world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
+  for(let x=20;x<=25;x++) tiles.set(world.chunks,x,0,'path');
+  world.objects.push(
+    {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
+    {id:'private-party-tree',kind:'tree',x:21,y:0,turn:0,hidden:true},
+  );
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
   assert.equal((await worldWrite('/'+world.id,'PUT',world)).status,409);
@@ -448,6 +456,33 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(freshTable.chunks['0,0'],{});
   assert.deepEqual(freshTable.tokens,[]);
   assert.equal(freshTable.positions,undefined);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:20,y:0})).status,200);
+  assert.equal((await setPosition(secondHero.id,{...firstPosition,x:24,y:0})).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,20,0),undefined,'a transfer alone does not explore the map');
+
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  const partyStep=await movePosition({direction:'east',revision:5});
+  assert.equal(partyStep.status,200);
+  const partyFirst=await partyStep.json();
+  await next;
+  const firstExplored=await tableWorld();
+  assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
+  assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
+  assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-tree'));
+  assert.equal((await movePosition({direction:'east',revision:6})).status,409);
+  assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
+  assert.equal(tiles.get((await tableWorld()).chunks,22,0),undefined);
+
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  const secondPartyStep=await movePosition({direction:'east',revision:3},secondInvitation.token);
+  assert.equal(secondPartyStep.status,200);
+  const partySecond=await secondPartyStep.json();
+  await next;
+  const partyMap=await tableWorld();
+  for(const x of [20,21,24,25]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
+  assert.equal(tiles.get(partyMap.chunks,23,0),undefined);
+  assert.deepEqual(partyMap.tokens,[]);
+
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
   assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
   const firstView=await tableWorld();
@@ -496,12 +531,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
-  assert.deepEqual(await readOwnPosition(otherToken.token),transferred);
-  assert.deepEqual(await readPosition(secondHero.id,newCookie),{position:secondMoved});
+  assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
+  assert.deepEqual(await readPosition(secondHero.id,newCookie),partySecond);
   const positionAfterRestart=await open(undefined,campaign.id);sockets.push(positionAfterRestart);
   next=message(positionAfterRestart,m=>m.type==='CHARACTER_POSITION');
   positionAfterRestart.send(JSON.stringify({action:'player-auth',token:otherToken.token}));
-  assert.deepEqual((await next).position,transferred.position);
+  assert.deepEqual((await next).position,partyFirst.position);
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
@@ -521,6 +556,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(importedChunks.status,200);
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const resumedWorld=await tableWorld();
+  for(const x of [20,21,24,25]) assert.equal(tiles.get(resumedWorld.chunks,x,0),'path');
+  for(const x of [22,23]) assert.equal(tiles.get(resumedWorld.chunks,x,0),undefined);
   assert.equal(resumedWorld.tokens[0].x,9);
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');

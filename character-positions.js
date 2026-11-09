@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
-const { valid } = require('./remote/world-model');
+const { valid, get, set } = require('./remote/world-model');
 
 const steps = {
   north: [0, -1],
@@ -11,20 +11,41 @@ const steps = {
 };
 
 module.exports = function registerCharacterPositions(app, {
-  express, requireDm, gameFile, loadCharacters, assignedCharacter, worldExists, movementLocked, broadcast,
+  express, requireDm, gameFile, loadCharacters, assignedCharacter, worldExists, movementLocked, broadcast, canStep, explorationNotice,
 }) {
-  function readPositions(file) {
-    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  const stateFile = () => gameFile('character-positions.json');
+
+  function readState(file = stateFile()) {
+    const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+    return saved.formatVersion === 1 ? saved : { formatVersion: 1, positions: saved, explored: {} };
   }
 
-  function getPosition(characterId, positions = readPositions(gameFile('character-positions.json'))) {
+  function getPosition(characterId, positions = readState().positions) {
     if (!Object.hasOwn(positions, characterId)) return null;
     const position = positions[characterId];
     return { ...position, revision: position.revision ?? 0 };
   }
 
-  function savePosition(file, positions, position) {
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ ...positions, [position.characterId]: position }));
+  function explorationKey(worldId, sceneId, floorId) {
+    return JSON.stringify([worldId, sceneId, floorId]);
+  }
+
+  function getExploration(worldId, sceneId, floorId) {
+    return readState().explored[explorationKey(worldId, sceneId, floorId)] || {};
+  }
+
+  function recordStep(state, from, to) {
+    const key = explorationKey(to.worldId, to.sceneId, to.floorId);
+    const seen = state.explored[key] ||= {};
+    const changed = !get(seen, from.x, from.y) || !get(seen, to.x, to.y);
+    set(seen, from.x, from.y, true);
+    set(seen, to.x, to.y, true);
+    return changed;
+  }
+
+  function savePosition(file, state, position) {
+    state.positions = { ...state.positions, [position.characterId]: position };
+    fs.writeFileSync(file + '.tmp', JSON.stringify(state));
     fs.renameSync(file + '.tmp', file);
     broadcast({ type: 'CHARACTER_POSITION', characterId: position.characterId, position });
   }
@@ -59,9 +80,9 @@ module.exports = function registerCharacterPositions(app, {
     }
     if (movementLocked(characterId)) return res.status(403).json({ error: 'Мастер приостановил движение' });
 
-    const file = gameFile('character-positions.json');
-    const positions = readPositions(file);
-    const current = getPosition(characterId, positions);
+    const file = stateFile();
+    const state = readState(file);
+    const current = getPosition(characterId, state.positions);
     if (!current) return res.status(409).json({ position: null, error: 'Мастер ещё не задал позицию героя' });
     if (current.revision !== revision) {
       return res.status(409).json({ position: current, error: 'Позиция изменилась. Выберите направление ещё раз' });
@@ -72,7 +93,10 @@ module.exports = function registerCharacterPositions(app, {
     const y = current.y + dy;
     if (!valid(x) || !valid(y)) return res.status(400).json({ error: 'Достигнута граница мира' });
     const position = { ...current, x, y, revision: current.revision + 1 };
-    savePosition(file, positions, position);
+    if (!canStep(position)) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
+    const notice = recordStep(state, current, position) ? explorationNotice(position.worldId) : null;
+    savePosition(file, state, position);
+    if (notice) broadcast(notice);
     res.json({ position });
   }));
 
@@ -92,13 +116,13 @@ module.exports = function registerCharacterPositions(app, {
       return res.status(404).json({ error: 'Герой, мир, сцена или этаж не найдены в этой кампании' });
     }
 
-    const file = gameFile('character-positions.json');
-    const positions = readPositions(file);
-    const revision = (getPosition(characterId, positions)?.revision ?? 0) + 1;
+    const file = stateFile();
+    const state = readState(file);
+    const revision = (getPosition(characterId, state.positions)?.revision ?? 0) + 1;
     const position = { characterId, worldId, sceneId, floorId, x, y, revision };
-    savePosition(file, positions, position);
+    savePosition(file, state, position);
     res.json({ position });
   }));
 
-  return { getPosition };
+  return { getPosition, getExploration };
 };
