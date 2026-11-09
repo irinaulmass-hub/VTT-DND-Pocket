@@ -8,6 +8,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
+  const tileLimit = 150000;
 
   function notice(data) {
     const tokens = data?.tokens || [];
@@ -25,16 +26,25 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     return true;
   }
 
-  function validMap(body) {
-    if (!object(body?.chunks) || !Array.isArray(body.objects) || body.objects.length > 3000) return false;
+  function validChunks(chunks, partial = false) {
     let count = 0;
-    for (const [key, tiles] of Object.entries(body.chunks)) {
-      if (!chunkPattern.test(key) || key.split(',').some(n => !map.valid(Number(n) * map.size)) || !object(tiles)) return false;
+    for (const [key, tiles] of Object.entries(chunks)) {
+      if (!chunkPattern.test(key) || key.split(',').some(n => !map.valid(Number(n) * map.size))) return false;
+      if (partial && key.split(',').map(Number).join(',') !== key) return false;
+      if (partial && tiles === null) continue;
+      if (!object(tiles)) return false;
       for (const [index, type] of Object.entries(tiles)) {
         if (!/^\d{1,4}$/.test(index) || Number(index) >= map.size ** 2 || !Object.hasOwn(map.terrain, type)) return false;
-        if (++count > 150000) return false;
+        if (partial && String(Number(index)) !== index) return false;
+        if (++count > tileLimit) return false;
       }
     }
+    return true;
+  }
+
+  function validMap(body) {
+    if (!object(body?.chunks) || !Array.isArray(body.objects) || body.objects.length > 3000) return false;
+    if (!validChunks(body.chunks)) return false;
     const ids = new Set();
     return body.objects.every(prop => {
       if (!object(prop) || typeof prop.id !== 'string' || prop.id.length > 64 || ids.has(prop.id) ||
@@ -64,20 +74,22 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.status(201).json(data);
   }));
   app.get('/api/worlds/live', requireDm, route((req, res) => {
-    const data = store.readActiveWorld();
+    const data = store.readActiveWorld([]);
     if (!data) return res.json(null);
     const { id, name, revision } = data.map;
     res.json({
       revision: data.revision, frame: data.frame, fog: data.fog, tokens: data.tokens,
-      map: req.query.version === id + ':' + revision ? { id, name, revision } : data.map,
+      map: req.query.version === id + ':' + revision ? { id, name, revision } : store.readPublished(id).map,
     });
   }));
   app.get('/api/worlds/table', route((req, res) => {
-    const data = store.readActiveWorld();
-    if (!data) return res.json(null);
+    const activeId = store.readActiveId();
+    if (!activeId) return res.json(null);
     const requested = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
     if (requested.length > 100 || requested.some(key => !chunkPattern.test(key))) return res.status(400).json({ error: 'Некорректный участок карты' });
     const keys = new Set(requested);
+    const data = store.readPublished(activeId, keys);
+    if (!data) return res.json(null);
     const chunks = {};
     const seen = {};
     for (const key of keys) {
@@ -94,6 +106,28 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,
       chunks, seen, fog: data.fog, objects: data.map.objects.filter(prop => !prop.hidden && visible(prop)),
     });
+  }));
+  app.get('/api/worlds/:id/chunks', requireDm, route((req, res) => {
+    const keys = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
+    if (!keys.length || keys.length > 100 || keys.some(key => !chunkPattern.test(key))) {
+      return res.status(400).json({ error: 'Некорректный участок карты' });
+    }
+    const data = store.readDraft(req.params.id, new Set(keys));
+    if (!data) return res.status(404).json({ error: 'Карта не найдена' });
+    res.json({ id: data.id, revision: data.revision, chunks: data.chunks });
+  }));
+  app.patch('/api/worlds/:id/chunks', requireDm, json, route((req, res) => {
+    const { revision, chunks } = req.body || {};
+    if (!Number.isSafeInteger(revision) || revision < 0 || !object(chunks) ||
+        Object.keys(chunks).length === 0 || Object.keys(chunks).length > 100 || !validChunks(chunks, true)) {
+      return res.status(400).json({ error: 'Некорректный участок карты' });
+    }
+    const result = store.patchDraft(req.params.id, revision, chunks, tileLimit);
+    if (result.status === 'missing') return res.status(404).json({ error: 'Карта не найдена' });
+    if (result.status === 'legacy') return res.status(409).json({ error: 'Для этой карты доступно только полное сохранение' });
+    if (result.status === 'conflict') return res.status(409).json({ error: 'Черновик изменён в другом окне. Откройте его заново.' });
+    if (result.status === 'limit') return res.status(400).json({ error: 'Превышено количество тайлов' });
+    res.json({ revision: result.revision });
   }));
   app.get('/api/worlds/:id', requireDm, route((req, res) => {
     const data = store.readDraft(req.params.id);
@@ -114,7 +148,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Сначала сохраните актуальный черновик' });
-    const previous = store.readPublished(data.id);
+    const previous = store.readPublished(data.id, []);
     const next = {
       tokens: [], seen: {}, frame: { x: 0, y: 0, scale: 24, serial: 0 }, ...previous,
       map: data, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
@@ -126,7 +160,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.json(next);
   }));
   app.post('/api/worlds/live/change', requireDm, json, route((req, res) => {
-    const data = store.readActiveWorld();
+    const data = store.readActiveWorld([]);
     if (!data || req.body?.id !== data.map.id) return res.status(409).json({ error: 'На экране уже другая карта' });
     const { action, x, y, characterId, scale } = req.body;
     if (!map.valid(x) || !map.valid(y)) return res.status(400).json({ error: 'Проверьте координаты' });
@@ -145,10 +179,10 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       }
     } else return res.status(400).json({ error: 'Действие недоступно' });
     data.revision++;
-    store.writePublished(data.map.id, data);
+    store.updatePublishedState(data.map.id, data);
     announce(data);
     res.json({ tokens: data.tokens, revision: data.revision, frame: data.frame });
   }));
   app.post('/api/worlds/live/hide', requireDm, route((req, res) => res.json({ hidden: hide() })));
-  return { hide, notice: () => notice(store.readActiveWorld()) };
+  return { hide, notice: () => notice(store.readActiveWorld([])) };
 };

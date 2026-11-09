@@ -276,6 +276,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(fs.readFileSync(backup,'utf8'),'backup contents');
   const tiles=require('../remote/world-model');
   tiles.set(world.chunks,-70,-41,'path');
+  world.chunks['7,7']={0:'dirt'};
   world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
@@ -290,8 +291,40 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const firstView=await tableWorld();
   assert.equal(tiles.get(firstView.chunks,0,0),'path');
   assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door'));
-  tiles.set(savedWorld.chunks,0,0,'water');
-  assert.equal((await worldWrite('/'+world.id,'PUT',savedWorld)).status,200);
+  const chunkEndpoint='/'+world.id+'/chunks';
+  const chunkUrl=worldBase+chunkEndpoint+worldGame+'&chunks=0%2C0';
+  assert.equal((await fetch(chunkUrl,{redirect:'manual'})).status,302);
+  const [otherChunk]=tiles.address(-70,-41);
+  const manifest=JSON.parse(fs.readFileSync(path.join(worldDir,world.id+'-chunks.json')));
+  const unrelatedFile=path.join(worldDir,world.id+'-chunks',manifest.index[otherChunk].hash+'.json');
+  const chunkPatch={revision:savedWorld.revision,chunks:{'0,0':{...savedWorld.chunks['0,0'],0:'water'},'7,7':null}};
+  fs.renameSync(unrelatedFile,unrelatedFile+'.held');
+  try {
+   const partial=await fetch(chunkUrl,{headers:{Cookie:cookie}});
+   assert.equal(partial.status,200);
+   assert.deepEqual(await partial.json(),{id:world.id,revision:savedWorld.revision,chunks:{'0,0':savedWorld.chunks['0,0']}});
+   const changed=await worldWrite(chunkEndpoint,'PATCH',chunkPatch);
+   assert.equal(changed.status,200);
+   assert.deepEqual(await changed.json(),{revision:savedWorld.revision+1});
+   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
+  } finally {
+   fs.renameSync(unrelatedFile+'.held',unrelatedFile);
+  }
+  assert.equal((await worldWrite(chunkEndpoint,'PATCH',chunkPatch)).status,409);
+  const updatedDraft=await fetch(worldBase+'/'+world.id+worldGame,{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(tiles.get(updatedDraft.chunks,-70,-41),'path');
+  assert.equal(tiles.get(updatedDraft.chunks,0,0),'water');
+  assert.equal(updatedDraft.chunks['7,7'],undefined);
+  assert.deepEqual(updatedDraft.objects,savedWorld.objects);
+  const legacyId='10000000-0000-0000-0000-000000000000';
+  const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
+  const legacyFile=path.join(worldDir,legacyId+'.json');
+  fs.writeFileSync(legacyFile,JSON.stringify(legacy));
+  const legacyChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:cookie}});
+  assert.deepEqual((await legacyChunks.json()).chunks,legacy.chunks);
+  assert.equal((await worldWrite('/'+legacyId+'/chunks','PATCH',{revision:0,chunks:{'0,0':null}})).status,409);
+  assert.equal((await worldWrite('/'+legacyId,'PUT',legacy)).status,200);
+  assert.equal(JSON.parse(fs.readFileSync(legacyFile)).revision,1);
   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
   for(const socket of sockets) socket.terminate();
