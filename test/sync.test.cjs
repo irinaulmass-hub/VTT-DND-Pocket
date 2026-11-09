@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const {spawn,execFileSync}=require('node:child_process');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
@@ -329,6 +329,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
   for(const socket of sockets) socket.terminate();
   await stop();
+  execFileSync(process.execPath,[path.join(root,'import-world.js'),path.dirname(worldDir),legacyId]);
   child=launch();
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
@@ -344,6 +345,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(returned.featureStates[pendingTrap.id],'triggered');
   assert.equal(returned.objectStates['farm-gate'].currentRotation,90);
   assert.equal((await (await fetch(base+linksPath,{headers:{Cookie:newCookie}})).json()).links.length,2);
+  const importedChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:newCookie}});
+  assert.equal(importedChunks.status,200);
+  assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const resumedWorld=await tableWorld();
   assert.equal(resumedWorld.tokens[0].x,9);
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');

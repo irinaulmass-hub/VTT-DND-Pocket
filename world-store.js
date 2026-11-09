@@ -60,11 +60,21 @@ module.exports = function createWorldStore(gameFile) {
       .map(key => [key, draft.chunks[key]])) };
   }
 
-  function writeDraft(draft) {
-    if (fs.existsSync(worldFile(draft.id, ''))) return write(worldFile(draft.id, ''), draft);
+  function saveChunkDraft(draft) {
     const { chunks, ...map } = draft;
     const index = writeChunks(draft.id, chunks);
     write(manifestFile(draft.id, ''), { storageVersion: 1, map, index });
+  }
+
+  function hasChunkDraft(id) {
+    return fs.existsSync(manifestFile(id, ''));
+  }
+
+  function writeDraft(draft) {
+    if (!hasChunkDraft(draft.id) && fs.existsSync(worldFile(draft.id, ''))) {
+      return write(worldFile(draft.id, ''), draft);
+    }
+    saveChunkDraft(draft);
   }
 
   function patchDraft(id, revision, changes, limit) {
@@ -89,23 +99,27 @@ module.exports = function createWorldStore(gameFile) {
   }
 
   function readPublished(id, keys) {
-    const manifest = readManifest(manifestFile(id, '-live'));
+    const manifest = hasChunkDraft(id) ? readManifest(manifestFile(id, '-live')) : null;
     if (manifest) {
       return { ...manifest.snapshot, map: { ...manifest.snapshot.map, chunks: readChunks(id, manifest.index, keys) } };
     }
     return read(worldFile(id, '-live'));
   }
 
-  function writePublished(id, snapshot) {
-    if (!fs.existsSync(manifestFile(id, ''))) return write(worldFile(id, '-live'), snapshot);
+  function saveChunkPublished(id, snapshot) {
     const { chunks, ...map } = snapshot.map;
     const index = writeChunks(id, chunks);
     write(manifestFile(id, '-live'), { storageVersion: 1, snapshot: { ...snapshot, map }, index });
   }
 
+  function writePublished(id, snapshot) {
+    if (!hasChunkDraft(id)) return write(worldFile(id, '-live'), snapshot);
+    saveChunkPublished(id, snapshot);
+  }
+
   function updatePublishedState(id, snapshot) {
     const file = manifestFile(id, '-live');
-    const manifest = readManifest(file);
+    const manifest = hasChunkDraft(id) ? readManifest(file) : null;
     if (!manifest) return write(worldFile(id, '-live'), snapshot);
     write(file, { ...manifest, snapshot: { ...snapshot, map: manifest.snapshot.map } });
   }
@@ -121,6 +135,7 @@ module.exports = function createWorldStore(gameFile) {
         .flatMap(entry => {
           const base = entry.name.slice(0, -5);
           if (idPattern.test(base)) {
+            if (hasChunkDraft(base)) return [];
             const { id, name } = read(worldFile(base, ''));
             return [{ id, name }];
           }
@@ -128,6 +143,20 @@ module.exports = function createWorldStore(gameFile) {
           const { id, name } = readManifest(manifestFile(base.slice(0, -7), '')).map;
           return [{ id, name }];
         });
+    },
+    importLegacy(id, convert) {
+      if (!idPattern.test(id)) throw Error('Invalid world ID');
+      if (readManifest(manifestFile(id, ''))) return 'already imported';
+      const draft = read(worldFile(id, ''));
+      if (!draft) throw Error('Legacy draft not found');
+      const live = read(worldFile(id, '-live'));
+      if (live === null && fs.existsSync(worldFile(id, '-live'))) throw Error('Invalid legacy publication');
+      if (live === null && fs.existsSync(manifestFile(id, '-live'))) throw Error('Staged publication has no legacy source');
+      const converted = convert(draft, live);
+      // Commit by writing the draft manifest last. Until then both legacy files remain authoritative.
+      if (converted.live) saveChunkPublished(id, converted.live);
+      saveChunkDraft(converted.draft);
+      return 'imported';
     },
     readDraft,
     writeDraft,
