@@ -954,6 +954,8 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
 });
 
 
+require('./player-access')(app, { express, requireDm, gameFile, loadCharacters });
+
 require('./advancement')(app, {express,loadCharacters,saveCharacters,requireDm,broadcast});
 require('./adventure')(app, { express, fs, path, gameFile, requireDm, hasWindenPack });
 const library = require('./library')(app, { express, crypto, gameFile, requireDm, hasWindenPack });
