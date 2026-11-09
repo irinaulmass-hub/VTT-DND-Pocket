@@ -15,7 +15,13 @@ function publicProp(prop, openDoors) {
   return result;
 }
 
-function remember(memory, layout, observed, openDoors) {
+function isRevealedSecret(prop, revealedSecrets) {
+  const revealed = revealedSecrets[':' + prop.id];
+  return !!revealed && revealed.kind === prop.kind && revealed.x === prop.x &&
+    revealed.y === prop.y && revealed.turn === prop.turn;
+}
+
+function remember(memory, layout, observed, openDoors, revealedSecrets) {
   for (const [key, cells] of Object.entries(observed)) {
     const saved = memory.chunks[key] ||= {};
     for (const offset of Object.keys(cells)) saved[offset] = layout.chunks[key]?.[offset] ?? null;
@@ -26,13 +32,13 @@ function remember(memory, layout, observed, openDoors) {
     if (get(observed, prop.x, prop.y)) delete memory.objects[id];
   }
   for (const prop of layout.objects) {
-    if (!prop.hidden && get(observed, prop.x, prop.y)) {
+    if ((!prop.hidden || isRevealedSecret(prop, revealedSecrets)) && get(observed, prop.x, prop.y)) {
       memory.objects[':' + prop.id] = publicProp(prop, openDoors);
     }
   }
 }
 
-function project(data, keys, { explored, openDoors, memory, visible }) {
+function project(data, keys, { explored, openDoors, memory, visible, revealedSecrets }) {
   const chunks = {};
   const seen = {};
   const current = {};
@@ -62,7 +68,7 @@ function project(data, keys, { explored, openDoors, memory, visible }) {
   const objects = [];
   const liveIds = new Set();
   for (const prop of data.map.objects) {
-    if (prop.hidden) continue;
+    if (prop.hidden && !isRevealedSecret(prop, revealedSecrets)) continue;
     const [key, offset] = address(prop.x, prop.y);
     if (data.fog && visible[key]?.[offset]) liveIds.add(prop.id);
     if (keys.has(key) && (!data.fog || visible[key]?.[offset] ||
@@ -79,4 +85,4 @@ function project(data, keys, { explored, openDoors, memory, visible }) {
   return { chunks, seen, visible: current, objects };
 }
 
-module.exports = { mask, remember, project };
+module.exports = { mask, remember, project, isRevealedSecret };

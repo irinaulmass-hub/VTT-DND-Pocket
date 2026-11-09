@@ -417,12 +417,16 @@
       <select class="book-select" data-live-door aria-label="Дверь на карте"></select>
       <button class="book-button small" data-live-toggle-door disabled>Открыть дверь</button>
     </div>
+    <div class="book-toolbar" data-live-secrets hidden>
+      <select class="book-select" data-live-secret aria-label="Скрытый объект на карте"></select>
+      <button class="book-button small" data-live-reveal-secret disabled>Раскрыть на ТВ</button>
+    </div>
     <canvas class="world-canvas" data-live-canvas aria-label="Большая карта мастера без тумана"></canvas>
     <p class="book-status" data-live-status role="status">Колёсико приближает карту. Жетоны можно перетаскивать.</p>`;
   const mapSection = document.getElementById('section-map-control');
   mapSection.append(panel);
   const p = name => panel.querySelector('[data-live-' + name + ']');
-  let live, reveal = false, liveGeneration = 0, doorBusy = false;
+  let live, reveal = false, liveGeneration = 0, doorBusy = false, secretBusy = false;
   const liveView = createWorldView(p('canvas'), {
     pan: () => !reveal && !p('hero').value,
     click(x, y) {
@@ -458,6 +462,10 @@
     p('toggle-door').disabled = !id || doorBusy;
   }
 
+  function secretButton() {
+    p('reveal-secret').disabled = !p('secret').value || secretBusy;
+  }
+
   function paintLive() {
     const openDoors = new Set(live.openDoors);
     const doors = live.map.objects.filter(prop => prop.kind === 'door');
@@ -468,6 +476,14 @@
         (openDoors.has(door.id) ? 'открыта' : 'закрыта'), door.id)));
     if (doors.some(door => door.id === selection)) p('door').value = selection;
     doorButton();
+    const revealed = new Set(live.revealedSecrets);
+    const secrets = live.map.objects.filter(prop => prop.hidden && !revealed.has(prop.id));
+    const selectedSecret = p('secret').value;
+    p('secrets').hidden = !secrets.length;
+    p('secret').replaceChildren(new Option('Выбрать скрытый объект', ''), ...secrets.map(prop =>
+      new Option((props[prop.kind]?.[0] || prop.kind) + ' (' + prop.x + ', ' + prop.y + ')', prop.id)));
+    if (secrets.some(prop => prop.id === selectedSecret)) p('secret').value = selectedSecret;
+    secretButton();
     const objects = live.map.objects.map(prop =>
       prop.kind === 'door' && openDoors.has(prop.id) ? { ...prop, open: true } : prop);
     liveView.data({ ...live.map, objects, tokens: live.tokens });
@@ -493,6 +509,25 @@
     }
   };
 
+  p('secret').onchange = secretButton;
+  p('reveal-secret').onclick = async () => {
+    const objectId = p('secret').value;
+    if (!live || !objectId || secretBusy) return;
+    const { id, revision } = live.map;
+    secretBusy = true;
+    secretButton();
+    try {
+      await request('/api/worlds/live/secrets/' + encodeURIComponent(objectId), json('PUT', { id, revision }));
+      p('status').textContent = 'Секрет раскрыт на ТВ';
+    } catch (error) {
+      p('status').textContent = error.message;
+    } finally {
+      await sync();
+      secretBusy = false;
+      secretButton();
+    }
+  };
+
   async function sync() {
     const generation = ++liveGeneration;
     try {
@@ -500,6 +535,7 @@
       const next = await request('/api/worlds/live' + version);
       if (generation !== liveGeneration) return;
       const changed = next?.map.id !== live?.map.id;
+      if (changed || next?.map.revision !== live?.map.revision) p('secret').value = '';
       if (next && !next.map.chunks && live) next.map = live.map;
       live = next;
       panel.hidden = !live;

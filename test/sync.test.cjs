@@ -439,9 +439,13 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const tiles=require('../remote/world-model');
   tiles.set(world.chunks,-70,-41,'path');
   world.chunks['7,7']={0:'dirt'};
-  world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
+  world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true},
+    {id:'secret-marker',kind:'torch',x:14,y:12,turn:0,hidden:true},
+    {id:'another-secret',kind:'torch',x:14,y:12,turn:1,hidden:true});
   for(let x=20;x<=30;x++) tiles.set(world.chunks,x,0,'path');
   tiles.set(world.chunks,20,-1,'grass');
+  tiles.set(world.chunks,14,12,'grass');
+  tiles.set(world.chunks,14,13,'grass');
   world.objects.push(
     {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
     {id:'remembered-torch',kind:'torch',x:29,y:0,turn:0},
@@ -602,7 +606,48 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
   const firstView=await tableWorld();
   assert.equal(tiles.get(firstView.chunks,0,0),'path');
-  assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door'));
+  assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door' && prop.id!=='secret-marker'));
+  assert.equal(tiles.get(firstView.seen,14,12),undefined);
+  const revealSecret=(objectId,body,headers=noteHeaders,query=worldGame)=>fetch(
+    worldBase+'/live/secrets/'+encodeURIComponent(objectId)+query,{
+      method:'PUT',headers,redirect:'manual',body:JSON.stringify(body),
+    });
+  const secretBody={id:world.id,revision:savedWorld.revision};
+  const masterLive=(revision,headers=noteHeaders)=>fetch(
+    worldBase+'/live'+worldGame+'&version='+encodeURIComponent(world.id+':'+revision),{headers,redirect:'manual'},
+  );
+  const guestSecretHeaders={'Content-Type':'application/json'};
+  const playerSecretHeaders={...guestSecretHeaders,Authorization:'Bearer '+otherToken.token};
+  assert.equal((await masterLive(savedWorld.revision,playerSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,guestSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,playerSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,noteHeaders,worldGame+'&view=table')).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,noteHeaders,'?game='+packedCampaign.id)).status,409);
+  assert.equal((await revealSecret('secret-marker',{...secretBody,revision:savedWorld.revision+1})).status,409);
+  assert.equal((await revealSecret('secret-marker',{...secretBody,characterId:secondHero.id})).status,400);
+  assert.equal((await revealSecret('remembered-torch',secretBody)).status,404);
+  assert.equal((await tableWorld()).objects.some(prop=>prop.id==='secret-marker'),false);
+  assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,[]);
+
+  const secretScreen=await open(undefined,campaign.id,'table');sockets.push(secretScreen);
+  next=message(secretScreen,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  const phoneUpdate=message(secondSocket,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true});
+  for(const event of await Promise.all([next,phoneUpdate])) {
+    assert.doesNotMatch(JSON.stringify(event),/secret-marker|revealedSecrets/);
+  }
+  assert.deepEqual(await readOwnPosition(secondInvitation.token),afterStairs);
+  assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true},'repeated reveal is idempotent');
+  const firstSecretView=await tableWorld();
+  const firstMarker={id:'secret-marker',kind:'torch',x:14,y:12,turn:0};
+  assert.deepEqual(firstSecretView.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
+  assert.equal(tiles.get(firstSecretView.chunks,14,12),'grass','the reveal opens exactly its own cell');
+  assert.equal(tiles.get(firstSecretView.seen,14,13),undefined);
+  assert.equal(firstSecretView.objects.some(prop=>prop.id==='secret-door' || prop.id==='another-secret'),false);
+  assert.equal((await tableWorld('0,-1')).objects.some(prop=>prop.id==='secret-marker'),false);
+  assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,['secret-marker']);
+  assert.equal((await (await fetch(worldBase+'/'+world.id+worldGame,{headers:noteHeaders})).json())
+    .objects.find(prop=>prop.id==='secret-marker').hidden,true,'the draft remains secret');
   const chunkEndpoint='/'+world.id+'/chunks';
   const chunkUrl=worldBase+chunkEndpoint+worldGame+'&chunks=0%2C0';
   assert.equal((await fetch(chunkUrl,{redirect:'manual'})).status,302);
@@ -633,6 +678,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(updatedDraft.chunks['7,7'],undefined);
   assert.deepEqual(updatedDraft.objects,savedWorld.objects);
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
+  Object.assign(updatedDraft.objects.find(prop=>prop.id==='secret-marker'),{x:29,y:0});
   const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
   assert.equal(editedWorld.revision,savedWorld.revision+2);
   const legacyId='10000000-0000-0000-0000-000000000000';
@@ -689,6 +735,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(resumedWorld.chunks,30,0),undefined);
   assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass');
   assert.equal(resumedWorld.tokens[0].x,9);
+  assert.deepEqual(resumedWorld.objects.find(prop=>prop.id==='secret-marker'),firstMarker,'the explicit reveal survives restart');
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');
   const resumedWorldWrite=(endpoint,body)=>fetch(worldBase+endpoint+worldGame,{
@@ -704,6 +751,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const republished=await tableWorld();
   assert.deepEqual(republished.tokens,resumedWorld.tokens);
   assert.deepEqual(republished.seen,resumedWorld.seen);
+  assert.deepEqual(republished.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
+  const resumedHeaders={...noteHeaders,Cookie:newCookie};
+  assert.deepEqual((await (await masterLive(editedWorld.revision,resumedHeaders)).json()).revealedSecrets,[]);
+  assert.equal((await revealSecret('secret-marker',secretBody,resumedHeaders)).status,409,'an old publication cannot authorize a moved secret');
   assert.equal(tiles.get(republished.chunks,0,0),'path','legacy discovery keeps the outgoing published tile');
   assert.equal(tiles.get(republished.chunks,29,0),'path','terrain outside live sight stays as remembered');
   assert.equal(tiles.get(republished.chunks,28,0),'path','removing unseen terrain stays private');
@@ -735,6 +786,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(revisited.chunks,28,1),'grass');
   assert.deepEqual(revisited.objects.filter(prop=>prop.id==='remembered-torch'),[{id:'remembered-torch',kind:'torch',x:28,y:0,turn:1}]);
   assert.ok(revisited.objects.every(prop=>prop.id!=='private-party-torch' && prop.id!=='secret-door'));
+  assert.deepEqual(revisited.objects.filter(prop=>prop.id==='secret-marker'),[firstMarker],
+    'seeing the new cell does not disclose the moved secret');
+  const movedSecretBody={id:world.id,revision:editedWorld.revision};
+  assert.equal((await revealSecret('secret-marker',movedSecretBody,resumedHeaders)).status,200);
+  assert.deepEqual((await tableWorld()).objects.filter(prop=>prop.id==='secret-marker'),[{...firstMarker,x:29,y:0}]);
 
   const revisitedScreen=await open(undefined,campaign.id,'table');sockets.push(revisitedScreen);
   next=message(revisitedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
@@ -761,6 +817,17 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const afterRemoval=await tableWorld();
   assert.deepEqual(afterRemoval.visible,{});
   assert.equal(tiles.get(afterRemoval.chunks,29,0),'stone','removing a hero ends sight and preserves their last observation');
+
+  const otherMapSecret=await fetch(worldBase+'/'+secondWorld.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify({...secondWorld,objects:[{...firstMarker,x:29,y:0,hidden:true}]}),
+  }).then(r=>r.json());
+  assert.equal((await resumedWorldWrite('/'+secondWorld.id+'/publish',{revision:otherMapSecret.revision,fog:false})).status,200);
+  const withoutFog=await tableWorld();
+  assert.equal(withoutFog.fog,false);
+  assert.equal(withoutFog.objects.some(prop=>prop.id==='secret-marker'),false,
+    'a grant on another map cannot reveal a secret with the same ID and appearance, even without fog');
+  assert.equal((await revealSecret('secret-marker',{id:secondWorld.id,revision:otherMapSecret.revision},resumedHeaders)).status,200);
+  assert.deepEqual((await tableWorld()).objects.find(prop=>prop.id==='secret-marker'),{...firstMarker,x:29,y:0});
 
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });

@@ -5,7 +5,7 @@ const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
-const { project } = require('./world-exploration');
+const { project, isRevealedSecret } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -15,7 +15,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   const movement = createWorldMovement(store, gameFile);
 
-  const { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView } = registerCharacterPositions(app, {
+  const { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     locationExists: movement.locationExists,
     stepVisibility: movement.stepVisibility,
@@ -120,10 +120,12 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   app.get('/api/worlds/live', requireDm, route((req, res) => {
     const data = store.readActiveWorld([]);
     if (!data) return res.json(null);
-    const { id, name, revision } = data.map;
+    const { id, name, revision, objects } = data.map;
+    const { openDoors, revealedSecrets } = mapState(data.map);
     res.json({
       revision: data.revision, frame: data.frame, fog: data.fog, tokens: data.tokens,
-      openDoors: [...mapState(data.map).openDoors],
+      openDoors: [...openDoors],
+      revealedSecrets: objects.filter(prop => prop.hidden && isRevealedSecret(prop, revealedSecrets)).map(prop => prop.id),
       map: req.query.version === id + ':' + revision ? { id, name, revision } : store.readPublished(id).map,
     });
   }));
@@ -228,6 +230,21 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!door) return res.status(404).json({ error: 'Дверь не найдена на опубликованной карте' });
     if (setDoor(data.map, door, req.body.open)) announce(data);
     res.json({ open: req.body.open });
+  }));
+  app.put('/api/worlds/live/secrets/:objectId', requireDm, json, route((req, res) => {
+    const { id, revision } = req.body || {};
+    if (typeof id !== 'string' || !Number.isSafeInteger(revision) ||
+        Object.keys(req.body).some(key => key !== 'id' && key !== 'revision')) {
+      return res.status(400).json({ error: 'Укажите карту и версию публикации' });
+    }
+    const data = store.readActiveWorld([]);
+    if (!data || data.map.id !== id || data.map.revision !== revision) {
+      return res.status(409).json({ error: 'Публикация изменилась. Обновите карту и выберите секрет снова' });
+    }
+    const prop = data.map.objects.find(item => item.id === req.params.objectId && item.hidden);
+    if (!prop) return res.status(404).json({ error: 'Скрытый объект не найден на опубликованной карте' });
+    if (revealSecret(data.map, prop)) announce(data);
+    res.json({ revealed: true });
   }));
   app.post('/api/worlds/live/change', requireDm, json, route((req, res) => {
     const data = store.readActiveWorld([]);

@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const { valid, set, sceneScope, locationMapId } = require('./remote/world-model');
-const { mask, remember } = require('./world-exploration');
+const { mask, remember, isRevealedSecret } = require('./world-exploration');
 
 const steps = {
   north: [0, -1],
@@ -62,6 +62,7 @@ module.exports = function registerCharacterPositions(app, {
       explored: state.explored[key] || {},
       memory: state.memory?.[key] || { chunks: {}, objects: {} },
       openDoors,
+      revealedSecrets: state.revealedSecrets?.[layout.id] || {},
       visible: includeVisibility ? liveMask(state, layout, openDoors) : {},
     };
   }
@@ -78,7 +79,7 @@ module.exports = function registerCharacterPositions(app, {
     if (!source) return;
     const memories = state.memory ||= {};
     const memory = memories[explorationKey(sceneScope(source))] ||= { chunks: {}, objects: {} };
-    remember(memory, source, observed, openDoorsAt(state, id));
+    remember(memory, source, observed, openDoorsAt(state, id), state.revealedSecrets?.[id] || {});
   }
 
   function captureDeparture(state, position, includeOrigin = false) {
@@ -130,6 +131,19 @@ module.exports = function registerCharacterPositions(app, {
     const state = readState(file);
     capture(state, id, observed);
     writeState(file, state);
+  }
+
+  function revealSecret(layout, prop) {
+    const file = stateFile();
+    const state = readState(file);
+    const revealed = (state.revealedSecrets ||= {})[layout.id] ||= {};
+    if (isRevealedSecret(prop, revealed)) return false;
+
+    const { kind, x, y, turn } = prop;
+    revealed[':' + prop.id] = { kind, x, y, turn };
+    capture(state, layout.id, mask([prop]));
+    writeState(file, state);
+    return true;
   }
 
   function writeState(file, state) {
@@ -263,5 +277,5 @@ module.exports = function registerCharacterPositions(app, {
     return true;
   }
 
-  return { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView };
+  return { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret };
 };
