@@ -67,8 +67,9 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   app.get('/api/worlds', requireDm, route((req, res) => {
     const dir = directory();
-    const worlds = fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => idPattern.test(path.parse(name).name))
-      .map(name => { const { id, name: title } = read(path.join(dir, name)); return { id, name: title }; }) : [];
+    const worlds = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && entry.name.endsWith('.json') && idPattern.test(entry.name.slice(0, -5)))
+      .map(entry => { const { id, name: title } = read(path.join(dir, entry.name)); return { id, name: title }; }) : [];
     res.json({ worlds });
   }));
   app.post('/api/worlds', requireDm, json, route((req, res) => {

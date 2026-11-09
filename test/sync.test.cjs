@@ -266,6 +266,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const worldWrite=(endpoint,method,data)=>fetch(worldBase+endpoint+worldGame,{method,headers:noteHeaders,body:JSON.stringify(data)});
   assert.equal((await fetch(worldBase+worldGame,{redirect:'manual'})).status,302);
   const world=await (await worldWrite('','POST',{name:'Деревня у озера',sample:true})).json();
+  const worldDir=path.join(dir,'campaigns',campaign.id,'worlds');
+  const backup=path.join(worldDir,world.id+'.bak');
+  fs.writeFileSync(backup,'backup contents');
+  fs.mkdirSync(path.join(worldDir,'00000000-0000-0000-0000-000000000000.json'));
+  const listing=await fetch(worldBase+worldGame,{headers:{Cookie:cookie}});
+  assert.equal(listing.status,200);
+  assert.deepEqual((await listing.json()).worlds,[{id:world.id,name:world.name}]);
+  assert.equal(fs.readFileSync(backup,'utf8'),'backup contents');
   const tiles=require('../remote/world-model');
   tiles.set(world.chunks,-70,-41,'path');
   world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
