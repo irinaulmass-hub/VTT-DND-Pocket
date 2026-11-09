@@ -9,6 +9,7 @@ if (invitation) {
 }
 let accessRevoked = false;
 let position = null, positionReady = false, moving = false, movementStatus = '';
+let discoveries = [], discoveriesStatus = '', discoveryRequest = 0;
 const directions = { north: 'На север', west: 'На запад', east: 'На восток', south: 'На юг' };
 let roster = [], selected = localStorage.getItem('pocket-character') || new URLSearchParams(location.search).get('character'), tab = 'hero', socket;
 const stats = {str:'СИЛ',dex:'ЛОВ',con:'ТЕЛ',int:'ИНТ',wis:'МДР',cha:'ХАР'};
@@ -33,6 +34,10 @@ function renderTravel() {
   if (position) locationText = 'Клетка (' + position.x + ', ' + position.y + ')';
   else if (!positionReady) locationText = 'Получаем позицию героя…';
   const disabled = !position || !positionReady || moving;
+  const discoveriesList = discoveries.map(({ mapName, object }) => {
+    const label = window.WorldMap.props[object.kind]?.[0] || object.kind;
+    return `<li><strong>${esc(label)}</strong> · ${esc(mapName)} · (${esc(object.x)}, ${esc(object.y)})</li>`;
+  }).join('');
   content.innerHTML = `<h2>Путь героя</h2>
     <p role="status">${esc(locationText)}</p>
     <div class="travel-controls" role="group" aria-label="Шаг на соседнюю клетку">
@@ -40,7 +45,53 @@ function renderTravel() {
         `<button class="choose" data-move="${direction}" ${disabled ? 'disabled' : ''}>${label}</button>`).join('')}
     </div>
     <button class="choose" data-move="enter" ${disabled ? 'disabled' : ''}>Войти в переход</button>
-    <p class="muted" role="status">${esc(movementStatus)}</p>`;
+    <p class="muted" role="status">${esc(movementStatus)}</p>
+    <h3>Личные открытия</h3>
+    <p class="muted" role="status">${esc(discoveriesStatus || (discoveries.length ? '' : 'Мастер пока не передал открытий.'))}</p>
+    ${discoveriesList ? `<ul>${discoveriesList}</ul>` : ''}`;
+}
+
+function clearDiscoveries() {
+  ++discoveryRequest;
+  discoveries = [];
+  discoveriesStatus = '';
+}
+
+function revokeAccess() {
+  accessRevoked = true;
+  roster = [];
+  selected = null;
+  position = null;
+  positionReady = false;
+  clearDiscoveries();
+  localStorage.removeItem('player-invitation');
+  document.querySelector('#detail').close();
+  status.textContent = 'Доступ отозван';
+  socket?.close();
+  render();
+}
+
+async function readDiscoveries() {
+  if (!selected || !invitation || accessRevoked) return;
+  const request = ++discoveryRequest;
+  if (!discoveries.length) discoveriesStatus = 'Получаем открытия…';
+  try {
+    const response = await fetch('/api/player-discoveries', {
+      headers: { Authorization: 'Bearer ' + invitation },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (request !== discoveryRequest) return;
+    if (response.status === 401) return revokeAccess();
+    if (!response.ok) throw new Error('Не удалось прочитать открытия');
+    const data = await response.json();
+    if (request !== discoveryRequest) return;
+    discoveries = list(data.discoveries);
+    discoveriesStatus = '';
+  } catch {
+    if (request === discoveryRequest) discoveriesStatus = 'Не удалось загрузить открытия. Откройте вкладку «Путь» ещё раз.';
+  } finally {
+    if (request === discoveryRequest && tab === 'travel') render();
+  }
 }
 
 function showPosition(next) {
@@ -102,7 +153,12 @@ document.addEventListener('click',e=>{
   if(b.hasAttribute('data-open-loot'))window.openLoot();
   if(b.dataset.character){selected=b.dataset.character;localStorage.setItem('pocket-character',selected);render();}
   if(b.hasAttribute('data-switch')){localStorage.removeItem('player-invitation');location.reload();}
-  if(b.dataset.tab){tab=b.dataset.tab;render();window.scrollTo(0,0);}
+  if(b.dataset.tab){
+    tab=b.dataset.tab;
+    if (tab === 'travel') readDiscoveries();
+    render();
+    window.scrollTo(0,0);
+  }
   if(b.dataset.detail){
     const ch=roster.find(c=>c.id===selected); if(!ch)return;
     const items=b.dataset.detail==='inventory'?list(ch.inventory):b.dataset.detail==='combat'?list(ch.attacks):[...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
@@ -114,28 +170,26 @@ document.addEventListener('click',e=>{
 document.querySelector('#close-detail').onclick=()=>document.querySelector('#detail').close();
 function connect(){
   if (!invitation || accessRevoked) { status.textContent='Ожидание приглашения'; return; }
-  socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
+  let loadedFor;
+  socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?view=player`);
   socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'player-auth',token:invitation}));};
   socket.onmessage = event => {
     const msg = JSON.parse(event.data);
-    if (msg.type === 'ACCESS_REVOKED') {
-      accessRevoked = true;
-      roster = [];
-      selected = null;
-      position = null;
-      positionReady = false;
-      localStorage.removeItem('player-invitation');
-      document.querySelector('#detail').close();
-      render();
-      return;
-    }
+    if (msg.type === 'ACCESS_REVOKED') return revokeAccess();
     if (accessRevoked) return;
     if (msg.type === 'LOOT_CHANGED') window.dispatchEvent(new Event('loot-changed'));
     if (msg.type === 'CHARACTERS_UPDATE') {
       roster = msg.characters || [];
-      selected = roster[0]?.id;
+      const characterId = roster[0]?.id;
+      if (characterId !== selected) clearDiscoveries();
+      selected = characterId;
+      if (selected && selected !== loadedFor) {
+        loadedFor = selected;
+        readDiscoveries();
+      }
       render();
     }
+    if (msg.type === 'PLAYER_DISCOVERIES_CHANGED' && msg.characterId === selected) readDiscoveries();
     if (msg.type === 'CHARACTER_POSITION' && msg.characterId === selected) {
       showPosition(msg.position);
       positionReady = true;

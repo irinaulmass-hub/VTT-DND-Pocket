@@ -5,6 +5,7 @@ const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
+const createWorldDiscoveries = require('./world-discoveries');
 const { project, isRevealedSecret } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen, screenBlackout }) => {
@@ -14,6 +15,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const tileLimit = 150000;
 
   const movement = createWorldMovement(store, gameFile);
+  const discoveries = createWorldDiscoveries(gameFile);
 
   const {
     getPosition, mapState, projectionRevision, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret,
@@ -251,20 +253,43 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (setDoor(data.map, door, req.body.open)) announce(data);
     res.json({ open: req.body.open });
   }));
-  app.put('/api/worlds/live/secrets/:objectId', requireDm, json, route((req, res) => {
-    const { id, revision } = req.body || {};
-    if (typeof id !== 'string' || !Number.isSafeInteger(revision) ||
-        Object.keys(req.body).some(key => key !== 'id' && key !== 'revision')) {
-      return res.status(400).json({ error: 'Укажите карту и версию публикации' });
-    }
-    const data = store.readActiveWorld([]);
-    if (!data || data.map.id !== id || data.map.revision !== revision) {
-      return res.status(409).json({ error: 'Публикация изменилась. Обновите карту и выберите секрет снова' });
-    }
-    const prop = data.map.objects.find(item => item.id === req.params.objectId && item.hidden);
-    if (!prop) return res.status(404).json({ error: 'Скрытый объект не найден на опубликованной карте' });
+  function secretRoute(handler, extraFields = []) {
+    const fields = new Set(['id', 'revision', ...extraFields]);
+    return route((req, res) => {
+      const { id, revision } = req.body || {};
+      if (typeof id !== 'string' || !Number.isSafeInteger(revision) ||
+          Object.keys(req.body).some(key => !fields.has(key))) {
+        return res.status(400).json({ error: 'Укажите карту и версию публикации' });
+      }
+      const data = store.readActiveWorld([]);
+      if (!data || data.map.id !== id || data.map.revision !== revision) {
+        return res.status(409).json({ error: 'Публикация изменилась. Обновите карту и выберите секрет снова' });
+      }
+      const prop = data.map.objects.find(item => item.id === req.params.objectId && item.hidden);
+      if (!prop) return res.status(404).json({ error: 'Скрытый объект не найден на опубликованной карте' });
+      handler(req, res, data, prop);
+    });
+  }
+
+  app.put('/api/worlds/live/secrets/:objectId', requireDm, json, secretRoute((req, res, data, prop) => {
     if (revealSecret(data.map, prop)) announce(data);
     res.json({ revealed: true });
+  }));
+  app.put('/api/worlds/live/secrets/:objectId/share', requireDm, express.json({ limit: '8kb' }), secretRoute((req, res, data, prop) => {
+    const { characterId } = req.body;
+    if (typeof characterId !== 'string' || !characterId) {
+      return res.status(400).json({ error: 'Выберите героя' });
+    }
+    if (!loadCharacters().characters.some(hero => hero.id === characterId)) {
+      return res.status(404).json({ error: 'Герой не найден в этой кампании' });
+    }
+    if (discoveries.share(characterId, data.map, prop)) broadcast({ type: 'PLAYER_DISCOVERIES_CHANGED', characterId });
+    res.json({ shared: true });
+  }, ['characterId']));
+  app.get('/api/player-discoveries', route((req, res) => {
+    const characterId = req.query.view === 'table' ? null : assignedCharacter(req);
+    if (!characterId) return res.status(401).json({ error: 'Требуется действующее приглашение героя' });
+    res.json({ discoveries: discoveries.forCharacter(characterId) });
   }));
   app.post('/api/worlds/live/change', requireDm, json, route((req, res) => {
     const data = store.readActiveWorld([]);

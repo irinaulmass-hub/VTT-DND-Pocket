@@ -420,6 +420,8 @@
     <div class="book-toolbar" data-live-secrets hidden>
       <select class="book-select" data-live-secret aria-label="Скрытый объект на карте"></select>
       <button class="book-button small" data-live-reveal-secret disabled>Раскрыть на ТВ</button>
+      <select class="book-select" data-live-secret-hero aria-label="Получатель открытия"></select>
+      <button class="book-button small" data-live-share-secret disabled>Передать герою</button>
     </div>
     <canvas class="world-canvas" data-live-canvas aria-label="Большая карта мастера без тумана"></canvas>
     <p class="book-status" data-live-status role="status">Колёсико приближает карту. Жетоны можно перетаскивать.</p>`;
@@ -445,6 +447,7 @@
   function heroes() {
     for (const [select, placeholder] of [
       [p('hero'), 'Поставить жетон героя'],
+      [p('secret-hero'), 'Выбрать получателя'],
       [e('position-hero'), 'Герой для личной позиции'],
     ]) {
       const value = select.value;
@@ -452,6 +455,7 @@
       if (characterRoster.some(hero => hero.id === value)) select.value = value;
       else if (value && select === e('position-hero')) readPosition();
     }
+    secretButton();
   }
   heroes();
   new MutationObserver(heroes).observe(document.getElementById('party-list-container'), { childList: true, subtree: true });
@@ -463,7 +467,9 @@
   }
 
   function secretButton() {
-    p('reveal-secret').disabled = !p('secret').value || secretBusy;
+    const objectId = p('secret').value;
+    p('reveal-secret').disabled = !objectId || secretBusy || !!live?.revealedSecrets?.includes(objectId);
+    p('share-secret').disabled = !objectId || !p('secret-hero').value || secretBusy;
   }
 
   function paintLive() {
@@ -477,11 +483,12 @@
     if (doors.some(door => door.id === selection)) p('door').value = selection;
     doorButton();
     const revealed = new Set(live.revealedSecrets);
-    const secrets = live.map.objects.filter(prop => prop.hidden && !revealed.has(prop.id));
+    const secrets = live.map.objects.filter(prop => prop.hidden);
     const selectedSecret = p('secret').value;
     p('secrets').hidden = !secrets.length;
     p('secret').replaceChildren(new Option('Выбрать скрытый объект', ''), ...secrets.map(prop =>
-      new Option((props[prop.kind]?.[0] || prop.kind) + ' (' + prop.x + ', ' + prop.y + ')', prop.id)));
+      new Option((props[prop.kind]?.[0] || prop.kind) + ' (' + prop.x + ', ' + prop.y + ')' +
+        (revealed.has(prop.id) ? ' · раскрыт на ТВ' : ''), prop.id)));
     if (secrets.some(prop => prop.id === selectedSecret)) p('secret').value = selectedSecret;
     secretButton();
     const objects = live.map.objects.map(prop =>
@@ -509,16 +516,27 @@
     }
   };
 
-  p('secret').onchange = secretButton;
-  p('reveal-secret').onclick = async () => {
+  p('secret').onchange = p('secret-hero').onchange = secretButton;
+  p('reveal-secret').onclick = () => sendSecret();
+  p('share-secret').onclick = () => {
+    const characterId = p('secret-hero').value;
+    if (characterId) return sendSecret(characterId);
+  };
+  async function sendSecret(characterId) {
     const objectId = p('secret').value;
     if (!live || !objectId || secretBusy) return;
     const { id, revision } = live.map;
+    const endpoint = '/api/worlds/live/secrets/' + encodeURIComponent(objectId);
     secretBusy = true;
     secretButton();
     try {
-      await request('/api/worlds/live/secrets/' + encodeURIComponent(objectId), json('PUT', { id, revision }));
-      p('status').textContent = 'Секрет раскрыт на ТВ';
+      if (characterId) {
+        await request(endpoint + '/share', json('PUT', { id, revision, characterId }));
+        p('status').textContent = 'Открытие передано герою';
+      } else {
+        await request(endpoint, json('PUT', { id, revision }));
+        p('status').textContent = 'Секрет раскрыт на ТВ';
+      }
     } catch (error) {
       p('status').textContent = error.message;
     } finally {
@@ -526,7 +544,7 @@
       secretBusy = false;
       secretButton();
     }
-  };
+  }
 
   async function sync() {
     const generation = ++liveGeneration;

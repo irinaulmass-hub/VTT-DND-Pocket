@@ -109,7 +109,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentTokens[0].id,'other-token');
   const otherToken=await fetch(base+'/api/player-access?game='+campaign.id,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:otherChar.id})}).then(r=>r.json());
   assert.deepEqual((await fetch(base+'/api/characters?game='+campaign.id,{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json())).characters,[]);
-  const otherReconnected=await open(undefined,campaign.id);sockets.push(otherReconnected);
+  const otherReconnected=await open(cookie,campaign.id,'player');sockets.push(otherReconnected);
   next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'player-auth',token:otherToken.token}));assert.equal((await next).characters[0].hp,12);
   assert.ok(JSON.parse(fs.readFileSync(path.join(dir,'campaigns.json'))).some(c=>c.id===campaign.id));
 
@@ -366,9 +366,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await setPosition(otherChar.id,{...firstPosition,sceneId:'unknown'})).status,404);
   assert.equal((await setPosition(ch.id,firstPosition)).status,404);
   assert.equal((await fetch(positionBase+encodeURIComponent(ch.id),{method:'PUT',headers:noteHeaders,body:JSON.stringify(firstPosition)})).status,404);
+  next=message(otherReconnected,msg=>msg.type==='CHARACTERS_UPDATE');
   const secondHero=await fetch(base+'/api/characters'+worldGame,{
     method:'POST',headers:noteHeaders,body:JSON.stringify({name:'Разведчик'}),
   }).then(r=>r.json());
+  assert.deepEqual((await next).characters.map(hero=>hero.id),[otherChar.id],
+    'a phone socket in a master browser remains bound to its invited hero');
   const secondWorld=await worldWrite('','POST',{name:'Северный мир'}).then(r=>r.json());
   const secondPosition={...firstPosition,worldId:secondWorld.id,x:32,y:-1};
   assert.equal((await setPosition(secondHero.id,secondPosition)).status,200);
@@ -644,15 +647,70 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await tableWorld()).objects.some(prop=>prop.id==='secret-marker'),false);
   assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,[]);
 
+  const shareSecret=(objectId,body,headers=noteHeaders,query=worldGame)=>fetch(
+    worldBase+'/live/secrets/'+encodeURIComponent(objectId)+'/share'+query,{
+      method:'PUT',headers,redirect:'manual',body:JSON.stringify(body),
+    });
+  const discoveryResponse=(token,query=worldGame)=>fetch(base+'/api/player-discoveries'+query,{
+    headers:token ? {Authorization:'Bearer '+token} : {Cookie:cookie},
+  });
+  const readDiscoveries=async(token,query)=>{
+    const response=await discoveryResponse(token,query);
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('cache-control'),'no-store');
+    return response.json();
+  };
+  const shareBody={...secretBody,characterId:otherChar.id};
+  assert.equal((await fetch(base+'/api/player-discoveries'+worldGame)).status,401);
+  assert.equal((await discoveryResponse()).status,401);
+  assert.equal((await discoveryResponse(otherToken.token,worldGame+'&view=table')).status,401);
+  assert.equal((await discoveryResponse(otherToken.token,'?game='+packedCampaign.id)).status,401);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[]});
+  assert.equal((await shareSecret('another-secret',shareBody,guestSecretHeaders)).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,playerSecretHeaders)).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,noteHeaders,worldGame+'&view=table')).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,noteHeaders,'?game='+packedCampaign.id)).status,409);
+  assert.equal((await shareSecret('another-secret',{...shareBody,characterId:ch.id})).status,404);
+  assert.equal((await shareSecret('another-secret',secretBody)).status,400);
+  assert.equal((await shareSecret('remembered-torch',shareBody)).status,404);
+
+  const discoveryGuest=await open(undefined,campaign.id);sockets.push(discoveryGuest);
+  const leaks=[];
+  for(const socket of [secondSocket,table,discoveryGuest]) socket.on('message',raw=>{
+    const event=JSON.parse(raw);
+    if(event.type==='PLAYER_DISCOVERIES_CHANGED' || JSON.stringify(event).includes('another-secret')) leaks.push(event);
+  });
+  const personalUpdates=[];
+  otherReconnected.on('message',raw=>{
+    const event=JSON.parse(raw);
+    if(event.type==='PLAYER_DISCOVERIES_CHANGED') personalUpdates.push(event);
+  });
+  next=message(otherReconnected,msg=>msg.type==='PLAYER_DISCOVERIES_CHANGED');
+  assert.deepEqual(await (await shareSecret('another-secret',shareBody)).json(),{shared:true});
+  const personalEvent=await next;
+  assert.deepEqual(personalEvent,{type:'PLAYER_DISCOVERIES_CHANGED',characterId:otherChar.id});
+  assert.deepEqual(await (await shareSecret('another-secret',shareBody)).json(),{shared:true});
+  const privateDiscovery={mapId:world.id,mapName:savedWorld.name,object:{id:'another-secret',kind:'torch',x:14,y:12,turn:1}};
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await readDiscoveries(secondInvitation.token,worldGame+'&characterId='+otherChar.id),{discoveries:[]});
+  assert.deepEqual(await tableWorld(),firstView,'a personal disclosure does not alter the TV snapshot or version');
+
   const secretScreen=await open(undefined,campaign.id,'table');sockets.push(secretScreen);
   next=message(secretScreen,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id&&
     msg.version.exploration===firstView.version.exploration+1);
   const phoneUpdate=message(secondSocket,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  const guestUpdate=message(discoveryGuest,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id&&
+    msg.version.exploration===firstView.version.exploration+1);
+  const sharedScreenUpdate=message(table,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  const recipientUpdate=message(otherReconnected,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
   assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true});
-  for(const event of await Promise.all([next,phoneUpdate])) {
+  for(const event of await Promise.all([next,phoneUpdate,guestUpdate,sharedScreenUpdate,recipientUpdate])) {
     assert.doesNotMatch(JSON.stringify(event),/secret-marker|revealedSecrets/);
     assert.deepEqual(event.version,{...firstView.version,exploration:firstView.version.exploration+1});
   }
+  assert.deepEqual(leaks,[]);
+  assert.deepEqual(personalUpdates,[personalEvent],'retrying an identical delivery does not send another invalidation');
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[]},'a TV reveal does not send a personal discovery');
   assert.deepEqual(await readOwnPosition(secondInvitation.token),afterStairs);
   assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true},'repeated reveal is idempotent');
   const firstSecretView=await tableWorld();
@@ -667,6 +725,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,['secret-marker']);
   assert.equal((await (await fetch(worldBase+'/'+world.id+worldGame,{headers:noteHeaders})).json())
     .objects.find(prop=>prop.id==='secret-marker').hidden,true,'the draft remains secret');
+  assert.equal((await shareSecret('secret-marker',{...secretBody,characterId:secondHero.id})).status,200);
+  const secondDiscovery={...privateDiscovery,object:firstMarker};
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[secondDiscovery]});
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await tableWorld(),firstSecretView);
   const chunkEndpoint='/'+world.id+'/chunks';
   const chunkUrl=worldBase+chunkEndpoint+worldGame+'&chunks=0%2C0';
   assert.equal((await fetch(chunkUrl,{redirect:'manual'})).status,302);
@@ -698,6 +761,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(updatedDraft.objects,savedWorld.objects);
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='secret-marker'),{x:29,y:0});
+  updatedDraft.objects.find(prop=>prop.id==='another-secret').x=13;
   const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
   assert.equal(editedWorld.revision,savedWorld.revision+2);
   const legacyId='10000000-0000-0000-0000-000000000000';
@@ -733,6 +797,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(positionAfterRestart,m=>m.type==='CHARACTER_POSITION');
   positionAfterRestart.send(JSON.stringify({action:'player-auth',token:otherToken.token}));
   assert.deepEqual((await next).position,afterDoor.position);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[secondDiscovery]});
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
@@ -786,6 +852,15 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(republished.seen,resumedWorld.seen);
   assert.deepEqual(republished.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
   const resumedHeaders={...noteHeaders,Cookie:newCookie};
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]},'republish does not update a private snapshot');
+  assert.equal((await shareSecret('another-secret',shareBody,resumedHeaders)).status,409);
+  const updatedShareBody={...shareBody,revision:editedWorld.revision};
+  const updatedDiscovery={...privateDiscovery,object:{...privateDiscovery.object,x:13}};
+  next=message(positionAfterRestart,msg=>msg.type==='PLAYER_DISCOVERIES_CHANGED');
+  assert.equal((await shareSecret('another-secret',updatedShareBody,resumedHeaders)).status,200);
+  assert.equal((await next).characterId,otherChar.id);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[updatedDiscovery]});
+  assert.deepEqual(await tableWorld(),republished);
   assert.deepEqual((await (await masterLive(editedWorld.revision,resumedHeaders)).json()).revealedSecrets,[]);
   assert.equal((await revealSecret('secret-marker',secretBody,resumedHeaders)).status,409,'an old publication cannot authorize a moved secret');
   assert.equal(tiles.get(republished.chunks,0,0),'path','legacy discovery keeps the outgoing published tile');
@@ -849,6 +924,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await next;
   const afterRemoval=await tableWorld();
   assert.deepEqual(afterRemoval.visible,{});
+  assert.equal((await discoveryResponse(secondInvitation.token)).status,401);
   assert.equal(tiles.get(afterRemoval.chunks,29,0),'stone','removing a hero ends sight and preserves their last observation');
 
   const otherMapSecret=await fetch(worldBase+'/'+secondWorld.id+worldGame,{
@@ -872,6 +948,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await tableStatus()).blackout,true);
   assert.equal((await blackout()).status,200);
   assert.equal((await tableStatus()).blackout,false);
+
+  const revokedDiscovery=message(positionAfterRestart,msg=>msg.type==='ACCESS_REVOKED');
+  const replacementInvite=await fetch(base+'/api/player-access'+worldGame,{
+    method:'POST',headers:resumedHeaders,body:JSON.stringify({characterId:otherChar.id}),
+  }).then(r=>r.json());
+  await revokedDiscovery;
+  assert.equal((await discoveryResponse(otherToken.token)).status,401);
+  assert.deepEqual(await readDiscoveries(replacementInvite.token),{discoveries:[updatedDiscovery]});
 
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });

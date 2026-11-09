@@ -412,6 +412,7 @@ function featureForPlayers(feature) {
 function sendView(client, data) {
   if (client.accessToken && !client.characterId) return;
   if (client.readyState !== WebSocket.OPEN || (client.tableView && !tableMessages.has(data.type))) return;
+  if (data.type === 'PLAYER_DISCOVERIES_CHANGED' && client.characterId !== data.characterId) return;
   if (!game().dmClients.has(client)) {
     if (data.type === 'CHARACTER_POSITION' && client.characterId !== data.characterId) return;
     if (data.type === 'UPDATE_TOKENS') {
@@ -623,6 +624,7 @@ wss.on('connection', (ws, req) => {
   const params = new URL(req.url, 'http://localhost').searchParams;
   const id = params.get('game') || 'default';
   ws.tableView = params.get('view') === 'table';
+  ws.playerView = params.get('view') === 'player';
   if (!campaigns.some(c => c.id === id)) { ws.close(1008, 'Unknown campaign'); return; }
   const context = getGame(id);
   campaignContext.run(context, () => initializeConnection(ws, req, context));
@@ -631,7 +633,7 @@ function initializeConnection(ws, req, context) {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   game().clients.add(ws);
-  const dmAuthed = !ws.tableView && isDmAuthed(req);
+  const dmAuthed = !ws.tableView && !ws.playerView && isDmAuthed(req);
   if (dmAuthed) game().dmClients.add(ws);
   if (!dmAuthed) ws.guestId = ++game().guestCounter;
   console.log(`Client connected. Total: ${game().clients.size} | isDM: ${dmAuthed}`);
