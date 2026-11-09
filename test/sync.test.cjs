@@ -33,6 +33,23 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const login=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const cookie=login.headers.get('set-cookie').split(';')[0];
   const ch=(await (await fetch(base+'/api/characters')).json()).characters[0];
+  const invitationResponse=await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:ch.id})});
+  assert.equal(invitationResponse.status,201);
+  const invitation=await invitationResponse.json();
+  const invited=await open();sockets.push(invited);
+  let invitedNext=message(invited,m=>m.type==='CHARACTERS_UPDATE');
+  invited.send(JSON.stringify({action:'player-auth',token:invitation.token}));
+  assert.deepEqual((await invitedNext).characters.map(c=>c.id),[ch.id]);
+  invitedNext=message(invited,m=>m.type==='PLAYER_LOGIN_ERR');
+  invited.send(JSON.stringify({action:'claim-character',characterId:'another',playerName:'Other'}));
+  await invitedNext;
+  const revoked=message(invited,m=>m.type==='ACCESS_REVOKED');
+  assert.equal((await fetch(base+'/api/player-access/'+ch.id,{method:'DELETE',headers:{Cookie:cookie}})).status,200);
+  await revoked;
+  const rejected=await open();sockets.push(rejected);
+  const rejection=message(rejected,m=>m.type==='ACCESS_REVOKED');
+  rejected.send(JSON.stringify({action:'player-auth',token:invitation.token}));
+  await rejection;
   const player=await open();sockets.push(player);
   player.send(JSON.stringify({action:'update-character',characterId:ch.id,patch:{hp:1}}));
   // Roundtrip through the same connection ensures the rejected write was processed.

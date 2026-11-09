@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 
-module.exports = (app, { express, requireDm, gameFile, loadCharacters }) => {
+module.exports = (app, { express, requireDm, gameFile, loadCharacters, onChange = () => {} }) => {
   const file = () => gameFile('player-access.json');
   const read = () => fs.existsSync(file()) ? JSON.parse(fs.readFileSync(file(), 'utf8')) : {};
   const hash = token => crypto.createHash('sha256').update(token).digest('hex');
@@ -36,6 +36,7 @@ module.exports = (app, { express, requireDm, gameFile, loadCharacters }) => {
     const createdAt = new Date().toISOString();
     data[hash(token)] = { characterId, createdAt };
     save(data);
+    onChange(characterId);
     res.status(201).json({ characterId, token, createdAt });
   }));
   app.delete('/api/player-access/:characterId', requireDm, route((req, res) => {
@@ -44,6 +45,7 @@ module.exports = (app, { express, requireDm, gameFile, loadCharacters }) => {
       if (assignment.characterId === req.params.characterId) delete data[key];
     }
     save(data);
+    onChange(req.params.characterId);
     res.json({ revoked: true });
   }));
 

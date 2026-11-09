@@ -39,7 +39,7 @@
     form.onsubmit=async event=>{event.preventDefault();button.disabled=true;try{const res=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:input.value,pack:pack.value})});if(!res.ok)throw Error('Не удалось создать кампанию');navigate((await res.json()).id);}catch(e){error.textContent=e.message;button.disabled=false;}};
    }
    // Keep links to player/TV views in the selected campaign, including links added later.
-   document.addEventListener('click',event=>{const a=event.target.closest('a');if(!a)return;const url=new URL(a.href,location.href);if(url.origin===location.origin && ['/player','/tv','/remote/player'].includes(url.pathname)){url.searchParams.set('game',id);a.href=url.href;}},true);
+   document.addEventListener('click',event=>{const a=event.target.closest('a');if(!a)return;const url=new URL(a.href,location.href);if(url.origin===location.origin && ['/player','/tv','/remote/player','/dm/access.html'].includes(url.pathname)){url.searchParams.set('game',id);a.href=url.href;}},true);
   }catch(e){error.textContent=e.message;}
  });
 })();

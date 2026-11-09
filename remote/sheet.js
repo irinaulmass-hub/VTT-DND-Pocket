@@ -2,6 +2,12 @@
 const content = document.querySelector('#content');
 const nav = document.querySelector('nav');
 const status = document.querySelector('#connection');
+let invitation = new URLSearchParams(location.hash.slice(1)).get('invite') || localStorage.getItem('player-invitation');
+if (invitation) {
+  localStorage.setItem('player-invitation', invitation);
+  history.replaceState(null, '', location.pathname + location.search);
+}
+let accessRevoked = false;
 let roster = [], selected = localStorage.getItem('pocket-character') || new URLSearchParams(location.search).get('character'), tab = 'hero', socket;
 const stats = {str:'СИЛ',dex:'ЛОВ',con:'ТЕЛ',int:'ИНТ',wis:'МДР',cha:'ХАР'};
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -24,14 +30,14 @@ function render() {
   const ch = roster.find(c=>c.id===selected);
   nav.hidden = !ch;
   if (!ch) {
-    content.innerHTML = '<p class="eyebrow">Ваша история за этим столом</p><h1>Выберите героя</h1><p class="muted">Личная карточка, связанная с мастером.</p>'+ (roster.length ? roster.map(c=>`<button class="choose" data-character="${esc(c.id)}"><strong>${esc(c.name)}</strong><br><small>${esc(c.cls)} · уровень ${esc(c.level ?? 1)}</small></button>`).join('') : '<p class="empty">Мастер ещё не создал персонажей.</p>');
+    content.innerHTML = '<h1>Приглашение мастера</h1><p>Откройте ссылку, которую мастер создал для вашего героя.</p>';
     return;
   }
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
   const abilities = [...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
   if (tab==='hero') {
     const hp=number(ch.hp), maxHp=number(ch.maxHp,10), eclipse=number(ch.eclipse), maxEclipse=number(ch.maxEclipse,10);
-    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)} · опыт ${esc(ch.xp??0)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><small>Временные HP: ${esc(ch.tempHp??0)}</small><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Сменить персонажа</button>`;
+    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)} · опыт ${esc(ch.xp??0)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><small>Временные HP: ${esc(ch.tempHp??0)}</small><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Выйти из приглашения</button>`;
   } else if (tab==='inventory') {
     const money = typeof ch.money === 'object' && ch.money ? Object.entries(ch.money).map(([k,v])=>`${v} ${k}`).join(' · ') : ch.money ?? 0;
     content.innerHTML=`<p class="eyebrow">Всё для приключения</p><h2>Инвентарь</h2><button class="choose" data-open-loot>Сундуки и добыча</button><div class="money">Монеты · ${esc(money)}</div>${rows(list(ch.inventory),'inventory')}`;
@@ -46,7 +52,7 @@ document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.hasAttribute('data-open-loot'))window.openLoot();
   if(b.dataset.character){selected=b.dataset.character;localStorage.setItem('pocket-character',selected);render();}
-  if(b.hasAttribute('data-switch')){selected=null;localStorage.removeItem('pocket-character');render();}
+  if(b.hasAttribute('data-switch')){localStorage.removeItem('player-invitation');location.reload();}
   if(b.dataset.tab){tab=b.dataset.tab;render();window.scrollTo(0,0);}
   if(b.dataset.detail){
     const ch=roster.find(c=>c.id===selected); if(!ch)return;
@@ -58,10 +64,11 @@ document.addEventListener('click',e=>{
 });
 document.querySelector('#close-detail').onclick=()=>document.querySelector('#detail').close();
 function connect(){
+  if (!invitation || accessRevoked) { status.textContent='Ожидание приглашения'; return; }
   socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
-  socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'request-characters'}));};
-  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='LOOT_CHANGED')window.dispatchEvent(new Event('loot-changed'));if(msg.type==='CHARACTERS_UPDATE'){roster=msg.characters||[];render();}if(msg.type==='ping')socket.send(JSON.stringify({action:'pong'}));};
-  socket.onclose=()=>{status.textContent='○ Переподключение…';setTimeout(connect,2000);};
+  socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'player-auth',token:invitation}));};
+  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='LOOT_CHANGED')window.dispatchEvent(new Event('loot-changed'));if(msg.type==='ACCESS_REVOKED'){accessRevoked=true;roster=[];selected=null;localStorage.removeItem('player-invitation');document.querySelector('#detail').close();render();}if(msg.type==='CHARACTERS_UPDATE'){roster=msg.characters||[];selected=roster[0]?.id;render();}if(msg.type==='ping')socket.send(JSON.stringify({action:'pong'}));};
+  socket.onclose=()=>{if(accessRevoked){status.textContent='Доступ отозван';return;}status.textContent='○ Переподключение…';setTimeout(connect,2000);};
   socket.onerror=()=>socket.close();
 }
 render();connect();

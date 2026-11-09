@@ -366,6 +366,7 @@ function featureForPlayers(feature) {
 }
 
 function sendView(client, data) {
+  if (client.accessToken && !client.characterId) return;
   if (client.readyState !== WebSocket.OPEN || (client.tableView && !tableMessages.has(data.type))) return;
   if (!game().dmClients.has(client)) {
     if (data.type === 'UPDATE_TOKENS') {
@@ -392,6 +393,10 @@ function sendView(client, data) {
       data = { ...data, targets };
     }
   }
+  if (client.characterId && data.type === 'CHARACTERS_UPDATE') {
+    data = { ...data, characters: data.characters.filter(ch => ch.id === client.characterId) };
+  }
+  if (client.characterId && data.type === 'PLAYER_DATA_UPDATE' && data.player.id !== client.characterId) return;
   client.send(JSON.stringify(data));
 }
 
@@ -595,6 +600,13 @@ function initializeConnection(ws, req, context) {
       const message = JSON.parse(raw);
       if (ws.tableView && message.action !== 'request-sync') return;
       const isDm = game().dmClients.has(ws);
+      if (ws.accessToken && playerAccess.resolve(ws.accessToken) !== ws.characterId) {
+        ws.characterId = null;
+        ws.playerName = null;
+        ws.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+        ws.close(1008, 'Access revoked');
+        return;
+      }
       if (message.action === 'open-location') {
         if (!isDm) return;
         const location = typeof message.viewId === 'string' && findLocation(message.viewId);
@@ -734,20 +746,24 @@ function initializeConnection(ws, req, context) {
           break;
         }
         case 'toggle-grid': game().gridEnabled = !game().gridEnabled; broadcast({ type: 'GRID_TOGGLE', enabled: game().gridEnabled }); saveState(); break;
-        case 'player-login': {
-          const loginName = String(message.name || '').trim().slice(0, 64); const loginCls = String(message.cls || '').trim().slice(0, 32);
-          if (!loginName || !loginCls) break;
-          try {
-            const player = loadCharacters().characters.find(p => p.name.toLowerCase() === loginName.toLowerCase());
-            if (!player) { ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Выберите героя, созданного мастером.' })); break; }
-            ws.playerName = player.name; game().loggedInPlayers.set(player.name, ws); ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_OK', player }));
-            if (game().allPlayersLocked || game().lockedPlayers.has(player.name)) ws.send(JSON.stringify({ type: 'MOVEMENT_LOCK', name: player.name, locked: true }));
-            const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...game().loggedInPlayers.keys()] });
-            for (const dm of game().dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
-            broadcastClientCount(); console.log('Player logged in:', player.name);
-          } catch (e) { console.error('player-login error:', e); ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Server error during login.' })); }
+        case 'player-auth': {
+          const characterId = playerAccess.resolve(message.token);
+          if (!characterId) {
+            ws.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+            ws.close(1008, 'Invalid invitation');
+            break;
+          }
+          const character = loadCharacters().characters.find(ch => ch.id === characterId);
+          ws.accessToken = message.token;
+          ws.characterId = characterId;
+          ws.playerName = character.name;
+          ws.send(JSON.stringify({ type: 'CHARACTERS_UPDATE', characters: [character] }));
           break;
         }
+        case 'player-login':
+        case 'claim-character':
+          ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Откройте приглашение мастера в /player.' }));
+          break;
         case 'move-player-token': {
           if (!ws.playerName) break; if (game().allPlayersLocked || game().lockedPlayers.has(ws.playerName)) break;
           const tokIdx = game().currentTokens.findIndex(t => t.label === ws.playerName && t.type === 'player'); if (tokIdx === -1) break;
@@ -781,26 +797,7 @@ function initializeConnection(ws, req, context) {
           break;
         }
         case 'request-characters': {
-          ws.send(JSON.stringify({ type: 'CHARACTERS_UPDATE', characters: loadCharacters().characters }));
-          break;
-        }
-        case 'claim-character': {
-          const data = loadCharacters();
-          const ch = data.characters.find(c => c.id === message.characterId);
-          if (!ch) break;
-          data.characters.forEach(c => {
-            if (c.claimedBy === message.playerName) c.claimedBy = null;
-          });
-          ch.claimedBy = message.playerName || 'player';
-          saveCharacters(data);
-          broadcast({ type: 'CHARACTERS_UPDATE', characters: data.characters });
-          ws.send(JSON.stringify({ type: 'CHARACTER_CLAIMED', character: ch }));
-          // Also set playerName for movement etc.
-          ws.playerName = ch.name;
-          game().loggedInPlayers.set(ch.name, ws);
-          const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...game().loggedInPlayers.keys()] });
-          for (const dm of game().dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
-          broadcastClientCount();
+          sendView(ws, { type: 'CHARACTERS_UPDATE', characters: loadCharacters().characters });
           break;
         }
         case 'update-character': {
@@ -954,7 +951,19 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
 });
 
 
-require('./player-access')(app, { express, requireDm, gameFile, loadCharacters });
+const playerAccess = require('./player-access')(app, {
+  express, requireDm, gameFile, loadCharacters,
+  onChange(characterId) {
+    for (const client of game().clients) {
+      if (client.characterId === characterId) {
+        client.characterId = null;
+        client.playerName = null;
+        client.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+        client.close(1008, 'Access revoked');
+      }
+    }
+  },
+});
 
 require('./advancement')(app, {express,loadCharacters,saveCharacters,requireDm,broadcast});
 require('./adventure')(app, { express, fs, path, gameFile, requireDm, hasWindenPack });
