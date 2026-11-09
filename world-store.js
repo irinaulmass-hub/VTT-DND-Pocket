@@ -124,7 +124,20 @@ module.exports = function createWorldStore(gameFile) {
     write(file, { ...manifest, snapshot: { ...snapshot, map: manifest.snapshot.map } });
   }
 
-  const readActiveId = () => read(gameFile('active-world.json'))?.id || null;
+  function readActive() {
+    const state = read(gameFile('active-world.json'));
+    return { id: state?.id || null, generation: state?.generation ?? 0 };
+  }
+
+  const readActiveId = () => readActive().id;
+
+  function writeActiveId(id) {
+    const active = readActive();
+    if (id === active.id) return active;
+    const next = { id, generation: active.generation + 1 };
+    write(gameFile('active-world.json'), next);
+    return next;
+  }
 
   return {
     listDrafts() {
@@ -167,8 +180,9 @@ module.exports = function createWorldStore(gameFile) {
     readPublished,
     writePublished,
     updatePublishedState,
+    readActive,
     readActiveId,
-    writeActiveId: id => write(gameFile('active-world.json'), { id }),
+    writeActiveId,
     readActiveWorld(keys) {
       const id = readActiveId();
       return id ? readPublished(id, keys) : null;

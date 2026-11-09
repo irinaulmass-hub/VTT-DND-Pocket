@@ -1136,6 +1136,7 @@ const worlds = require('./worlds')(app, {
     const hero = loadCharacters().characters.find(character => character.id === characterId);
     return g.lockedPlayers.has(hero?.name);
   },
+  screenBlackout: () => game().currentState.blackout,
   revealScreen() {
     game().currentState.blackout = false;
     saveState();

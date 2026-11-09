@@ -1426,6 +1426,9 @@ function handleMessage(msg) {
     if (isTableScreen) window.dispatchEvent(new CustomEvent('world-update', { detail: msg }));
     return;
   }
+  if (isTableScreen && (msg.type === 'BLACKOUT' || msg.type === 'SHOW_SCENE_VIEW' || msg.type === 'CLEAR')) {
+    window.dispatchEvent(new Event('table-presentation-change'));
+  }
   statusEl.textContent = msg.type;
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':

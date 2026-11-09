@@ -54,6 +54,17 @@ module.exports = function registerCharacterPositions(app, {
       .flatMap(position => visibleCells(position, layout.objects, openDoors)));
   }
 
+  function projectionRevision(id, fog, state = readState()) {
+    const revision = state.projectionRevisions?.[id];
+    // A map shown without fog does not expose changes to the party’s sight.
+    return (revision?.objects ?? 0) + (fog ? revision?.sight ?? 0 : 0);
+  }
+
+  function advanceProjection(state, id, component) {
+    const revision = (state.projectionRevisions ||= {})[id] ||= {};
+    revision[component] = (revision[component] ?? 0) + 1;
+  }
+
   function mapState(layout, includeVisibility = false) {
     const state = readState();
     const key = explorationKey(sceneScope(layout));
@@ -62,6 +73,7 @@ module.exports = function registerCharacterPositions(app, {
       explored: state.explored[key] || {},
       memory: state.memory?.[key] || { chunks: {}, objects: {} },
       openDoors,
+      projectionRevision: projectionRevision(layout.id, includeVisibility, state),
       revealedSecrets: state.revealedSecrets?.[layout.id] || {},
       visible: includeVisibility ? liveMask(state, layout, openDoors) : {},
     };
@@ -122,6 +134,7 @@ module.exports = function registerCharacterPositions(app, {
     const position = getPosition(characterId, state.positions);
     if (!position || !isObserving(state, position)) return null;
     captureDeparture(state, position);
+    advanceProjection(state, locationMapId(position), 'sight');
     writeState(file, state);
     return explorationNotice(position);
   }
@@ -130,6 +143,7 @@ module.exports = function registerCharacterPositions(app, {
     const file = stateFile();
     const state = readState(file);
     capture(state, id, observed);
+    advanceProjection(state, id, 'sight');
     writeState(file, state);
   }
 
@@ -142,6 +156,7 @@ module.exports = function registerCharacterPositions(app, {
     const { kind, x, y, turn } = prop;
     revealed[':' + prop.id] = { kind, x, y, turn };
     capture(state, layout.id, mask([prop]));
+    advanceProjection(state, layout.id, 'objects');
     writeState(file, state);
     return true;
   }
@@ -210,7 +225,11 @@ module.exports = function registerCharacterPositions(app, {
     captureDeparture(state, current, true);
     recordExploration(state, current, [current]);
     recordExploration(state, position, visible);
-    capture(state, locationMapId(position), mask(visible));
+    const from = locationMapId(current);
+    const to = locationMapId(position);
+    capture(state, to, mask(visible));
+    advanceProjection(state, from, 'sight');
+    if (to !== from) advanceProjection(state, to, 'sight');
     (state.observing ||= {})[characterId] = position.revision;
     savePosition(file, state, position);
     // At most one of the two maps can be on the table.
@@ -239,7 +258,10 @@ module.exports = function registerCharacterPositions(app, {
     const state = readState(file);
     const previous = getPosition(characterId, state.positions);
     const observed = previous && isObserving(state, previous);
-    if (observed) captureDeparture(state, previous);
+    if (observed) {
+      captureDeparture(state, previous);
+      advanceProjection(state, locationMapId(previous), 'sight');
+    }
     const revision = (previous?.revision ?? 0) + 1;
     const position = { characterId, worldId, sceneId, floorId, x, y, revision };
     savePosition(file, state, position);
@@ -272,10 +294,10 @@ module.exports = function registerCharacterPositions(app, {
       }
     }
     capture(state, layout.id, liveMask(state, layout, next, observers));
-
+    advanceProjection(state, layout.id, 'objects');
     writeState(file, state);
     return true;
   }
 
-  return { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret };
+  return { getPosition, mapState, projectionRevision, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret };
 };

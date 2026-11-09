@@ -7,7 +7,7 @@ const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
 const { project, isRevealedSecret } = require('./world-exploration');
 
-module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen }) => {
+module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen, screenBlackout }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
@@ -15,7 +15,9 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   const movement = createWorldMovement(store, gameFile);
 
-  const { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret } = registerCharacterPositions(app, {
+  const {
+    getPosition, mapState, projectionRevision, setDoor, preservePublication, rememberReveal, rememberCharacterView, revealSecret,
+  } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     locationExists: movement.locationExists,
     stepVisibility: movement.stepVisibility,
@@ -25,25 +27,38 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     findTransition: movement.findTransition,
     explorationNotice(position) {
       const id = map.locationMapId(position);
-      if (store.readActiveId() !== id) return null;
+      const active = store.readActive();
+      if (active.id !== id) return null;
       const data = store.readPublished(id, []);
-      return data?.fog ? notice(data) : null;
+      return data?.fog ? notice(data, active) : null;
     },
   });
 
-  function notice(data) {
+  function syncVersion(data, active, exploration = data ? projectionRevision(data.map.id, data.fog) : 0) {
+    return { generation: active.generation, publication: data?.revision ?? 0, exploration };
+  }
+
+  function notice(data, active = store.readActive()) {
     const tokens = data?.tokens || [];
     const party = tokens.length ? {
       x: tokens.reduce((sum, token) => sum + token.x, 0) / tokens.length + .5,
       y: tokens.reduce((sum, token) => sum + token.y, 0) / tokens.length + .5,
     } : null;
-    return { type: 'WORLD_UPDATE', id: data?.map.id || null, revision: data?.revision, frame: data?.frame || null, party };
+    return {
+      type: 'WORLD_UPDATE', id: data?.map.id || null, revision: data?.revision,
+      version: syncVersion(data, active), frame: data?.frame || null, party,
+    };
   }
-  const announce = data => broadcast(notice(data));
+  function activeNotice() {
+    const active = store.readActive();
+    const data = active.id ? store.readPublished(active.id, []) : null;
+    return notice(data, active);
+  }
+
+  const announce = (data, active) => broadcast(notice(data, active));
   function hide() {
     if (!store.readActiveId()) return false;
-    store.writeActiveId(null);
-    announce(null);
+    announce(null, store.writeActiveId(null));
     return true;
   }
 
@@ -129,17 +144,22 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       map: req.query.version === id + ':' + revision ? { id, name, revision } : store.readPublished(id).map,
     });
   }));
+  app.get('/api/worlds/table/status', route((req, res) => {
+    res.json({ ...activeNotice(), blackout: screenBlackout() });
+  }));
   app.get('/api/worlds/table', route((req, res) => {
-    const activeId = store.readActiveId();
-    if (!activeId) return res.json(null);
+    const active = store.readActive();
+    if (!active.id) return res.json(null);
     const requested = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
     if (requested.length > 100 || requested.some(key => !chunkPattern.test(key))) return res.status(400).json({ error: 'Некорректный участок карты' });
     const keys = new Set(requested);
-    const data = store.readPublished(activeId, keys);
+    const data = store.readPublished(active.id, keys);
     if (!data) return res.json(null);
+    const state = mapState(data.map, data.fog);
     res.json({
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,
-      fog: data.fog, ...project(data, keys, mapState(data.map, data.fog)),
+      version: syncVersion(data, active, state.projectionRevision),
+      fog: data.fog, ...project(data, keys, state),
     });
   }));
   app.get('/api/worlds/:id/transitions', requireDm, route((req, res) => {
@@ -217,9 +237,9 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       map: data, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
     };
     store.writePublished(data.id, next);
-    store.writeActiveId(data.id);
+    const active = store.writeActiveId(data.id);
     revealScreen();
-    announce(next);
+    announce(next, active);
     res.json(next);
   }));
   app.put('/api/worlds/live/doors/:doorId', requireDm, json, route((req, res) => {
@@ -274,5 +294,5 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.json({ tokens: data.tokens, revision: data.revision, frame: data.frame });
   }));
   app.post('/api/worlds/live/hide', requireDm, route((req, res) => res.json({ hidden: hide() })));
-  return { hide, getPosition, rememberCharacterView, notice: () => notice(store.readActiveWorld([])) };
+  return { hide, getPosition, rememberCharacterView, notice: activeNotice };
 };

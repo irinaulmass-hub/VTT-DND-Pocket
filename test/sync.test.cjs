@@ -456,9 +456,13 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await worldWrite('/'+world.id,'PUT',world)).status,409);
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
-  await next;
+  const publishedNotice=await next;
   const tableWorld=(keys='0,0')=>fetch(worldBase+'/table'+worldGame+'&chunks='+encodeURIComponent(keys)).then(r=>r.json());
+  const tableStatus=(query=worldGame)=>fetch(worldBase+'/table/status'+query).then(r=>r.json());
   const freshTable=await tableWorld();
+  assert.deepEqual(freshTable.version,publishedNotice.version);
+  assert.deepEqual(await tableStatus(),{...publishedNotice,blackout:false});
+  assert.equal((await tableStatus('?game='+packedCampaign.id)).id,null);
   assert.deepEqual(freshTable.chunks['0,0'],{});
   assert.deepEqual(freshTable.tokens,[]);
   assert.equal(freshTable.positions,undefined);
@@ -470,8 +474,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const partyStep=await movePosition({direction:'east',revision:5});
   assert.equal(partyStep.status,200);
   const partyFirst=await partyStep.json();
-  await next;
+  const stepNotice=await next;
   const firstExplored=await tableWorld();
+  assert.deepEqual(firstExplored.version,stepNotice.version);
+  assert.deepEqual(stepNotice.version,{...publishedNotice.version,exploration:publishedNotice.version.exploration+1});
+  assert.deepEqual((await tableStatus()).version,stepNotice.version);
   assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,22,0),'path','the wall cell itself is visible');
@@ -482,7 +489,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-torch'));
   assert.equal((await movePosition({direction:'east',revision:6})).status,409);
   assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
-  assert.deepEqual((await tableWorld()).seen,firstExplored.seen,'a blocked step does not change exploration');
+  const afterBlockedStep=await tableWorld();
+  assert.deepEqual(afterBlockedStep.seen,firstExplored.seen,'a blocked step does not change exploration');
+  assert.deepEqual(afterBlockedStep.version,firstExplored.version);
 
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
   const secondPartyStep=await movePosition({direction:'east',revision:3},secondInvitation.token);
@@ -563,8 +572,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await changeDoor(true,world.id)).status,409);
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===cave.id);
   assert.deepEqual(await (await changeDoor(true)).json(),{open:true});
-  await next;
+  const openedNotice=await next;
   const openedCave=await tableWorld();
+  assert.deepEqual(openedCave.version,openedNotice.version);
+  assert.deepEqual(openedCave.version,{...caveTable.version,exploration:caveTable.version.exploration+1});
+  assert.equal((await changeDoor(true)).status,200);
+  assert.deepEqual((await tableStatus()).version,openedCave.version);
   assert.equal(tiles.get(openedCave.chunks,7,4),'caveFloor','stationary hero sees past the opened door');
   assert.equal(openedCave.objects.find(prop=>prop.id==='cave-door').open,true);
   assert.equal(tiles.get(openedCave.visible,7,4),true);
@@ -600,6 +613,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const departedWorld=await tableWorld();
   assert.equal(tiles.get(departedWorld.chunks,21,0),'path');
   assert.deepEqual(departedWorld.visible,{},'heroes on other maps leave only the party’s memory');
+  assert.ok(departedWorld.version.generation > openedCave.version.generation);
+  assert.equal(departedWorld.version.publication,publishedNotice.version.publication+1);
 
 
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
@@ -630,15 +645,19 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,[]);
 
   const secretScreen=await open(undefined,campaign.id,'table');sockets.push(secretScreen);
-  next=message(secretScreen,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  next=message(secretScreen,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id&&
+    msg.version.exploration===firstView.version.exploration+1);
   const phoneUpdate=message(secondSocket,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
   assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true});
   for(const event of await Promise.all([next,phoneUpdate])) {
     assert.doesNotMatch(JSON.stringify(event),/secret-marker|revealedSecrets/);
+    assert.deepEqual(event.version,{...firstView.version,exploration:firstView.version.exploration+1});
   }
   assert.deepEqual(await readOwnPosition(secondInvitation.token),afterStairs);
   assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true},'repeated reveal is idempotent');
   const firstSecretView=await tableWorld();
+  assert.deepEqual(firstSecretView.version,{...firstView.version,exploration:firstView.version.exploration+1});
+  assert.deepEqual((await tableStatus()).version,firstSecretView.version);
   const firstMarker={id:'secret-marker',kind:'torch',x:14,y:12,turn:0};
   assert.deepEqual(firstSecretView.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
   assert.equal(tiles.get(firstSecretView.chunks,14,12),'grass','the reveal opens exactly its own cell');
@@ -692,6 +711,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(JSON.parse(fs.readFileSync(legacyFile)).revision,1);
   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
+  const savedWorldStatus=await tableStatus();
+  assert.ok(savedWorldStatus.version.publication > firstSecretView.version.publication);
   for(const socket of sockets) socket.terminate();
   await stop();
   // Simulate a cell discovered before snapshots existed. Its old published terrain must survive republish.
@@ -731,6 +752,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(importedChunks.status,200);
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const resumedWorld=await tableWorld();
+  assert.deepEqual(await tableStatus(),savedWorldStatus,'the projection version persists across server restart');
+  assert.deepEqual(resumedWorld.version,savedWorldStatus.version);
+  const resumedScreen=await open(undefined,campaign.id,'table');sockets.push(resumedScreen);
+  next=message(resumedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  resumedScreen.send(JSON.stringify({action:'request-sync'}));
+  assert.deepEqual((await next).version,resumedWorld.version);
   for(const x of [20,21,22,23,24,25,29]) assert.equal(tiles.get(resumedWorld.chunks,x,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,30,0),undefined);
   assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass');
@@ -744,11 +771,17 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(await fetch(worldBase+'/table').then(r=>r.json()),null);
   assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:true});
   assert.equal(await tableWorld(),null);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(worldDir,'..','active-world.json'))),{id:null});
+  const hiddenStatus=await tableStatus();
+  assert.equal(hiddenStatus.id,null);
+  assert.deepEqual(hiddenStatus.version,{generation:resumedWorld.version.generation+1,publication:0,exploration:0});
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(worldDir,'..','active-world.json'))),
+    {id:null,generation:hiddenStatus.version.generation});
   assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:false});
+  assert.deepEqual(await tableStatus(),hiddenStatus);
   const republish=await resumedWorldWrite('/'+world.id+'/publish',{revision:editedWorld.revision,fog:true});
   assert.equal(republish.status,200);
   const republished=await tableWorld();
+  assert.equal(republished.version.generation,hiddenStatus.version.generation+1);
   assert.deepEqual(republished.tokens,resumedWorld.tokens);
   assert.deepEqual(republished.seen,resumedWorld.seen);
   assert.deepEqual(republished.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
@@ -827,7 +860,18 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(withoutFog.objects.some(prop=>prop.id==='secret-marker'),false,
     'a grant on another map cannot reveal a secret with the same ID and appearance, even without fog');
   assert.equal((await revealSecret('secret-marker',{id:secondWorld.id,revision:otherMapSecret.revision},resumedHeaders)).status,200);
-  assert.deepEqual((await tableWorld()).objects.find(prop=>prop.id==='secret-marker'),{...firstMarker,x:29,y:0});
+  const clearMap=await tableWorld();
+  assert.deepEqual(clearMap.objects.find(prop=>prop.id==='secret-marker'),{...firstMarker,x:29,y:0});
+  assert.deepEqual(clearMap.version,{...withoutFog.version,exploration:withoutFog.version.exploration+1});
+  const placedInClearMap=await (await setPosition(otherChar.id,secondPosition,resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'east',revision:placedInClearMap.position.revision})).status,200);
+  assert.deepEqual((await tableStatus()).version,clearMap.version,'private steps do not change the public version without fog');
+
+  const blackout=()=>fetch(base+'/api/blackout'+worldGame,{method:'POST',headers:resumedHeaders});
+  assert.equal((await blackout()).status,200);
+  assert.equal((await tableStatus()).blackout,true);
+  assert.equal((await blackout()).status,200);
+  assert.equal((await tableStatus()).blackout,false);
 
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });
