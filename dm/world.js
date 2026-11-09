@@ -1,7 +1,8 @@
 'use strict';
 
 (() => {
-  const { terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
+  const { size, tileLimit, terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
+  const { generatePath, maxPathPoints, validGenerators } = window.WorldGenerators;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
   editor.className = 'book-widget book-world-editor';
@@ -40,6 +41,7 @@
         </details>
         <div class="book-toolbar">
           <button class="book-button" data-tool="pan">Рука</button>
+          <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
           <button class="book-button" data-tool="select">Двигать объекты</button>
           <button class="book-button" data-tool="delete-object">Удалять объекты</button>
@@ -47,6 +49,24 @@
           <button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
         </div>
+        <section data-world-path hidden aria-label="Генератор дорог и рек">
+          <div class="book-toolbar">
+            <select class="book-select" data-world-path-saved aria-label="Сохранённый рецепт Path"></select>
+            <label>Покрытие <select class="book-select" data-world-path-terrain>
+              <option value="path">Дорога</option><option value="water">Река</option>
+            </select></label>
+            <label>Ширина <select class="book-select" data-world-path-width>
+              ${[1, 3, 5, 7, 9, 11, 13, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
+            </select></label>
+            <label>Seed <input class="book-select" type="number" min="0" max="4294967295" step="1" value="0" data-world-path-seed></label>
+          </div>
+          <div class="book-toolbar">
+            <small data-world-path-count></small>
+            <button class="book-button" data-world-path-preview>Предпросмотр</button>
+            <button class="book-button primary" data-world-path-apply>Применить к черновику</button>
+            <button class="book-button" data-world-path-reset>Сбросить точки</button>
+          </div>
+        </section>
         <div class="book-toolbar" data-world-object hidden>
           <span data-world-size></span>
           <button class="book-button" data-world-turn>Повернуть</button>
@@ -93,10 +113,74 @@
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   const undo = [], redo = [];
   let availableMaps = [];
+  let pathPoints = [], pathPreview = null;
+
+  function paintPathControls() {
+    e('path').hidden = tool !== 'generate-path';
+    if (e('path').hidden) return;
+    const saved = e('path-saved');
+    const selectedId = saved.value;
+    const recipes = (draft.generators || []).filter(recipe => recipe.kind === 'path' && recipe.version === 1);
+    saved.replaceChildren(new Option('Новая линия', ''), ...recipes.map((recipe, index) =>
+      new Option((recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
+        ' · seed ' + recipe.seed, recipe.id)));
+    if (recipes.some(recipe => recipe.id === selectedId)) saved.value = selectedId;
+    e('path-count').textContent = 'Точек на линии: ' + pathPoints.length;
+    e('path-preview').disabled = pathPoints.length < 2;
+    e('path-apply').disabled = !pathPreview;
+  }
+
+  function clearPathPreview() {
+    pathPreview = null;
+    e('path-saved').value = '';
+  }
+
+  function previewPath() {
+    if (!draft || busy || tool !== 'generate-path' || pathPoints.length < 2) return;
+    pathPreview = null;
+    try {
+      const savedId = e('path-saved').value;
+      const recipe = {
+        id: savedId || crypto.randomUUID?.() || 'path-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+        kind: 'path', version: 1, seed: e('path-seed').valueAsNumber,
+        params: { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: pathPoints },
+      };
+      const { chunks, count } = generatePath(recipe);
+      const generators = draft.generators || [];
+      const nextGenerators = savedId ? generators : [...generators, recipe];
+      if (!validGenerators(nextGenerators)) throw new RangeError('В черновике уже 128 рецептов');
+      const tiles = [];
+      let added = 0;
+      for (const [key, cells] of Object.entries(chunks)) {
+        const [cx, cy] = key.split(',').map(Number);
+        for (const [offset, after] of Object.entries(cells)) {
+          const before = draft.chunks[key]?.[offset];
+          if (before === after) continue;
+          if (before === undefined) added++;
+          tiles.push({
+            x: cx * size + Number(offset) % size, y: cy * size + Math.floor(Number(offset) / size),
+            before, after,
+          });
+        }
+      }
+      const total = Object.values(draft.chunks).reduce((sum, cells) => sum + Object.keys(cells).length, 0);
+      if (total + added > tileLimit) throw new RangeError('Превышен лимит тайлов на карте');
+      pathPreview = { id: recipe.id, chunks, tiles, generators: { before: generators, after: nextGenerators } };
+      status('Предпросмотр: ' + count + ' кл. Примени его, чтобы добавить линию в черновик.');
+    } catch (error) {
+      status(error.message);
+    }
+    paint();
+  }
 
   function paint() {
     if (!draft) return;
-    editorView.data(draft);
+    if (pathPreview) {
+      const chunks = { ...draft.chunks };
+      for (const [key, cells] of Object.entries(pathPreview.chunks)) chunks[key] = { ...chunks[key], ...cells };
+      editorView.data({ ...draft, chunks });
+    } else editorView.data(draft);
+    paintPathControls();
     const object = draft.objects.find(item => item.id === selected);
     e('object').hidden = !object;
     if (object) {
@@ -111,6 +195,8 @@
   function apply(change, backwards = false) {
     if (change.objects) draft.objects = backwards ? change.before : change.after;
     else for (const tile of change.tiles) set(draft.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
+    if (change.generators) draft.generators = backwards ? change.generators.before : change.generators.after;
+    pathPreview = null;
     dirty = true;
     status('Есть несохранённые изменения');
     paint();
@@ -223,6 +309,16 @@
 
   function click(x, y, point) {
     if (!draft || busy) return;
+    if (tool === 'generate-path') {
+      const previous = pathPoints.at(-1);
+      if (previous?.x === x && previous.y === y) return;
+      if (pathPoints.length >= maxPathPoints) return status('На одной линии может быть не больше ' + maxPathPoints + ' точек');
+      pathPoints = [...pathPoints, { x, y }];
+      clearPathPreview();
+      status(pathPoints.length < 2 ? 'Укажи ещё одну точку на карте.' : 'Добавь ещё точки или нажми «Предпросмотр».');
+      paint();
+      return;
+    }
     if (tool === 'transition') {
       transitionForm.elements.x.value = x;
       transitionForm.elements.y.value = y;
@@ -279,7 +375,8 @@
     else paint();
   }
   const editorView = createWorldView(e('canvas'), {
-    grid: true, click, pan: () => tool === 'pan', selected: () => selected, mark: () => first,
+    grid: true, click, pan: () => tool === 'pan', selected: () => selected,
+    marks: () => tool === 'generate-path' ? pathPoints : first ? [first] : [],
     pickProp(x, y) {
       if (!draft || busy || tool !== 'select') return;
       const item = objectAt(x, y);
@@ -303,6 +400,8 @@
     draft = data;
     dirty = false;
     first = selected = undefined;
+    pathPoints = [];
+    clearPathPreview();
     undo.length = redo.length = 0;
     e('editor').hidden = false;
     transitionForm.reset();
@@ -369,6 +468,8 @@
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     tool = button.dataset.tool;
+    pathPreview = null;
+    if (tool === 'generate-path') status('Укажи опорные точки на карте и нажми «Предпросмотр».');
     if (tool === 'transition') status('Нажми на исходную клетку перехода');
     if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
     first = undefined;
@@ -376,6 +477,47 @@
     if (tool === 'select') status('Перетащи объект мышью. Щёлкни по нему, чтобы выделить.');
     if (tool === 'delete-object') status('Щёлкни по объекту, который хочешь убрать.');
   });
+  e('path-saved').onchange = () => {
+    if (!draft || busy) return;
+    const recipe = (draft.generators || []).find(item => item.id === e('path-saved').value);
+    pathPoints = recipe?.params.points || [];
+    pathPreview = null;
+    if (recipe) {
+      e('path-terrain').value = recipe.params.terrain;
+      e('path-width').value = String(recipe.params.width);
+      e('path-seed').value = String(recipe.seed);
+      const [{ x, y }] = pathPoints;
+      editorView.setCamera({ ...editorView.camera(), x: x + .5, y: y + .5 });
+      status('Рецепт загружен. Нажми «Предпросмотр».');
+    }
+    paint();
+  };
+  for (const field of ['path-terrain', 'path-width', 'path-seed']) {
+    e(field).oninput = () => {
+      clearPathPreview();
+      if (pathPoints.length >= 2) status('Нажми «Предпросмотр» для обновлённой линии.');
+      paint();
+    };
+  }
+  e('path-reset').onclick = () => {
+    if (!draft || busy) return;
+    pathPoints = [];
+    clearPathPreview();
+    status('Укажи новые опорные точки на карте.');
+    paint();
+  };
+  e('path-preview').onclick = previewPath;
+  e('path-apply').onclick = () => {
+    if (!draft || busy || !pathPreview) return;
+    const { id, tiles, generators } = pathPreview;
+    if (!tiles.length && generators.before === generators.after) {
+      pathPreview = null;
+      paint();
+      return status('Линия уже есть в черновике.');
+    }
+    edit({ tiles, generators });
+    e('path-saved').value = id;
+  };
   e('rect').onchange = () => { first = undefined; paint(); };
   e('undo').onclick = () => { if (!busy && undo.length) { const change = undo.pop(); redo.push(change); apply(change, true); } };
   e('redo').onclick = () => { if (!busy && redo.length) { const change = redo.pop(); undo.push(change); apply(change); } };
@@ -383,6 +525,10 @@
   e('delete').onclick = () => removeObject(selected);
   e('secret').onchange = () => updateSelected({ hidden: e('secret').checked });
   async function save() {
+    if (pathPreview) {
+      pathPreview = null;
+      paint();
+    }
     if (!dirty) return;
     draft = await request('/api/worlds/' + draft.id, json('PUT', draft));
     dirty = false;

@@ -3,6 +3,7 @@
 ((root) => {
   const size = 32;
   const limit = 8192;
+  const tileLimit = 150000;
   const terrain = {
     grass: ['Трава', '#7e9b55'], dirt: ['Земля', '#aa875c'], path: ['Тропа', '#c8a371'],
     forest: ['Лес', '#3e6340'], water: ['Вода', '#477f89'], stone: ['Камень', '#909289'], wood: ['Доски', '#a06e47'],
@@ -122,7 +123,7 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint };
+  const api = { size, limit, tileLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

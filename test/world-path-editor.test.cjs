@@ -1,0 +1,127 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const world = require('../remote/world-model');
+const { generatePath } = require('../remote/world-generators');
+
+test('the master can preview, apply, undo, save, and reopen a Path recipe', async () => {
+  const tool = { dataset: { tool: 'generate-path' }, setAttribute() {} };
+  class Element {
+    nodes = new Map();
+    elements = { parentMap: { value: '' }, toMapId: { value: '', replaceChildren() {} }, elevation: {} };
+    value = '';
+    get valueAsNumber() { return this.value === '' ? NaN : Number(this.value); }
+    querySelector(selector) {
+      if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
+      return this.nodes.get(selector);
+    }
+    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool] : []; }
+    replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
+    setAttribute() {}
+    toggleAttribute() {}
+    addEventListener() {}
+    prepend() {}
+    append() {}
+    reset() {}
+  }
+  const root = new Element();
+  const editor = new Element();
+  const elements = [editor, new Element()];
+  const control = name => editor.querySelector('[data-world-' + name + ']');
+  const original = { id: 'world-id', name: 'Тест', revision: 1, chunks: {}, objects: [] };
+  world.set(original.chunks, -1, 0, 'grass');
+  world.set(original.chunks, 4, 4, 'stone');
+  let saved = structuredClone(original), rendered, camera, canvas;
+  const writes = [];
+  const context = vm.createContext({
+    WorldMap: world, location: { hash: '' },
+    document: {
+      createElement: () => elements.shift(),
+      getElementById: id => root.querySelector(id),
+      body: { dataset: {} },
+    },
+    crypto: { randomUUID: () => 'path-id' }, characterRoster: [],
+    MutationObserver: class { observe() {} },
+    Option: class { constructor(label, value) { Object.assign(this, { label, value }); } },
+    confirm: () => true,
+    createWorldView: (element, options) => {
+      const isEditor = element === control('canvas');
+      if (isEditor) canvas = options;
+      return {
+        data(data) { if (isEditor) rendered = structuredClone(data); },
+        setCamera(next) { if (isEditor) camera = next; },
+        camera: () => camera,
+        party() {},
+      };
+    },
+    addEventListener() {},
+    LootUI: { async request(url, options) {
+      if (url.startsWith('/api/worlds/live')) return null;
+      assert.equal(url, '/api/worlds/world-id');
+      if (options?.method === 'PUT') {
+        const draft = JSON.parse(options.body);
+        writes.push(draft);
+        saved = { ...draft, revision: saved.revision + 1 };
+      }
+      return structuredClone(saved);
+    } },
+  });
+  context.window = context;
+  for (const file of ['remote/world-generators.js', 'dm/world.js']) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
+  }
+
+  const reopen = async () => {
+    control('select').value = 'world-id';
+    control('select').onchange();
+    await new Promise(setImmediate);
+  };
+  await reopen();
+  tool.onclick();
+  assert.equal(control('path-preview').disabled, true);
+  control('path-terrain').value = 'water';
+  control('path-width').value = '3';
+  control('path-seed').value = '42';
+  canvas.click(-1, 0);
+  canvas.click(3, 0);
+  control('path-preview').onclick();
+  assert.equal(world.get(rendered.chunks, -1, 0), 'water');
+  assert.equal(world.get(rendered.chunks, 4, 4), 'stone');
+  await control('save').onclick();
+  assert.deepEqual(writes, [], 'preview alone does not save');
+  assert.equal(world.get(rendered.chunks, -1, 0), 'grass');
+
+  control('path-preview').onclick();
+  control('path-seed').value = '43';
+  control('path-seed').oninput();
+  assert.equal(control('path-apply').disabled, true);
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  const [recipe] = saved.generators;
+  assert.equal(recipe.seed, 43);
+  const actual = generatePath(recipe);
+  for (const [key, cells] of Object.entries(actual.chunks)) {
+    for (const [offset, terrain] of Object.entries(cells)) assert.equal(saved.chunks[key][offset], terrain);
+  }
+
+  control('undo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.chunks, original.chunks);
+  assert.deepEqual(saved.generators, []);
+  control('redo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.generators, [recipe]);
+
+  await reopen();
+  control('path-saved').value = recipe.id;
+  control('path-saved').onchange();
+  assert.equal(camera.x, -.5);
+  assert.equal(control('path-seed').value, '43');
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(writes.length, 3, 'reapplying the same saved line creates no duplicate or write');
+});

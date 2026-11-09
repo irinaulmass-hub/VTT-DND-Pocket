@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createRandomV1, validGenerators } = require('../world-generators');
+const { createRandomV1, validGenerators, generatePath } = require('../remote/world-generators');
+
+const { get, size, valid } = require('../remote/world-model');
 
 const road = {
   id: 'road-1', kind: 'path', version: 1, seed: 0,
@@ -61,4 +63,53 @@ test('the version 1 random stream is stable for the same seed including both bou
   for (const seed of [undefined, '1', -1, 1.5, NaN, 0x100000000]) {
     assert.throws(() => createRandomV1(seed), RangeError);
   }
+});
+
+
+test('Path connects every anchor through orthogonal neighbors across chunk boundaries', () => {
+  const points = [{ x: -34, y: -33 }, { x: -30, y: -30 }, { x: 1, y: 0 }];
+  const { chunks, count } = generatePath({ ...road, params: { ...road.params, width: 1, points } });
+  for (const { x, y } of points) assert.equal(get(chunks, x, y), 'path');
+  assert.ok(chunks['-2,-2'] && chunks['-1,-1'] && chunks['0,0']);
+
+  const visited = new Set();
+  const queue = [points[0]];
+  for (let index = 0; index < queue.length; index++) {
+    const { x, y } = queue[index];
+    const key = x + ',' + y;
+    if (visited.has(key) || !get(chunks, x, y)) continue;
+    visited.add(key);
+    queue.push({ x: x + 1, y }, { x: x - 1, y }, { x, y: y + 1 }, { x, y: y - 1 });
+  }
+  assert.equal(visited.size, count);
+});
+
+test('a river uses the selected width and clips its brush at world boundaries', () => {
+  const river = { ...road, params: { terrain: 'water', width: 5, points: [{ x: 0, y: 1 }, { x: 10, y: 1 }] } };
+  const { chunks } = generatePath(river);
+  for (let y = -1; y <= 3; y++) assert.equal(get(chunks, 5, y), 'water');
+  assert.equal(get(chunks, 5, 4), undefined);
+
+  const edge = generatePath({ ...river, params: { ...river.params,
+    points: [{ x: -8192, y: 8191 }, { x: -8182, y: 8191 }],
+  } });
+  assert.equal(get(edge.chunks, -8192, 8191), 'water');
+  for (const [key, cells] of Object.entries(edge.chunks)) {
+    const [cx, cy] = key.split(',').map(Number);
+    for (const offset of Object.keys(cells)) {
+      assert.ok(valid(cx * size + offset % size) && valid(cy * size + Math.floor(offset / size)));
+    }
+  }
+});
+
+test('Path bends are reproducible and excessive routes fail before applying', () => {
+  const first = generatePath(road);
+  assert.deepEqual(generatePath(JSON.parse(JSON.stringify(road))), first);
+  assert.notDeepEqual(generatePath({ ...road, seed: 1 }).chunks, first.chunks);
+  assert.throws(() => generatePath({ ...road, params: { ...road.params, width: 15,
+    points: [{ x: -8192, y: 0 }, { x: 8191, y: 0 }],
+  } }), /Линия слишком велика/);
+  assert.throws(() => generatePath({ ...road, params: { ...road.params, width: 1,
+    points: Array.from({ length: 200 }, (_, index) => ({ x: index % 2 ? 1000 : 0, y: 0 })),
+  } }), /Линия слишком велика/);
 });

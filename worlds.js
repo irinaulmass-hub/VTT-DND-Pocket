@@ -6,14 +6,14 @@ const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
 const createWorldDiscoveries = require('./world-discoveries');
-const { validGenerators } = require('./world-generators');
+const { validGenerators } = require('./remote/world-generators');
 const { project, isRevealedSecret } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen, screenBlackout }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
-  const tileLimit = 150000;
+  const { tileLimit } = map;
 
   const movement = createWorldMovement(store, gameFile);
   const discoveries = createWorldDiscoveries(gameFile);
