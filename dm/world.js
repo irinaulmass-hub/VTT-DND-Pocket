@@ -14,8 +14,9 @@
       <h2>Большая карта мира</h2>
       <form class="book-toolbar" data-world-create>
         <input class="book-select" name="title" required maxlength="80" placeholder="Название карты" aria-label="Название карты мира">
+        <select class="book-select" name="parentWorldId" aria-label="Основной мир для новой сцены"></select>
         <label><input type="checkbox" name="sample"> Начать с деревни у озера</label>
-        <button class="book-button primary">Создать карту мира</button>
+        <button class="book-button primary">Создать карту</button>
       </form>
       <div class="book-toolbar">
         <select class="book-select" data-world-select aria-label="Открыть черновик карты"></select>
@@ -57,6 +58,19 @@
           <small data-world-position-info role="status"></small>
         </div>
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
+        <details data-world-transitions>
+          <summary>Переходы между сценами</summary>
+          <form class="book-toolbar" data-world-transition-form>
+            <button class="book-button" type="button" data-tool="transition">Указать клетку на карте</button>
+            <label>X <input class="book-select" type="number" name="x" required></label>
+            <label>Y <input class="book-select" type="number" name="y" required></label>
+            <select class="book-select" name="toMapId" aria-label="Карта назначения" required></select>
+            <label>X назначения <input class="book-select" type="number" name="toX" required></label>
+            <label>Y назначения <input class="book-select" type="number" name="toY" required></label>
+            <button class="book-button">Сохранить переход</button>
+          </form>
+          <ul data-world-transition-list></ul>
+        </details>
         <div class="book-toolbar">
           <button class="book-button" data-world-save>Сохранить черновик</button>
           <label><input type="checkbox" data-world-fog checked> Туман на экране игроков</label>
@@ -77,6 +91,7 @@
   const json = (method, data) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   const undo = [], redo = [];
+  let availableMaps = [];
 
   function paint() {
     if (!draft) return;
@@ -124,9 +139,71 @@
     status('Объект удалён. Вернуть его можно кнопкой «Отменить».');
   }
   const positionUrl = id => '/api/character-positions/' + encodeURIComponent(id);
+  const transitionForm = e('transition-form');
+  const transitionUrl = id => '/api/worlds/' + encodeURIComponent(id) + '/transitions';
+
+  function positionScope(layout) {
+    return {
+      worldId: layout.parentWorldId || layout.id,
+      sceneId: layout.parentWorldId ? layout.id : 'overworld',
+      floorId: 'ground',
+    };
+  }
+
+  function updateDestinations() {
+    const select = transitionForm.elements.toMapId;
+    const value = select.value;
+    const scope = draft && positionScope(draft);
+    const targets = scope ? availableMaps.filter(item =>
+      item.id !== draft.id && positionScope(item).worldId === scope.worldId) : [];
+    select.replaceChildren(new Option('Карта назначения', ''), ...targets.map(item => new Option(item.name, item.id)));
+    if (targets.some(item => item.id === value)) select.value = value;
+  }
+
+  async function showTransitions() {
+    const id = draft.id;
+    const { links } = await request(transitionUrl(id));
+    if (draft?.id !== id) return;
+    const nodes = links.map(link => {
+      const item = document.createElement('li');
+      const target = link.to.sceneId === 'overworld' ? link.to.worldId : link.to.sceneId;
+      const name = availableMaps.find(map => map.id === target)?.name || 'Сцена';
+      item.textContent = '(' + link.from.x + ', ' + link.from.y + ') → ' + name +
+        ' (' + link.to.x + ', ' + link.to.y + ') ';
+      const button = document.createElement('button');
+      button.className = 'book-button small';
+      button.textContent = 'Удалить переход';
+      button.onclick = () => run(async () => {
+        await request(transitionUrl(id) + '/' + encodeURIComponent(link.id), { method: 'DELETE' });
+        await showTransitions();
+      });
+      item.append(button);
+      return item;
+    });
+    e('transition-list').replaceChildren(...nodes);
+  }
+
+  e('transitions').ontoggle = () => {
+    if (e('transitions').open && draft) showTransitions().catch(error => status(error.message));
+  };
+  transitionForm.onsubmit = event => {
+    event.preventDefault();
+    run(async () => {
+      await save();
+      const { x, y, toMapId, toX, toY } = transitionForm.elements;
+      await request(transitionUrl(draft.id), json('POST', {
+        x: x.valueAsNumber, y: y.valueAsNumber, toMapId: toMapId.value,
+        toX: toX.valueAsNumber, toY: toY.valueAsNumber,
+      }));
+      await showTransitions();
+      status('Переход сохранён');
+    });
+  };
+
   let positionGeneration = 0;
   function describePosition(position) {
-    const place = position.worldId === draft?.id ? '' : 'в другом мире ';
+    const scope = draft && positionScope(draft);
+    const place = position.worldId === scope?.worldId && position.sceneId === scope?.sceneId ? '' : 'на другой карте ';
     e('position-info').textContent = 'Личная позиция ' + place + '(' + position.x + ', ' + position.y + ')';
   }
   async function readPosition() {
@@ -153,13 +230,21 @@
 
   function click(x, y, point) {
     if (!draft || busy) return;
+    if (tool === 'transition') {
+      transitionForm.elements.x.value = x;
+      transitionForm.elements.y.value = y;
+      tool = 'pan';
+      status('Клетка перехода выбрана');
+      paint();
+      return;
+    }
     if (tool === 'position') {
       const id = e('position-hero').value;
       if (!id) return status('Выбери героя');
       const generation = ++positionGeneration;
       run(async () => {
         const { position } = await request(positionUrl(id), json('PUT', {
-          worldId: draft.id, sceneId: 'overworld', floorId: 'ground', x, y,
+          ...positionScope(draft), x, y,
         }));
         if (generation === positionGeneration) describePosition(position);
         status('Личная позиция сохранена');
@@ -227,6 +312,10 @@
     first = selected = undefined;
     undo.length = redo.length = 0;
     e('editor').hidden = false;
+    transitionForm.reset();
+    e('transition-list').replaceChildren();
+    updateDestinations();
+    if (e('transitions').open) showTransitions().catch(error => status(error.message));
     readPosition();
     editorView.setCamera({ x: 0, y: 0, scale: 24 });
     paint();
@@ -234,7 +323,12 @@
   }
   async function list() {
     const { worlds } = await request('/api/worlds');
-    e('select').replaceChildren(new Option('Открыть сохранённый черновик', ''), ...worlds.map(item => new Option(item.name, item.id)));
+    availableMaps = worlds;
+    e('select').replaceChildren(new Option('Открыть сохранённый черновик', ''),
+      ...worlds.map(item => new Option(item.parentWorldId ? 'Сцена · ' + item.name : item.name, item.id)));
+    e('create').elements.parentWorldId.replaceChildren(new Option('Новый основной мир', ''),
+      ...worlds.filter(item => !item.parentWorldId).map(item => new Option('Сцена в мире «' + item.name + '»', item.id)));
+    updateDestinations();
     e('select').value = draft?.id || '';
   }
   async function run(task) {
@@ -249,7 +343,7 @@
     if (dirty && !confirm('Открыть новую карту без сохранения правок текущей?')) return;
     run(async () => {
       const form = event.target.elements;
-      open(await request('/api/worlds', json('POST', { name: form.title.value, sample: form.sample.checked })));
+      open(await request('/api/worlds', json('POST', { name: form.title.value, sample: form.sample.checked, parentWorldId: form.parentWorldId.value || undefined })));
       await list();
       event.target.reset();
     });
@@ -262,6 +356,7 @@
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     tool = button.dataset.tool;
+    if (tool === 'transition') status('Нажми на исходную клетку перехода');
     if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
     first = undefined;
     paint();

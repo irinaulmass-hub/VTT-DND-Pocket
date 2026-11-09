@@ -11,7 +11,7 @@ const steps = {
 };
 
 module.exports = function registerCharacterPositions(app, {
-  express, requireDm, gameFile, loadCharacters, assignedCharacter, worldExists, movementLocked, broadcast, canStep, explorationNotice,
+  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, canStep, findTransition, explorationNotice,
 }) {
   const stateFile = () => gameFile('character-positions.json');
 
@@ -34,13 +34,13 @@ module.exports = function registerCharacterPositions(app, {
     return readState().explored[explorationKey(worldId, sceneId, floorId)] || {};
   }
 
-  function recordStep(state, from, to) {
-    const key = explorationKey(to.worldId, to.sceneId, to.floorId);
+  function recordCell(state, position) {
+    const { worldId, sceneId, floorId, x, y } = position;
+    const key = explorationKey(worldId, sceneId, floorId);
     const seen = state.explored[key] ||= {};
-    const changed = !get(seen, from.x, from.y) || !get(seen, to.x, to.y);
-    set(seen, from.x, from.y, true);
-    set(seen, to.x, to.y, true);
-    return changed;
+    if (get(seen, x, y)) return false;
+    set(seen, x, y, true);
+    return true;
   }
 
   function savePosition(file, state, position) {
@@ -73,7 +73,7 @@ module.exports = function registerCharacterPositions(app, {
     const characterId = assignedCharacter(req);
     if (!characterId) return res.status(401).json({ error: 'Требуется действующее приглашение' });
     const { direction, revision } = req.body || {};
-    if (typeof direction !== 'string' || !Object.hasOwn(steps, direction) ||
+    if (typeof direction !== 'string' || (direction !== 'enter' && !Object.hasOwn(steps, direction)) ||
         !Number.isSafeInteger(revision) || revision < 0 ||
         Object.keys(req.body).some(key => key !== 'direction' && key !== 'revision')) {
       return res.status(400).json({ error: 'Укажите направление и версию позиции' });
@@ -88,13 +88,22 @@ module.exports = function registerCharacterPositions(app, {
       return res.status(409).json({ position: current, error: 'Позиция изменилась. Выберите направление ещё раз' });
     }
 
-    const [dx, dy] = steps[direction];
-    const x = current.x + dx;
-    const y = current.y + dy;
-    if (!valid(x) || !valid(y)) return res.status(400).json({ error: 'Достигнута граница мира' });
-    const position = { ...current, x, y, revision: current.revision + 1 };
+    let destination;
+    if (direction === 'enter') {
+      destination = findTransition(current);
+      if (!destination) return res.status(409).json({ error: 'Здесь нет перехода' });
+    } else {
+      const [dx, dy] = steps[direction];
+      destination = { ...current, x: current.x + dx, y: current.y + dy };
+    }
+    const position = { ...current, ...destination, revision: current.revision + 1 };
+    if (!valid(position.x) || !valid(position.y)) return res.status(400).json({ error: 'Достигнута граница мира' });
     if (!canStep(position)) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
-    const notice = recordStep(state, current, position) ? explorationNotice(position.worldId) : null;
+    const originChanged = recordCell(state, current);
+    const destinationChanged = recordCell(state, position);
+    // At most one of the two maps can be on the table.
+    const notice = (originChanged && explorationNotice(current)) ||
+      (destinationChanged && explorationNotice(position));
     savePosition(file, state, position);
     if (notice) broadcast(notice);
     res.json({ position });
@@ -112,7 +121,7 @@ module.exports = function registerCharacterPositions(app, {
     if (typeof worldId !== 'string' || !valid(x) || !valid(y)) {
       return res.status(400).json({ error: 'Укажите мир и целочисленные координаты клетки' });
     }
-    if (!characterExists(characterId) || !worldExists(worldId) || sceneId !== 'overworld' || floorId !== 'ground') {
+    if (!characterExists(characterId) || !locationExists({ worldId, sceneId, floorId })) {
       return res.status(404).json({ error: 'Герой, мир, сцена или этаж не найдены в этой кампании' });
     }
 

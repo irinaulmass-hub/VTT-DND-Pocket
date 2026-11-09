@@ -443,7 +443,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   for(let x=20;x<=25;x++) tiles.set(world.chunks,x,0,'path');
   world.objects.push(
     {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
-    {id:'private-party-tree',kind:'tree',x:21,y:0,turn:0,hidden:true},
+    {id:'private-party-torch',kind:'torch',x:21,y:0,turn:0,hidden:true},
   );
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
@@ -468,7 +468,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const firstExplored=await tableWorld();
   assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
-  assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-tree'));
+  assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-torch'));
   assert.equal((await movePosition({direction:'east',revision:6})).status,409);
   assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
   assert.equal(tiles.get((await tableWorld()).chunks,22,0),undefined);
@@ -482,6 +482,53 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   for(const x of [20,21,24,25]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
   assert.equal(tiles.get(partyMap.chunks,23,0),undefined);
   assert.deepEqual(partyMap.tokens,[]);
+
+  const sceneResponse=await worldWrite('','POST',{name:'Нижняя пещера',parentWorldId:world.id});
+  assert.equal(sceneResponse.status,201);
+  const cave=await sceneResponse.json();
+  tiles.set(cave.chunks,4,4,'caveFloor');
+  tiles.set(cave.chunks,4,5,'water');
+  tiles.set(cave.chunks,5,4,'water');
+  cave.objects.push({id:'cave-bridge',kind:'bridge',x:6,y:4,turn:0});
+  const caveSaved=await worldWrite('/'+cave.id,'PUT',cave).then(r=>r.json());
+  assert.equal(caveSaved.parentWorldId,world.id);
+  const sceneList=await fetch(worldBase+worldGame,{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(sceneList.worlds.find(item=>item.id===cave.id).parentWorldId,world.id);
+  assert.equal((await worldWrite('','POST',{name:'Недопустимая сцена',parentWorldId:cave.id})).status,404);
+  const linkEndpoint='/'+world.id+'/transitions';
+  const worldLinkBody={x:21,y:0,toMapId:cave.id,toX:4,toY:4};
+  assert.equal((await fetch(worldBase+linkEndpoint+worldGame,{redirect:'manual'})).status,302);
+  assert.equal((await worldWrite(linkEndpoint,'POST',{...worldLinkBody,toMapId:secondWorld.id})).status,400);
+  assert.equal((await worldWrite(linkEndpoint,'POST',{...worldLinkBody,toY:5})).status,409);
+  const createdLink=await worldWrite(linkEndpoint,'POST',worldLinkBody);
+  assert.equal(createdLink.status,201);
+  const {link}=await createdLink.json();
+  const temporaryLink=await worldWrite(linkEndpoint,'POST',{...worldLinkBody,x:20}).then(r=>r.json());
+  const deletedLink=await worldWrite(linkEndpoint+'/'+encodeURIComponent(temporaryLink.link.id),'DELETE');
+  assert.equal(deletedLink.status,200);
+  assert.deepEqual((await deletedLink.json()).links,[link]);
+  assert.deepEqual(link.to,{worldId:world.id,sceneId:cave.id,floorId:'ground',x:4,y:4});
+  assert.equal((await movePosition({direction:'enter',revision:4},secondInvitation.token)).status,409);
+  assert.deepEqual(await readOwnPosition(secondInvitation.token),partySecond);
+  const entered=await movePosition({direction:'enter',revision:6});
+  assert.equal(entered.status,200);
+  assert.deepEqual((await entered.json()).position,{characterId:otherChar.id,...link.to,revision:7});
+  assert.equal((await movePosition({direction:'enter',revision:6})).status,409);
+  assert.equal((await movePosition({direction:'south',revision:7})).status,409);
+  const bridgeStep=await movePosition({direction:'east',revision:7});
+  assert.equal(bridgeStep.status,200);
+  const afterBridge=await bridgeStep.json();
+  assert.deepEqual(afterBridge.position,{characterId:otherChar.id,...link.to,x:5,revision:8});
+  assert.equal(tiles.get((await tableWorld()).chunks,4,4),undefined,'the cave is a separate exploration scope');
+  assert.equal((await worldWrite('/'+cave.id+'/publish','POST',{revision:caveSaved.revision,fog:true})).status,200);
+  const caveTable=await tableWorld();
+  assert.equal(caveTable.id,cave.id);
+  assert.equal(tiles.get(caveTable.chunks,4,4),'caveFloor');
+  assert.equal(tiles.get(caveTable.chunks,5,4),'water');
+  assert.equal(tiles.get(caveTable.chunks,4,5),undefined);
+  assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,21,0),'path');
+
 
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
   assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
@@ -531,12 +578,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
-  assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
+  assert.deepEqual(await readOwnPosition(otherToken.token),afterBridge);
   assert.deepEqual(await readPosition(secondHero.id,newCookie),partySecond);
+  const restoredLinks=await fetch(worldBase+linkEndpoint+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
+  assert.deepEqual(restoredLinks.links,[link]);
   const positionAfterRestart=await open(undefined,campaign.id);sockets.push(positionAfterRestart);
   next=message(positionAfterRestart,m=>m.type==='CHARACTER_POSITION');
   positionAfterRestart.send(JSON.stringify({action:'player-auth',token:otherToken.token}));
-  assert.deepEqual((await next).position,partyFirst.position);
+  assert.deepEqual((await next).position,afterBridge.position);
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');

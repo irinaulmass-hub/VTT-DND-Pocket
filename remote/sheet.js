@@ -8,7 +8,7 @@ if (invitation) {
   history.replaceState(null, '', location.pathname + location.search);
 }
 let accessRevoked = false;
-let position = null, positionReady = false, moving = false, movementError = '';
+let position = null, positionReady = false, moving = false, movementStatus = '';
 const directions = { north: 'На север', west: 'На запад', east: 'На восток', south: 'На юг' };
 let roster = [], selected = localStorage.getItem('pocket-character') || new URLSearchParams(location.search).get('character'), tab = 'hero', socket;
 const stats = {str:'СИЛ',dex:'ЛОВ',con:'ТЕЛ',int:'ИНТ',wis:'МДР',cha:'ХАР'};
@@ -39,7 +39,8 @@ function renderTravel() {
       ${Object.entries(directions).map(([direction, label]) =>
         `<button class="choose" data-move="${direction}" ${disabled ? 'disabled' : ''}>${label}</button>`).join('')}
     </div>
-    <p class="muted" role="status">${esc(movementError)}</p>`;
+    <button class="choose" data-move="enter" ${disabled ? 'disabled' : ''}>Войти в переход</button>
+    <p class="muted" role="status">${esc(movementStatus)}</p>`;
 }
 
 function showPosition(next) {
@@ -50,7 +51,7 @@ function showPosition(next) {
 async function moveHero(direction) {
   if (!position || !positionReady || moving || accessRevoked) return;
   moving = true;
-  movementError = '';
+  movementStatus = '';
   renderTravel();
   try {
     const response = await fetch('/api/player-position/move', {
@@ -61,9 +62,10 @@ async function moveHero(direction) {
     const data = await response.json();
     if (accessRevoked) return;
     if (Object.hasOwn(data, 'position')) showPosition(data.position);
-    if (!response.ok) movementError = data.error || 'Не удалось сделать шаг';
+    if (!response.ok) movementStatus = data.error || 'Не удалось переместить героя';
+    else if (direction === 'enter') movementStatus = 'Переход выполнен.';
   } catch {
-    if (!accessRevoked) movementError = 'Связь прервалась. Проверьте позицию перед следующим шагом.';
+    if (!accessRevoked) movementStatus = 'Связь прервалась. Проверьте позицию перед следующим шагом.';
   } finally {
     moving = false;
     if (!accessRevoked && tab === 'travel') render();

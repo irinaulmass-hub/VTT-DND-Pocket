@@ -140,8 +140,8 @@ module.exports = function createWorldStore(gameFile) {
             return [{ id, name }];
           }
           if (!base.endsWith('-chunks') || !idPattern.test(base.slice(0, -7))) return [];
-          const { id, name } = readManifest(manifestFile(base.slice(0, -7), '')).map;
-          return [{ id, name }];
+          const { id, name, parentWorldId } = readManifest(manifestFile(base.slice(0, -7), '')).map;
+          return [parentWorldId ? { id, name, parentWorldId } : { id, name }];
         });
     },
     importLegacy(id, convert) {

@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
+const createWorldMovement = require('./world-movement');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -11,22 +12,15 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const store = createWorldStore(gameFile);
   const tileLimit = 150000;
 
-  const barriers = new Set(['wall', 'palisade', 'fence']);
-
-  function canStep({ worldId, x, y }) {
-    // Use the published geometry when available, without loading the world's tiles.
-    const layout = store.readPublished(worldId, [])?.map || store.readDraft(worldId, []);
-    if (!layout) return false;
-    return !layout.objects.some(prop =>
-      (prop.kind === 'door' && prop.x === x && prop.y === y) ||
-      (barriers.has(prop.kind) && map.wallCells(prop).some(([col, row]) => col === x && row === y)));
-  }
+  const movement = createWorldMovement(store, gameFile);
 
   const { getPosition, getExploration } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
-    worldExists: id => !!store.readDraft(id, []),
-    canStep,
-    explorationNotice(id) {
+    locationExists: movement.locationExists,
+    canStep: movement.canStep,
+    findTransition: movement.findTransition,
+    explorationNotice({ worldId, sceneId }) {
+      const id = sceneId === 'overworld' ? worldId : sceneId;
       if (store.readActiveId() !== id) return null;
       const data = store.readPublished(id, []);
       return data?.fog ? notice(data) : null;
@@ -92,7 +86,13 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   app.post('/api/worlds', requireDm, json, route((req, res) => {
     const name = typeof req.body?.name === 'string' && req.body.name.trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'Введите название карты' });
+    const parentWorldId = req.body.parentWorldId;
+    if (parentWorldId !== undefined) {
+      const parent = typeof parentWorldId === 'string' && store.readDraft(parentWorldId, []);
+      if (!parent || parent.parentWorldId) return res.status(404).json({ error: 'Выберите основной мир кампании' });
+    }
     const data = { id: randomUUID(), name, revision: 0, ...(req.body.sample === true ? map.sample() : { chunks: {}, objects: [] }) };
+    if (parentWorldId !== undefined) data.parentWorldId = parentWorldId;
     store.writeDraft(data);
     res.status(201).json(data);
   }));
@@ -115,7 +115,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.json(null);
     const chunks = {};
     const seen = {};
-    const explored = data.fog ? getExploration(activeId, 'overworld', 'ground') : {};
+    const scope = movement.sceneScope(data.map);
+    const explored = data.fog ? getExploration(scope.worldId, scope.sceneId, scope.floorId) : {};
     for (const key of keys) {
       if (data.fog && (data.seen[key] || explored[key])) {
         seen[key] = { ...data.seen[key], ...explored[key] };
@@ -132,6 +133,33 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,
       chunks, seen, fog: data.fog, objects: data.map.objects.filter(prop => !prop.hidden && visible(prop)),
     });
+  }));
+  app.get('/api/worlds/:id/transitions', requireDm, route((req, res) => {
+    if (!store.readDraft(req.params.id, [])) return res.status(404).json({ error: 'Карта не найдена' });
+    res.json({ links: movement.listTransitions(req.params.id) });
+  }));
+  app.post('/api/worlds/:id/transitions', requireDm, json, route((req, res) => {
+    const { x, y, toMapId, toX, toY } = req.body || {};
+    if (![x, y, toX, toY].every(map.valid) || typeof toMapId !== 'string') {
+      return res.status(400).json({ error: 'Укажите клетки начала и назначения' });
+    }
+    const source = store.readDraft(req.params.id, []);
+    const target = store.readDraft(toMapId, []);
+    if (!source || !target) return res.status(404).json({ error: 'Карта не найдена' });
+    const from = { ...movement.sceneScope(source), x, y };
+    const to = { ...movement.sceneScope(target), x: toX, y: toY };
+    if (source.id === target.id || from.worldId !== to.worldId) {
+      return res.status(400).json({ error: 'Свяжите разные сцены одного мира' });
+    }
+    if (!movement.canStep(from, false) || !movement.canStep(to, false)) {
+      return res.status(409).json({ error: 'Обе клетки перехода должны быть проходимыми' });
+    }
+    res.status(201).json({ link: movement.saveTransition(from, to) });
+  }));
+  app.delete('/api/worlds/:id/transitions/:linkId', requireDm, route((req, res) => {
+    if (!store.readDraft(req.params.id, [])) return res.status(404).json({ error: 'Карта не найдена' });
+    movement.removeTransition(req.params.id, req.params.linkId);
+    res.json({ links: movement.listTransitions(req.params.id) });
   }));
   app.get('/api/worlds/:id/chunks', requireDm, route((req, res) => {
     const keys = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
