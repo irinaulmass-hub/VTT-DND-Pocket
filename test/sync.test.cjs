@@ -92,7 +92,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/campaigns',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Forbidden'})})).status,302);
   const campaign=await (await fetch(base+'/api/campaigns',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Вторая игра'})})).json();
   assert.deepEqual((await (await fetch(base+'/api/characters?game='+campaign.id)).json()).characters,[]);
-  assert.deepEqual((await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes,[]);
+  assert.deepEqual((await (await fetch(base+'/api/scenes?game='+campaign.id,{headers:{Cookie:cookie}})).json()).scenes,[]);
   assert.equal((await fetch(base+'/api/characters?game=../bad')).status,404);
   const other=await open(cookie,campaign.id);sockets.push(other);
   let crossTalk=false;const crossObserve=raw=>{if(['CHARACTERS_UPDATE','UPDATE_TOKENS'].includes(JSON.parse(raw).type))crossTalk=true;};player.on('message',crossObserve);
@@ -205,7 +205,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const copiedDraft=(await (await fetch(base+draftUrl+'&game='+campaign.id,{headers:noteHeaders})).json());
   assert.equal(copiedDraft.bgImage,'/api/catalog/starter-farm/image');
   assert.equal((await fetch(base+copiedDraft.bgImage,{redirect:'manual'})).status,302);
-  const localScenes=(await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes;
+  const localScenes=(await (await fetch(base+'/api/scenes?game='+campaign.id,{headers:{Cookie:cookie}})).json()).scenes;
   assert.equal(localScenes[0].views[0].builderDraft,mapCopy.draft);
   assert.equal((await fetch(base+'/api/library/'+template.id,{method:'PUT',headers:noteHeaders,body:JSON.stringify({...templateBody,revision:99})})).status,409);
   const copy=await (await fetch(base+'/api/characters/'+ch.id+'/duplicate',{method:'POST',headers:{Cookie:cookie}})).json();assert.notEqual(copy.id,ch.id);assert.equal(copy.hp,23);assert.equal(copy.claimedBy,null);
@@ -216,12 +216,45 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(player,m=>m.type==='UPDATE_TOKENS');player.send(JSON.stringify({action:'request-sync'}));assert.equal((await next).tokens.length,1);
   // A table window shares the master's browser cookie, but its connection is read-only.
   const table=await open(cookie,campaign.id,'table');sockets.push(table);
+  const tableQuery='?game='+campaign.id+'&view=table';
+  const farmAsset='/assets/maps/winden-farm.png';
+  const linkedAsset='/assets/maps/winden-mine.png';
+  const publicAsset=(asset,query=tableQuery)=>base+'/presentation'+asset+query;
+  for(const endpoint of ['/api/scenes','/api/maps','/api/audio','/api/tiles','/api/state']){
+   assert.equal((await fetch(base+endpoint+tableQuery,{headers:{Cookie:cookie},redirect:'manual'})).status,302);
+   assert.equal((await fetch(base+endpoint+'?game='+campaign.id,{redirect:'manual'})).status,302);
+  }
+  assert.equal((await fetch(base+farmAsset)).status,404);
+  assert.equal((await fetch(base+'/assets/%6daps/winden-farm.png')).status,404);
+  assert.equal((await fetch(base+farmAsset+tableQuery,{headers:{Cookie:cookie}})).status,404);
+  assert.equal((await fetch(base+farmAsset,{headers:{Cookie:cookie}})).status,200);
+  assert.equal((await fetch(publicAsset(farmAsset),{headers:{Cookie:cookie}})).status,404);
   const tableMessages=[];table.on('message',raw=>tableMessages.push(JSON.parse(raw)));
   const pendingTrap={id:'pending-trap',type:'trap',cells:[[2,3]],description:'Где находится засада'};
-  const publicEffect={id:'public-effect',type:'effect',cells:[[1,1]],description:'Заметка мастера'};
+  const publicEffect={id:'public-effect',type:'effect',cells:[[1,1]],description:'Заметка мастера',linkedMap:linkedAsset};
   next=message(table,m=>m.type==='SHOW_SCENE_VIEW');
   other.send(JSON.stringify({action:'show-scene-view',image:'/assets/maps/winden-farm.png',mapKey:'table-map',fogKey:'table-map',features:[pendingTrap,publicEffect],mapMeta:{cols:4,rows:4}}));
   assert.deepEqual((await next).features,[]);
+  const publishedMap=await fetch(publicAsset(farmAsset));
+  assert.equal(publishedMap.status,200);
+  assert.match(publishedMap.headers.get('cache-control'),/no-store/);
+  assert.equal((await fetch(publicAsset(farmAsset,'?game=default'))).status,404);
+  assert.equal((await fetch(publicAsset(linkedAsset))).status,404);
+  const audioAsset='/assets/audio/'+campaign.id+'.wav';
+  const audioFile=path.join(root,'public',audioAsset.slice(1));
+  fs.mkdirSync(path.dirname(audioFile),{recursive:true});
+  fs.writeFileSync(audioFile,'RIFF-test-audio');
+  catalogImages.push(audioFile);
+  assert.equal((await fetch(base+audioAsset)).status,404);
+  assert.equal((await fetch(publicAsset(audioAsset))).status,404);
+  next=message(table,m=>m.type==='PLAY_AUDIO');
+  other.send(JSON.stringify({action:'play-audio',url:audioAsset}));
+  await next;
+  assert.equal((await fetch(publicAsset(audioAsset))).status,200);
+  next=message(table,m=>m.type==='STOP_AUDIO');
+  other.send(JSON.stringify({action:'stop-audio'}));
+  await next;
+  assert.equal((await fetch(publicAsset(audioAsset))).status,404);
   next=message(table,m=>m.type==='UPDATE_FOG'&&m.fogGrid?.[0]?.[0]===true);
   other.send(JSON.stringify({action:'update-fog',fogKey:'table-map',fogGrid:[[true,false],[false,false]]}));
   assert.deepEqual((await next).fogGrid,[[true,false],[false,false]]);
@@ -231,6 +264,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(table,m=>m.type==='TRIGGER_FEATURE');
   other.send(JSON.stringify({action:'trigger-feature',featureId:publicEffect.id,mapKey:'table-map'}));
   const triggered=(await next);assert.equal(triggered.feature.id,publicEffect.id);assert.equal(triggered.feature.description,undefined);assert.equal(triggered.allFeatures,undefined);
+  assert.equal((await fetch(publicAsset(linkedAsset))).status,200);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentFeatureStates[publicEffect.id],'triggered');
   const tableAgain=await open(cookie,campaign.id,'table');sockets.push(tableAgain);
   tableAgain.on('message',raw=>tableMessages.push(JSON.parse(raw)));
@@ -376,8 +410,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
   display.send(JSON.stringify({action:'request-sync'}));
-  assert.equal((await next).mapKey,mine);
+  const restoredView=await next;
+  assert.equal(restoredView.mapKey,mine);
+  assert.equal((await fetch(publicAsset(restoredView.image,'?game='+packedCampaign.id))).status,200);
   const returned=await travel(resumed,farm);
+  assert.equal((await fetch(publicAsset(restoredView.image,'?game='+packedCampaign.id))).status,404);
+  assert.equal((await fetch(publicAsset(farmAsset,'?game='+packedCampaign.id))).status,200);
   assert.deepEqual(returned.fogStates[farm],fog);
   assert.equal(returned.tokens[0].id,'farm-hero');
   assert.equal(returned.featureStates[pendingTrap.id],'triggered');

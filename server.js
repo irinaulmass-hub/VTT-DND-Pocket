@@ -171,7 +171,7 @@ function uid(name) {
 function saveState() {
   try {
     const snapshot = {
-      currentSceneView: game().currentSceneView, currentFogStates: game().currentFogStates, currentTokens: game().currentTokens, currentTokensMapKey: game().currentTokensMapKey,
+      currentSceneView: game().currentSceneView, currentAudio: game().currentAudio, currentFogStates: game().currentFogStates, currentTokens: game().currentTokens, currentTokensMapKey: game().currentTokensMapKey,
       currentTokensShowRings: game().currentTokensShowRings, currentDrawing: game().currentDrawing, currentDrawingMapKey: game().currentDrawingMapKey,
       currentFeatures: game().currentFeatures, currentFeatureStates: game().currentFeatureStates, currentMapMeta: game().currentMapMeta, currentTargets: game().currentTargets,
       gridEnabled: game().gridEnabled, allPlayersLocked: game().allPlayersLocked, blackout: game().currentState.blackout,
@@ -189,6 +189,10 @@ function loadState() {
     if (!fs.existsSync(gameFile('state.json'))) return;
     const saved = JSON.parse(fs.readFileSync(gameFile('state.json'), 'utf8'));
     if (saved.currentSceneView) game().currentSceneView = saved.currentSceneView;
+    if (Object.hasOwn(saved, 'currentAudio')) game().currentAudio = saved.currentAudio;
+    else if (saved.currentSceneView?.audio) {
+      game().currentAudio = { url: saved.currentSceneView.audio, loop: saved.currentSceneView.audioLoop !== false };
+    }
     if (saved.currentFogStates) game().currentFogStates = saved.currentFogStates;
     if (Array.isArray(saved.currentTokens)) game().currentTokens = saved.currentTokens;
     if (saved.currentTokensMapKey) game().currentTokensMapKey = saved.currentTokensMapKey;
@@ -225,7 +229,9 @@ function parseCookies(req) {
   });
   return out;
 }
-function isDmAuthed(req) { return dmSessions.has(parseCookies(req).dm_token || ''); }
+function isDmAuthed(req) {
+  return req.query?.view !== 'table' && dmSessions.has(parseCookies(req).dm_token || '');
+}
 
 app.get('/dm-login', (req, res) => {
   if (isDmAuthed(req)) return res.redirect('/');
@@ -262,21 +268,58 @@ function requireDm(req, res, next) {
   res.redirect('/dm-login');
 }
 
-app.use('/assets', (req, res, next) => {
-  let asset;
-  try { asset = decodeURIComponent(req.path); }
-  catch { return res.sendStatus(400); }
-  if (/\.map\.json(?:[. /:\\]|$)/i.test(asset)) return res.sendStatus(404);
-  next();
-});
-app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
+function assetPath(urlPath) {
+  try {
+    const decoded = decodeURIComponent(urlPath);
+    if (/[\\:\x00-\x1f]/.test(decoded) || decoded.split('/').some(segment => /^\.{1,2}$|[. ]$/.test(segment))) return null;
+    return path.posix.normalize('/' + decoded.replace(/^\/+/, ''));
+  } catch { return null; }
+}
+
+function publishedAssetPath(value, host) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value, 'http://' + host);
+    if (!['http:', 'https:'].includes(url.protocol) || url.host !== host || !url.pathname.startsWith('/assets/')) return null;
+    return assetPath(url.pathname.slice('/assets'.length));
+  } catch { return null; }
+}
+
+const assetFiles = express.Router();
+assetFiles.use(express.static(path.join(__dirname, 'public/assets')));
 const _mapsDir = path.join(__dirname, 'public/assets/maps');
 if (fs.existsSync(_mapsDir)) {
   for (const _sub of fs.readdirSync(_mapsDir)) {
     const _subPath = path.join(_mapsDir, _sub);
-    if (fs.statSync(_subPath).isDirectory()) app.use('/assets/maps', express.static(_subPath));
+    if (fs.statSync(_subPath).isDirectory()) assetFiles.use('/maps', express.static(_subPath));
   }
 }
+app.use('/assets', (req, res, next) => {
+  const asset = assetPath(req.path);
+  if (!asset || /\.map\.json(?:[. /]|$)/i.test(asset)) return res.sendStatus(404);
+  if (/^\/(maps|audio)(\/|$)/i.test(asset)) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!isDmAuthed(req)) return res.sendStatus(404);
+  }
+  next();
+}, assetFiles);
+
+app.use('/presentation/assets', (req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', 'sandbox');
+  const asset = assetPath(req.path);
+  if (!asset || !/^\/(?:maps\/.+\.(?:png|jpe?g|webp|gif)|audio\/.+\.(?:mp3|ogg|wav))$/i.test(asset)) {
+    return res.sendStatus(404);
+  }
+  const g = game();
+  const published = [g.currentSceneView?.image, g.currentAudio?.url];
+  for (const feature of g.currentFeatures) {
+    if (visibleOnMap(feature) && g.currentFeatureStates[feature.id] === 'triggered') published.push(feature.linkedMap);
+  }
+  if (!published.some(value => publishedAssetPath(value, req.get('host')) === asset)) return res.sendStatus(404);
+  next();
+}, assetFiles);
 
 const BLOCKED_PATHS = ['/server.js', '/package.json', '/package-lock.json'];
 const BLOCKED_PREFIXES = ['/seeds/', '/node_modules/', '/.git/'];
@@ -418,9 +461,11 @@ function sendFullState(ws) {
     }
     send(world);
   }
-  if (game().currentSceneView) send(game().currentSceneView);
+  const audio = game().currentAudio;
+  if (game().currentSceneView) send({ ...game().currentSceneView, audio: audio?.url || null, audioLoop: audio?.loop !== false });
   else if (game().currentSceneId) send({ type: 'SHOW_SCENE', sceneId: game().currentSceneId });
   else if (ws.tableView) { send({ type: 'CLEAR_SCENE' }); send({ type: 'BLACKOUT', active: false }); }
+  if (!game().currentSceneView && audio) send({ type: 'PLAY_AUDIO', ...audio });
   for (const fogKey of Object.keys(game().currentFogStates)) send({ type: 'UPDATE_FOG', fogKey, fogGrid: game().currentFogStates[fogKey] });
   if (game().currentTokensMapKey) send({ type: 'UPDATE_TOKENS', tokens: game().currentTokens, mapKey: game().currentTokensMapKey, showRings: game().currentTokensShowRings });
   if (game().currentDrawingMapKey) send({ type: 'UPDATE_DRAWING', strokes: game().currentDrawing, mapKey: game().currentDrawingMapKey });
@@ -668,8 +713,8 @@ function initializeConnection(ws, req, context) {
         case 'clear-scene':
           closeLocation();
           break;
-        case 'play-audio': if (message.url) { game().currentAudio = { url: message.url, loop: message.loop !== false }; broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); } break;
-        case 'stop-audio': game().currentAudio = null; broadcast({ type: 'STOP_AUDIO' }); break;
+        case 'play-audio': if (message.url) { game().currentAudio = { url: message.url, loop: message.loop !== false }; saveState(); broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); } break;
+        case 'stop-audio': game().currentAudio = null; saveState(); broadcast({ type: 'STOP_AUDIO' }); break;
         case 'send-overlay': broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000, subtype: message.subtype || '' }); break;
         case 'update-fog': {
           const active = game().currentSceneView;
@@ -871,7 +916,7 @@ app.post('/api/dice-roll', requireDm, express.json({ limit: '1mb' }), (req, res)
   res.json({ ok: true });
 });
 
-app.post('/api/stopaudio', requireDm, (req, res) => { broadcast({ type: 'STOP_AUDIO' }); res.json({ ok: true }); });
+app.post('/api/stopaudio', requireDm, (req, res) => { game().currentAudio = null; saveState(); broadcast({ type: 'STOP_AUDIO' }); res.json({ ok: true }); });
 app.post('/api/blackout', requireDm, (req, res) => { game().currentState.blackout = !game().currentState.blackout; broadcast({ type: 'BLACKOUT', active: game().currentState.blackout }); res.json({ ok: true, blackout: game().currentState.blackout }); });
 
 app.post('/api/clear', requireDm, (req, res) => {
@@ -885,7 +930,7 @@ app.post('/api/clear-scene', requireDm, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/state', (req, res) => { res.json(game().currentState); });
+app.get('/api/state', requireDm, (req, res) => { res.json(game().currentState); });
 
 const https = require('https');
 app.get('/api/bestiary/:file', (req, res) => {
@@ -903,12 +948,12 @@ app.get('/api/bestiary/:file', (req, res) => {
   }).on('error', () => res.status(502).end());
 });
 
-app.get('/api/maps', (req, res) => {
+app.get('/api/maps', requireDm, (req, res) => {
   const maps = listFiles('public/assets/maps', ['.jpg', '.jpeg', '.png', '.webp']);
   res.json({ maps });
 });
 
-app.get('/api/tiles', (req, res) => {
+app.get('/api/tiles', requireDm, (req, res) => {
   const tilesDir = path.join(__dirname, 'public/assets/tiles');
   if (!fs.existsSync(tilesDir)) return res.json({ tiles: [] });
   const files = fs.readdirSync(tilesDir)
@@ -917,7 +962,7 @@ app.get('/api/tiles', (req, res) => {
   res.json({ tiles: files });
 });
 
-app.get('/api/audio', (req, res) => {
+app.get('/api/audio', requireDm, (req, res) => {
   const files = listFiles('public/assets/audio', ['.mp3', '.ogg', '.wav']);
   const groups = {};
   files.forEach(f => {
@@ -932,7 +977,7 @@ app.get('/api/audio', (req, res) => {
   res.json({ audio, categories });
 });
 
-app.get('/api/scenes', (req, res) => {
+app.get('/api/scenes', requireDm, (req, res) => {
   try {
     const scenes = JSON.parse(fs.readFileSync(sceneFile(), 'utf8'));
     const examples=JSON.parse(fs.readFileSync(path.join(__dirname,'seeds','scenes.json'),'utf8'));

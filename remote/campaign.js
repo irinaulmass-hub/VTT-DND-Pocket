@@ -4,9 +4,20 @@
  const tableView = /^\/tv\/?$/.test(location.pathname);
  if (tableView) document.documentElement.dataset.tableView = '';
  window.currentCampaignId=id;
- const scopedUrl=value=>{const url=new URL(value,location.href);if(url.host===location.host && (url.pathname.startsWith('/api/') || url.pathname==='/ws'))url.searchParams.set('game',id);return url.href;};
+ const scopedUrl=value=>{
+  const url=new URL(value,location.href);
+  if(url.host===location.host && (url.pathname.startsWith('/api/') || url.pathname==='/ws')){
+   url.searchParams.set('game',id);
+   if(tableView)url.searchParams.set('view','table');
+  }
+  return url.href;
+ };
  const nativeFetch=window.fetch.bind(window);
- window.fetch=(input,options)=>nativeFetch(input instanceof Request ? new Request(scopedUrl(input.url),input) : scopedUrl(input),options);
+ window.fetch=(input,options)=>{
+  const url=scopedUrl(input instanceof Request ? input.url : input);
+  const request=input instanceof Request ? new Request(url,input) : url;
+  return nativeFetch(request,tableView ? {...options,credentials:'omit'} : options);
+ };
  const NativeSocket=window.WebSocket;
  window.WebSocket=class extends NativeSocket {constructor(url,protocols){super(scopedUrl(url),protocols);}};
  // Separate saved character selection, initiative and map settings in each campaign.

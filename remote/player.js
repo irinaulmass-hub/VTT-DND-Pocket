@@ -248,6 +248,17 @@ function dismissTapOverlay() {
 
 }());
 
+function presentationAsset(value) {
+  if (!value) return value;
+  try {
+    const url = new URL(value, location.href);
+    if (url.origin !== location.origin || !/^\/assets\/(maps|audio)\//i.test(url.pathname)) return value;
+    url.pathname = '/presentation' + url.pathname;
+    url.searchParams.set('game', window.currentCampaignId || 'default');
+    return url.href;
+  } catch { return value; }
+}
+
 // ── Image display ────────────────────────────────────────────
 function showImage(imageUrl, fogKey, fit) {
   var paint = ++scenePaint;
@@ -306,7 +317,7 @@ function showImage(imageUrl, fogKey, fit) {
     } else {
       img.onload = afterLoad;
     }
-    img.src = imageUrl;
+    img.src = presentationAsset(imageUrl);
   }, 150);
 }
 
@@ -1193,8 +1204,9 @@ function openPuzzleLightbox(feat) {
   lb.classList.add('open');
   var newSrc = feat.linkedMap || '';
   var jsonUrl = '/api/map-builder/puzzle?image=' + encodeURIComponent(newSrc);
+  var imageSrc = new URL(presentationAsset(newSrc), location.href).href;
   // Reset lightbox state when opening a new sub-map
-  if (!img.src.endsWith(newSrc)) {
+  if (img.src !== imageSrc) {
     _lbObjects = [];
     _lbObjectStates = {};
   }
@@ -1217,11 +1229,11 @@ function openPuzzleLightbox(feat) {
       })
       .catch(function () { /* .map.json not found — image-only lightbox */ });
   }
-  if (img.src.endsWith(newSrc) && img.naturalWidth) {
+  if (img.src === imageSrc && img.naturalWidth) {
     loadAndRender();
   } else {
     img.onload = loadAndRender;
-    img.src = newSrc;
+    img.src = imageSrc;
   }
 }
 (function () {
@@ -1368,7 +1380,7 @@ function playAudio(url, loop) {
     return;
   }
   if (globalAudio) { globalAudio.pause(); globalAudio = null; }
-  globalAudio = new Audio(url);
+  globalAudio = new Audio(presentationAsset(url));
   globalAudio.loop = !!loop;
   globalAudio.volume = 0.7;
   globalAudio.play().catch(function (err) {
