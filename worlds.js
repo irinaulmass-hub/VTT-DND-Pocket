@@ -6,6 +6,7 @@ const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
 const createWorldDiscoveries = require('./world-discoveries');
+const { validGenerators } = require('./world-generators');
 const { project, isRevealedSecret } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen, screenBlackout }) => {
@@ -223,8 +224,13 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Черновик изменён в другом окне. Откройте его заново.' });
     if (!validMap(req.body)) return res.status(400).json({ error: 'Проверьте слои карты и количество тайлов' });
+    const { generators } = req.body;
+    if (generators !== undefined && !validGenerators(generators)) {
+      return res.status(400).json({ error: 'Проверьте версии и параметры генераторов карты' });
+    }
     const objects = req.body.objects.map(({ id, kind, x, y, turn, hidden }) => ({ id, kind, x, y, turn, hidden: hidden === true }));
     const next = { ...data, revision: data.revision + 1, chunks: req.body.chunks, objects };
+    if (generators !== undefined) next.generators = generators;
     store.writeDraft(next);
     res.json(next);
   }));
@@ -234,9 +240,10 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Сначала сохраните актуальный черновик' });
     const previous = store.readPublished(data.id, []);
     preservePublication(previous);
+    const { generators, ...publishedMap } = data;
     const next = {
       tokens: [], seen: {}, frame: { x: 0, y: 0, scale: 24, serial: 0 }, ...previous,
-      map: data, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
+      map: publishedMap, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
     };
     store.writePublished(data.id, next);
     const active = store.writeActiveId(data.id);

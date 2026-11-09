@@ -454,11 +454,24 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     {id:'remembered-torch',kind:'torch',x:29,y:0,turn:0},
     {id:'private-party-torch',kind:'torch',x:21,y:0,turn:0,hidden:true},
   );
+  const roadRecipe={
+    id:'road-main',kind:'path',version:1,seed:0,
+    params:{terrain:'path',width:3,points:[{x:-33,y:0},{x:32,y:1}]},
+  };
+  world.generators=[roadRecipe];
+  const invalidRecipe={...roadRecipe,version:2};
+  assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidRecipe]})).status,400);
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
+  assert.equal(savedWorld.revision,world.revision+1,'invalid recipes do not consume the draft revision');
+  assert.deepEqual(savedWorld.generators,[roadRecipe]);
+  assert.deepEqual(savedWorld.chunks,world.chunks,'saving a recipe does not paint the map');
+  assert.equal((await fetch(worldBase+'/'+world.id+worldGame,{redirect:'manual'})).status,302);
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
   assert.equal((await worldWrite('/'+world.id,'PUT',world)).status,409);
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
-  assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
+  const initialPublication=await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true});
+  assert.equal(initialPublication.status,200);
+  assert.equal((await initialPublication.json()).map.generators,undefined);
   const publishedNotice=await next;
   const tableWorld=(keys='0,0')=>fetch(worldBase+'/table'+worldGame+'&chunks='+encodeURIComponent(keys)).then(r=>r.json());
   const tableStatus=(query=worldGame)=>fetch(worldBase+'/table/status'+query).then(r=>r.json());
@@ -469,6 +482,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(freshTable.chunks['0,0'],{});
   assert.deepEqual(freshTable.tokens,[]);
   assert.equal(freshTable.positions,undefined);
+  assert.equal(freshTable.generators,undefined);
   assert.equal((await setPosition(otherChar.id,{...firstPosition,x:20,y:0})).status,200);
   assert.equal((await setPosition(secondHero.id,{...firstPosition,x:24,y:0})).status,200);
   assert.equal(tiles.get((await tableWorld()).chunks,20,0),undefined,'a transfer alone does not explore the map');
@@ -759,10 +773,13 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(updatedDraft.chunks,0,0),'water');
   assert.equal(updatedDraft.chunks['7,7'],undefined);
   assert.deepEqual(updatedDraft.objects,savedWorld.objects);
+  assert.deepEqual(updatedDraft.generators,[roadRecipe],'patching chunks preserves generator metadata');
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
   Object.assign(updatedDraft.objects.find(prop=>prop.id==='secret-marker'),{x:29,y:0});
   updatedDraft.objects.find(prop=>prop.id==='another-secret').x=13;
+  delete updatedDraft.generators;
   const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
+  assert.deepEqual(editedWorld.generators,[roadRecipe],'an older editor may omit generator metadata');
   assert.equal(editedWorld.revision,savedWorld.revision+2);
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
@@ -771,8 +788,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const legacyChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:cookie}});
   assert.deepEqual((await legacyChunks.json()).chunks,legacy.chunks);
   assert.equal((await worldWrite('/'+legacyId+'/chunks','PATCH',{revision:0,chunks:{'0,0':null}})).status,409);
-  assert.equal((await worldWrite('/'+legacyId,'PUT',legacy)).status,200);
-  assert.equal(JSON.parse(fs.readFileSync(legacyFile)).revision,1);
+  assert.equal((await worldWrite('/'+legacyId,'PUT',{...legacy,generators:[roadRecipe]})).status,200);
+  const legacySaved=JSON.parse(fs.readFileSync(legacyFile));
+  assert.equal(legacySaved.revision,1);
+  assert.deepEqual(legacySaved.generators,[roadRecipe]);
   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
   const savedWorldStatus=await tableStatus();
@@ -817,6 +836,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const importedChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:newCookie}});
   assert.equal(importedChunks.status,200);
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
+  const reopenDraft=id=>fetch(worldBase+'/'+id+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
+  assert.deepEqual((await reopenDraft(legacyId)).generators,[roadRecipe],'import preserves the legacy draft recipe');
+  assert.deepEqual((await reopenDraft(world.id)).generators,[roadRecipe],'the recipe survives server restart');
   const resumedWorld=await tableWorld();
   assert.deepEqual(await tableStatus(),savedWorldStatus,'the projection version persists across server restart');
   assert.deepEqual(resumedWorld.version,savedWorldStatus.version);
