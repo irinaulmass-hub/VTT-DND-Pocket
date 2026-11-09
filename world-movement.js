@@ -5,6 +5,7 @@ const map = require('./remote/world-model');
 
 const barriers = new Set(['wall', 'palisade', 'fence']);
 const solid = new Set(['house', 'tavern', 'barn', 'well', 'boulder', 'tree', 'wagon', 'wreckedWagon']);
+const sightRadius = 4;
 
 function sceneScope(layout) {
   return {
@@ -18,10 +19,19 @@ function mapId(position) {
   return position.sceneId === 'overworld' ? position.worldId : position.sceneId;
 }
 
+function cellBounds(prop) {
+  const { x, y, width, height } = map.footprint(prop);
+  return {
+    left: Math.ceil(x - width / 2 - .5),
+    right: Math.ceil(x + width / 2 - .5) - 1,
+    top: Math.ceil(y - height / 2 - .5),
+    bottom: Math.ceil(y + height / 2 - .5) - 1,
+  };
+}
+
 function covers(prop, x, y) {
-  const bounds = map.footprint(prop);
-  return x + .5 >= bounds.x - bounds.width / 2 && x + .5 < bounds.x + bounds.width / 2 &&
-    y + .5 >= bounds.y - bounds.height / 2 && y + .5 < bounds.y + bounds.height / 2;
+  const bounds = cellBounds(prop);
+  return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
 }
 
 function passable(layout, x, y) {
@@ -33,6 +43,62 @@ function passable(layout, x, y) {
     if (prop.kind === 'bridge' && covers(prop, x, y)) bridge = true;
   }
   return bridge || map.get(layout.chunks, x, y) !== 'water';
+}
+
+function sightObstacles(objects, origin) {
+  const blocked = new Set();
+  for (const prop of objects) {
+    if (barriers.has(prop.kind)) {
+      for (const cell of map.wallCells(prop)) blocked.add(cell.join(','));
+    } else if (prop.kind === 'door') {
+      blocked.add(prop.x + ',' + prop.y);
+    } else if (solid.has(prop.kind)) {
+      const bounds = cellBounds(prop);
+      const left = Math.max(origin.x - sightRadius, bounds.left);
+      const right = Math.min(origin.x + sightRadius, bounds.right);
+      const top = Math.max(origin.y - sightRadius, bounds.top);
+      const bottom = Math.min(origin.y + sightRadius, bounds.bottom);
+      for (let y = top; y <= bottom; y++) {
+        for (let x = left; x <= right; x++) blocked.add(x + ',' + y);
+      }
+    }
+  }
+  return blocked;
+}
+
+function hasSight(origin, target, blocked) {
+  const width = Math.abs(target.x - origin.x);
+  const height = Math.abs(target.y - origin.y);
+  const dx = Math.sign(target.x - origin.x);
+  const dy = Math.sign(target.y - origin.y);
+  let x = origin.x, y = origin.y;
+  let columns = 0, rows = 0;
+  const opaque = (col, row) => blocked.has(col + ',' + row);
+
+  while (columns < width || rows < height) {
+    const nextColumn = (2 * columns + 1) * height;
+    const nextRow = (2 * rows + 1) * width;
+    // A ray through a corner cannot pass between two adjacent opaque cells.
+    if (nextColumn === nextRow && opaque(x + dx, y) && opaque(x, y + dy)) return false;
+    if (nextColumn <= nextRow) { x += dx; columns++; }
+    if (nextRow <= nextColumn) { y += dy; rows++; }
+    if (x === target.x && y === target.y) return true;
+    if (opaque(x, y)) return false;
+  }
+  return true;
+}
+
+function visibleCells(position, objects) {
+  const blocked = sightObstacles(objects, position);
+  const visible = [];
+  for (let dy = -sightRadius; dy <= sightRadius; dy++) {
+    for (let dx = -sightRadius; dx <= sightRadius; dx++) {
+      if (dx * dx + dy * dy > sightRadius * sightRadius) continue;
+      const target = { x: position.x + dx, y: position.y + dy };
+      if (map.valid(target.x) && map.valid(target.y) && hasSight(position, target, blocked)) visible.push(target);
+    }
+  }
+  return visible;
 }
 
 module.exports = function createWorldMovement(store, gameFile) {
@@ -67,6 +133,11 @@ module.exports = function createWorldMovement(store, gameFile) {
     sceneScope,
     locationExists: position => !!layoutAt(position, [], false),
     canStep,
+    stepVisibility(position) {
+      const [key] = map.address(position.x, position.y);
+      const layout = layoutAt(position, [key]);
+      return layout && passable(layout, position.x, position.y) ? visibleCells(position, layout.objects) : null;
+    },
     findTransition(position) {
       return readLinks().find(({ from }) => from.worldId === position.worldId &&
         from.sceneId === position.sceneId && from.floorId === position.floorId &&

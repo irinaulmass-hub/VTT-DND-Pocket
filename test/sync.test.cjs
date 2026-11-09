@@ -440,7 +440,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   tiles.set(world.chunks,-70,-41,'path');
   world.chunks['7,7']={0:'dirt'};
   world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
-  for(let x=20;x<=25;x++) tiles.set(world.chunks,x,0,'path');
+  for(let x=20;x<=30;x++) tiles.set(world.chunks,x,0,'path');
+  tiles.set(world.chunks,20,-1,'grass');
   world.objects.push(
     {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
     {id:'private-party-torch',kind:'torch',x:21,y:0,turn:0,hidden:true},
@@ -451,7 +452,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
   await next;
-  const tableWorld=()=>fetch(worldBase+'/table'+worldGame+'&chunks=0%2C0').then(r=>r.json());
+  const tableWorld=(keys='0,0')=>fetch(worldBase+'/table'+worldGame+'&chunks='+encodeURIComponent(keys)).then(r=>r.json());
   const freshTable=await tableWorld();
   assert.deepEqual(freshTable.chunks['0,0'],{});
   assert.deepEqual(freshTable.tokens,[]);
@@ -468,10 +469,13 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const firstExplored=await tableWorld();
   assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
+  assert.equal(tiles.get(firstExplored.chunks,22,0),'path','the wall cell itself is visible');
+  assert.equal(tiles.get(firstExplored.chunks,23,0),undefined,'the wall blocks sight beyond it');
+  assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass','sight crosses chunk boundaries');
   assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-torch'));
   assert.equal((await movePosition({direction:'east',revision:6})).status,409);
   assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
-  assert.equal(tiles.get((await tableWorld()).chunks,22,0),undefined);
+  assert.deepEqual((await tableWorld()).seen,firstExplored.seen,'a blocked step does not change exploration');
 
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
   const secondPartyStep=await movePosition({direction:'east',revision:3},secondInvitation.token);
@@ -479,8 +483,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const partySecond=await secondPartyStep.json();
   await next;
   const partyMap=await tableWorld();
-  for(const x of [20,21,24,25]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
-  assert.equal(tiles.get(partyMap.chunks,23,0),undefined);
+  for(const x of [20,21,23,24,25,29]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
+  assert.equal(tiles.get(partyMap.chunks,30,0),undefined,'cells outside both heroes’ sight stay hidden');
   assert.deepEqual(partyMap.tokens,[]);
 
   const sceneResponse=await worldWrite('','POST',{name:'Нижняя пещера',parentWorldId:world.id});
@@ -525,7 +529,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(caveTable.id,cave.id);
   assert.equal(tiles.get(caveTable.chunks,4,4),'caveFloor');
   assert.equal(tiles.get(caveTable.chunks,5,4),'water');
-  assert.equal(tiles.get(caveTable.chunks,4,5),undefined);
+  assert.equal(tiles.get(caveTable.chunks,4,5),'water','a visible cell need not be passable');
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
   assert.equal(tiles.get((await tableWorld()).chunks,21,0),'path');
 
@@ -605,8 +609,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(importedChunks.status,200);
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const resumedWorld=await tableWorld();
-  for(const x of [20,21,24,25]) assert.equal(tiles.get(resumedWorld.chunks,x,0),'path');
-  for(const x of [22,23]) assert.equal(tiles.get(resumedWorld.chunks,x,0),undefined);
+  for(const x of [20,21,22,23,24,25,29]) assert.equal(tiles.get(resumedWorld.chunks,x,0),'path');
+  assert.equal(tiles.get(resumedWorld.chunks,30,0),undefined);
+  assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass');
   assert.equal(resumedWorld.tokens[0].x,9);
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');

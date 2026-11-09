@@ -17,7 +17,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const { getPosition, getExploration } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     locationExists: movement.locationExists,
-    canStep: movement.canStep,
+    stepVisibility: movement.stepVisibility,
     findTransition: movement.findTransition,
     explorationNotice({ worldId, sceneId }) {
       const id = sceneId === 'overworld' ? worldId : sceneId;

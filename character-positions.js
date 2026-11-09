@@ -11,7 +11,7 @@ const steps = {
 };
 
 module.exports = function registerCharacterPositions(app, {
-  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, canStep, findTransition, explorationNotice,
+  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, stepVisibility, findTransition, explorationNotice,
 }) {
   const stateFile = () => gameFile('character-positions.json');
 
@@ -34,13 +34,16 @@ module.exports = function registerCharacterPositions(app, {
     return readState().explored[explorationKey(worldId, sceneId, floorId)] || {};
   }
 
-  function recordCell(state, position) {
-    const { worldId, sceneId, floorId, x, y } = position;
+  function recordExploration(state, { worldId, sceneId, floorId }, cells) {
     const key = explorationKey(worldId, sceneId, floorId);
     const seen = state.explored[key] ||= {};
-    if (get(seen, x, y)) return false;
-    set(seen, x, y, true);
-    return true;
+    let changed = false;
+    for (const { x, y } of cells) {
+      if (get(seen, x, y)) continue;
+      set(seen, x, y, true);
+      changed = true;
+    }
+    return changed;
   }
 
   function savePosition(file, state, position) {
@@ -98,9 +101,10 @@ module.exports = function registerCharacterPositions(app, {
     }
     const position = { ...current, ...destination, revision: current.revision + 1 };
     if (!valid(position.x) || !valid(position.y)) return res.status(400).json({ error: 'Достигнута граница мира' });
-    if (!canStep(position)) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
-    const originChanged = recordCell(state, current);
-    const destinationChanged = recordCell(state, position);
+    const visible = stepVisibility(position);
+    if (!visible) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
+    const originChanged = recordExploration(state, current, [current]);
+    const destinationChanged = recordExploration(state, position, visible);
     // At most one of the two maps can be on the table.
     const notice = (originChanged && explorationNotice(current)) ||
       (destinationChanged && explorationNotice(position));
