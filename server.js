@@ -413,6 +413,7 @@ function sendView(client, data) {
   if (client.accessToken && !client.characterId) return;
   if (client.readyState !== WebSocket.OPEN || (client.tableView && !tableMessages.has(data.type))) return;
   if (!game().dmClients.has(client)) {
+    if (data.type === 'CHARACTER_POSITION' && client.characterId !== data.characterId) return;
     if (data.type === 'UPDATE_TOKENS') {
       data = { ...data, tokens: data.tokens.filter(visibleOnMap) };
     } else if (data.type === 'SHOW_SCENE_VIEW' || data.type === 'UPDATE_FEATURES') {
@@ -806,6 +807,7 @@ function initializeConnection(ws, req, context) {
           ws.characterId = characterId;
           ws.playerName = character.name;
           sendView(ws, { type: 'CHARACTERS_UPDATE', characters: [character] });
+          sendView(ws, { type: 'CHARACTER_POSITION', characterId, position: worlds.getPosition(characterId) });
           break;
         }
         case 'player-login':
@@ -1125,6 +1127,12 @@ app.get('/map-builder', requireDm, (req, res) => {
 const legacyMapDir = path.join(__dirname, 'public', 'assets', 'maps');
 const worlds = require('./worlds')(app, {
   express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter,
+  movementLocked(characterId) {
+    const g = game();
+    if (g.allPlayersLocked) return true;
+    const hero = loadCharacters().characters.find(character => character.id === characterId);
+    return g.lockedPlayers.has(hero?.name);
+  },
   revealScreen() {
     game().currentState.blackout = false;
     saveState();

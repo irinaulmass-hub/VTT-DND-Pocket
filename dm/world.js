@@ -53,7 +53,7 @@
         </div>
         <div class="book-toolbar">
           <select class="book-select" data-world-position-hero aria-label="Герой для личной позиции"></select>
-          <button class="book-button" data-tool="position">Записать личную позицию</button>
+          <button class="book-button" data-tool="position">Поставить или перенести героя</button>
           <small data-world-position-info role="status"></small>
         </div>
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
@@ -144,6 +144,12 @@
     }
   }
   e('position-hero').onchange = readPosition;
+  window.addEventListener('character-position', event => {
+    const { characterId, position } = event.detail;
+    if (characterId !== e('position-hero').value || !position) return;
+    ++positionGeneration;
+    describePosition(position);
+  });
 
   function click(x, y, point) {
     if (!draft || busy) return;
@@ -256,7 +262,7 @@
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     tool = button.dataset.tool;
-    if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы записать его личную позицию');
+    if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
     first = undefined;
     paint();
     if (tool === 'select') status('Перетащи объект мышью. Щёлкни по нему, чтобы выделить.');

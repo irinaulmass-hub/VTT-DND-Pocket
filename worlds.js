@@ -5,14 +5,14 @@ const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 
-module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, revealScreen }) => {
+module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
   const tileLimit = 150000;
 
-  registerCharacterPositions(app, {
-    express, requireDm, gameFile, loadCharacters, assignedCharacter,
+  const { getPosition } = registerCharacterPositions(app, {
+    express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     worldExists: id => !!store.readDraft(id, []),
   });
 
@@ -190,5 +190,5 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.json({ tokens: data.tokens, revision: data.revision, frame: data.frame });
   }));
   app.post('/api/worlds/live/hide', requireDm, route((req, res) => res.json({ hidden: hide() })));
-  return { hide, notice: () => notice(store.readActiveWorld([])) };
+  return { hide, getPosition, notice: () => notice(store.readActiveWorld([])) };
 };
