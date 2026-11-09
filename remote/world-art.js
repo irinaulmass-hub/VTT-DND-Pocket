@@ -327,7 +327,15 @@
       ctx.restore();
     }
   }
-  function door(ctx) {
+  function door(ctx, open) {
+    if (open) {
+      ctx.fillStyle = '#42372a';
+      ctx.fillRect(-.50,-.15,.11,.30);
+      ctx.fillRect(.39,-.15,.11,.30);
+      ctx.fillStyle = '#a9794d';
+      ctx.fillRect(-.40,-.06,.13,.51);
+      return;
+    }
     ctx.fillStyle='#42372a';
     ctx.fillRect(-.501,-.155,1.002,.31);
     ctx.fillStyle='#ad9673';
@@ -364,7 +372,7 @@
       decor(ctx);
       ctx.restore();
     } else if (prop.kind==='door') {
-      door(ctx);
+      door(ctx, prop.open);
     } else if (prop.kind==='tree' || prop.kind==='bush') {
       const seed = ((Math.imul(prop.x,53)^Math.imul(prop.y,107))>>>0)%17;
       foliage(ctx,0,0,prop.kind==='tree'?.59:.47,seed,prop.kind==='bush');

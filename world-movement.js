@@ -7,17 +7,7 @@ const barriers = new Set(['wall', 'palisade', 'fence']);
 const solid = new Set(['house', 'tavern', 'barn', 'well', 'boulder', 'tree', 'wagon', 'wreckedWagon']);
 const sightRadius = 4;
 
-function sceneScope(layout) {
-  return {
-    worldId: layout.parentWorldId || layout.id,
-    sceneId: layout.parentWorldId ? layout.id : 'overworld',
-    floorId: 'ground',
-  };
-}
-
-function mapId(position) {
-  return position.sceneId === 'overworld' ? position.worldId : position.sceneId;
-}
+const { sceneScope, locationMapId } = map;
 
 function cellBounds(prop) {
   const { x, y, width, height } = map.footprint(prop);
@@ -34,23 +24,23 @@ function covers(prop, x, y) {
   return x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom;
 }
 
-function passable(layout, x, y) {
+function passable(layout, x, y, openDoors) {
   let bridge = false;
   for (const prop of layout.objects) {
     if (barriers.has(prop.kind) && map.wallCells(prop).some(([col, row]) => col === x && row === y)) return false;
-    if (prop.kind === 'door' && prop.x === x && prop.y === y) return false;
+    if (prop.kind === 'door' && !openDoors.has(prop.id) && prop.x === x && prop.y === y) return false;
     if (solid.has(prop.kind) && covers(prop, x, y)) return false;
     if (prop.kind === 'bridge' && covers(prop, x, y)) bridge = true;
   }
   return bridge || map.get(layout.chunks, x, y) !== 'water';
 }
 
-function sightObstacles(objects, origin) {
+function sightObstacles(objects, origin, openDoors) {
   const blocked = new Set();
   for (const prop of objects) {
     if (barriers.has(prop.kind)) {
       for (const cell of map.wallCells(prop)) blocked.add(cell.join(','));
-    } else if (prop.kind === 'door') {
+    } else if (prop.kind === 'door' && !openDoors.has(prop.id)) {
       blocked.add(prop.x + ',' + prop.y);
     } else if (solid.has(prop.kind)) {
       const bounds = cellBounds(prop);
@@ -88,8 +78,8 @@ function hasSight(origin, target, blocked) {
   return true;
 }
 
-function visibleCells(position, objects) {
-  const blocked = sightObstacles(objects, position);
+function visibleCells(position, objects, openDoors) {
+  const blocked = sightObstacles(objects, position, openDoors);
   const visible = [];
   for (let dy = -sightRadius; dy <= sightRadius; dy++) {
     for (let dx = -sightRadius; dx <= sightRadius; dx++) {
@@ -104,18 +94,19 @@ function visibleCells(position, objects) {
 module.exports = function createWorldMovement(store, gameFile) {
   function layoutAt(position, keys, published = true) {
     if (typeof position.worldId !== 'string' || typeof position.sceneId !== 'string' ||
-        position.floorId !== 'ground') return null;
-    const id = mapId(position);
+        typeof position.floorId !== 'string') return null;
+    const id = locationMapId(position);
     const layout = (published && store.readPublished(id, keys)?.map) || store.readDraft(id, keys);
     if (!layout) return null;
     const scope = sceneScope(layout);
-    return scope.worldId === position.worldId && scope.sceneId === position.sceneId ? layout : null;
+    return scope.worldId === position.worldId && scope.sceneId === position.sceneId &&
+      scope.floorId === position.floorId ? layout : null;
   }
 
   function canStep(position, published = true) {
     const [key] = map.address(position.x, position.y);
     const layout = layoutAt(position, [key], published);
-    return !!layout && passable(layout, position.x, position.y);
+    return !!layout && passable(layout, position.x, position.y, new Set());
   }
 
   function readLinks() {
@@ -130,13 +121,17 @@ module.exports = function createWorldMovement(store, gameFile) {
   }
 
   return {
-    sceneScope,
+    doorVisibility(position, objects, door, previous, next) {
+      if ((position.x - door.x) ** 2 + (position.y - door.y) ** 2 > sightRadius ** 2) return [];
+      if (!hasSight(position, door, sightObstacles(objects, position, previous))) return [];
+      return visibleCells(position, objects, next);
+    },
     locationExists: position => !!layoutAt(position, [], false),
     canStep,
-    stepVisibility(position) {
+    stepVisibility(position, openDoors) {
       const [key] = map.address(position.x, position.y);
       const layout = layoutAt(position, [key]);
-      return layout && passable(layout, position.x, position.y) ? visibleCells(position, layout.objects) : null;
+      return layout && passable(layout, position.x, position.y, openDoors) ? visibleCells(position, layout.objects, openDoors) : null;
     },
     findTransition(position) {
       return readLinks().find(({ from }) => from.worldId === position.worldId &&
@@ -144,17 +139,17 @@ module.exports = function createWorldMovement(store, gameFile) {
         from.x === position.x && from.y === position.y)?.to || null;
     },
     listTransitions(id) {
-      return readLinks().filter(link => mapId(link.from) === id);
+      return readLinks().filter(link => locationMapId(link.from) === id);
     },
     saveTransition(from, to) {
       const links = readLinks();
-      const id = JSON.stringify([mapId(from), from.x, from.y]);
+      const id = JSON.stringify([locationMapId(from), from.x, from.y]);
       const link = { id, from, to };
       writeLinks([...links.filter(item => item.id !== id), link]);
       return link;
     },
     removeTransition(sceneMapId, id) {
-      writeLinks(readLinks().filter(link => link.id !== id || mapId(link.from) !== sceneMapId));
+      writeLinks(readLinks().filter(link => link.id !== id || locationMapId(link.from) !== sceneMapId));
     },
   };
 };

@@ -493,7 +493,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   tiles.set(cave.chunks,4,4,'caveFloor');
   tiles.set(cave.chunks,4,5,'water');
   tiles.set(cave.chunks,5,4,'water');
-  cave.objects.push({id:'cave-bridge',kind:'bridge',x:6,y:4,turn:0});
+  tiles.set(cave.chunks,7,4,'caveFloor');
+  cave.objects.push({id:'cave-bridge',kind:'bridge',x:6,y:4,turn:0},
+    {id:'cave-door',kind:'door',x:6,y:4,turn:0});
   const caveSaved=await worldWrite('/'+cave.id,'PUT',cave).then(r=>r.json());
   assert.equal(caveSaved.parentWorldId,world.id);
   const sceneList=await fetch(worldBase+worldGame,{headers:{Cookie:cookie}}).then(r=>r.json());
@@ -530,6 +532,55 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(caveTable.chunks,4,4),'caveFloor');
   assert.equal(tiles.get(caveTable.chunks,5,4),'water');
   assert.equal(tiles.get(caveTable.chunks,4,5),'water','a visible cell need not be passable');
+  assert.equal(tiles.get(caveTable.chunks,7,4),undefined,'the closed door blocks sight');
+  assert.equal((await movePosition({direction:'east',revision:8})).status,409);
+  const floorResponse=await worldWrite('','POST',{name:'Подвал',sceneMapId:cave.id,elevation:-1});
+  assert.equal(floorResponse.status,201);
+  const lowerFloor=await floorResponse.json();
+  assert.equal(lowerFloor.parentSceneId,cave.id);
+  assert.equal(lowerFloor.parentWorldId,world.id);
+  assert.equal((await worldWrite('','POST',{name:'Дубликат',sceneMapId:cave.id,elevation:-1})).status,409);
+  assert.equal((await worldWrite('','POST',{name:'Нулевой этаж',sceneMapId:cave.id,elevation:0})).status,400);
+  tiles.set(lowerFloor.chunks,7,4,'stone');
+  const floorSaved=await worldWrite('/'+lowerFloor.id,'PUT',lowerFloor).then(r=>r.json());
+  const lowerPosition={...link.to,floorId:lowerFloor.id,x:5};
+  assert.equal((await setPosition(secondHero.id,lowerPosition)).status,200);
+  assert.equal((await setPosition(secondHero.id,{...lowerPosition,sceneId:'overworld'})).status,404);
+  const changeDoor=(open,id=cave.id)=>worldWrite('/live/doors/cave-door','PUT',{id,open});
+  const guestDoor=await fetch(worldBase+'/live/doors/cave-door'+worldGame,{
+    method:'PUT',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cave.id,open:true}),
+  });
+  assert.equal(guestDoor.status,302);
+  assert.equal((await changeDoor(true,world.id)).status,409);
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===cave.id);
+  assert.deepEqual(await (await changeDoor(true)).json(),{open:true});
+  await next;
+  const openedCave=await tableWorld();
+  assert.equal(tiles.get(openedCave.chunks,7,4),'caveFloor','stationary hero sees past the opened door');
+  assert.equal(openedCave.objects.find(prop=>prop.id==='cave-door').open,true);
+  assert.deepEqual(await readOwnPosition(otherToken.token),afterBridge);
+  const doorStep=await movePosition({direction:'east',revision:8});
+  assert.equal(doorStep.status,200);
+  const afterDoor=await doorStep.json();
+  assert.equal(afterDoor.position.x,6);
+  assert.equal((await changeDoor(false)).status,200);
+  const closedCave=await tableWorld();
+  assert.equal(tiles.get(closedCave.chunks,7,4),'caveFloor','closing a door preserves remembered terrain');
+  assert.equal(closedCave.objects.find(prop=>prop.id==='cave-door').open,undefined);
+  assert.equal((await changeDoor(true)).status,200);
+
+  assert.equal((await worldWrite('/'+lowerFloor.id+'/publish','POST',{revision:floorSaved.revision,fog:true})).status,200);
+  const unexploredFloor=await tableWorld();
+  assert.equal(tiles.get(unexploredFloor.chunks,7,4),undefined,'opening a door does not explore another floor');
+  const floorStep=await movePosition({direction:'north',revision:5},secondInvitation.token);
+  assert.equal(floorStep.status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,7,4),'stone');
+  const stairs=await worldWrite('/'+lowerFloor.id+'/transitions','POST',{x:5,y:3,toMapId:cave.id,toX:7,toY:4});
+  assert.equal(stairs.status,201);
+  const stairsStep=await movePosition({direction:'enter',revision:6},secondInvitation.token);
+  assert.equal(stairsStep.status,200);
+  const afterStairs=await stairsStep.json();
+  assert.deepEqual(afterStairs.position,{characterId:secondHero.id,...link.to,x:7,revision:7});
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
   assert.equal(tiles.get((await tableWorld()).chunks,21,0),'path');
 
@@ -582,14 +633,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
-  assert.deepEqual(await readOwnPosition(otherToken.token),afterBridge);
-  assert.deepEqual(await readPosition(secondHero.id,newCookie),partySecond);
+  assert.deepEqual(await readOwnPosition(otherToken.token),afterDoor);
+  assert.deepEqual(await readPosition(secondHero.id,newCookie),afterStairs);
   const restoredLinks=await fetch(worldBase+linkEndpoint+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
   assert.deepEqual(restoredLinks.links,[link]);
   const positionAfterRestart=await open(undefined,campaign.id);sockets.push(positionAfterRestart);
   next=message(positionAfterRestart,m=>m.type==='CHARACTER_POSITION');
   positionAfterRestart.send(JSON.stringify({action:'player-auth',token:otherToken.token}));
-  assert.deepEqual((await next).position,afterBridge.position);
+  assert.deepEqual((await next).position,afterDoor.position);
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
@@ -629,6 +680,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(republished.tokens,resumedWorld.tokens);
   assert.deepEqual(republished.seen,resumedWorld.seen);
   assert.equal(tiles.get(republished.chunks,0,0),'water');
+  const restorePublished=(id,revision)=>fetch(worldBase+'/'+id+'/publish'+worldGame,{
+    method:'POST',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify({revision,fog:true}),
+  });
+  assert.equal((await restorePublished(cave.id,caveSaved.revision)).status,200);
+  assert.equal((await tableWorld()).objects.find(prop=>prop.id==='cave-door').open,true);
+  assert.equal((await restorePublished(lowerFloor.id,floorSaved.revision)).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,7,4),'stone');
+  assert.equal((await restorePublished(world.id,savedWorld.revision+1)).status,200);
 
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });

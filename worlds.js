@@ -14,13 +14,14 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   const movement = createWorldMovement(store, gameFile);
 
-  const { getPosition, getExploration } = registerCharacterPositions(app, {
+  const { getPosition, mapState, setDoor } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     locationExists: movement.locationExists,
     stepVisibility: movement.stepVisibility,
+    doorVisibility: movement.doorVisibility,
     findTransition: movement.findTransition,
-    explorationNotice({ worldId, sceneId }) {
-      const id = sceneId === 'overworld' ? worldId : sceneId;
+    explorationNotice(position) {
+      const id = map.locationMapId(position);
       if (store.readActiveId() !== id) return null;
       const data = store.readPublished(id, []);
       return data?.fog ? notice(data) : null;
@@ -86,13 +87,30 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   app.post('/api/worlds', requireDm, json, route((req, res) => {
     const name = typeof req.body?.name === 'string' && req.body.name.trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'Введите название карты' });
-    const parentWorldId = req.body.parentWorldId;
+    const { parentWorldId, sceneMapId, elevation } = req.body;
+    let parentScope;
+    if (sceneMapId !== undefined) {
+      if (parentWorldId !== undefined || !Number.isSafeInteger(elevation) || elevation === 0) {
+        return res.status(400).json({ error: 'Укажите целый номер дополнительного этажа' });
+      }
+      const scene = typeof sceneMapId === 'string' && store.readDraft(sceneMapId, []);
+      if (!scene || scene.parentSceneId) return res.status(404).json({ error: 'Выберите сцену этой кампании' });
+      parentScope = map.sceneScope(scene);
+      if (store.listDrafts().some(item => item.parentWorldId === parentScope.worldId &&
+          item.parentSceneId === parentScope.sceneId && item.elevation === elevation)) {
+        return res.status(409).json({ error: 'В этой сцене уже есть этаж с таким номером' });
+      }
+    }
     if (parentWorldId !== undefined) {
       const parent = typeof parentWorldId === 'string' && store.readDraft(parentWorldId, []);
       if (!parent || parent.parentWorldId) return res.status(404).json({ error: 'Выберите основной мир кампании' });
     }
     const data = { id: randomUUID(), name, revision: 0, ...(req.body.sample === true ? map.sample() : { chunks: {}, objects: [] }) };
-    if (parentWorldId !== undefined) data.parentWorldId = parentWorldId;
+    if (parentScope) {
+      data.parentWorldId = parentScope.worldId;
+      data.parentSceneId = parentScope.sceneId;
+      data.elevation = elevation;
+    } else if (parentWorldId !== undefined) data.parentWorldId = parentWorldId;
     store.writeDraft(data);
     res.status(201).json(data);
   }));
@@ -102,6 +120,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const { id, name, revision } = data.map;
     res.json({
       revision: data.revision, frame: data.frame, fog: data.fog, tokens: data.tokens,
+      openDoors: [...mapState(data.map).openDoors],
       map: req.query.version === id + ':' + revision ? { id, name, revision } : store.readPublished(id).map,
     });
   }));
@@ -115,8 +134,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.json(null);
     const chunks = {};
     const seen = {};
-    const scope = movement.sceneScope(data.map);
-    const explored = data.fog ? getExploration(scope.worldId, scope.sceneId, scope.floorId) : {};
+    const { explored, openDoors } = mapState(data.map);
     for (const key of keys) {
       if (data.fog && (data.seen[key] || explored[key])) {
         seen[key] = { ...data.seen[key], ...explored[key] };
@@ -131,7 +149,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     };
     res.json({
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,
-      chunks, seen, fog: data.fog, objects: data.map.objects.filter(prop => !prop.hidden && visible(prop)),
+      chunks, seen, fog: data.fog, objects: data.map.objects.filter(prop => !prop.hidden && visible(prop))
+        .map(prop => prop.kind === 'door' && openDoors.has(prop.id) ? { ...prop, open: true } : prop),
     });
   }));
   app.get('/api/worlds/:id/transitions', requireDm, route((req, res) => {
@@ -146,10 +165,10 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const source = store.readDraft(req.params.id, []);
     const target = store.readDraft(toMapId, []);
     if (!source || !target) return res.status(404).json({ error: 'Карта не найдена' });
-    const from = { ...movement.sceneScope(source), x, y };
-    const to = { ...movement.sceneScope(target), x: toX, y: toY };
+    const from = { ...map.sceneScope(source), x, y };
+    const to = { ...map.sceneScope(target), x: toX, y: toY };
     if (source.id === target.id || from.worldId !== to.worldId) {
-      return res.status(400).json({ error: 'Свяжите разные сцены одного мира' });
+      return res.status(400).json({ error: 'Свяжите разные карты одного мира' });
     }
     if (!movement.canStep(from, false) || !movement.canStep(to, false)) {
       return res.status(409).json({ error: 'Обе клетки перехода должны быть проходимыми' });
@@ -212,6 +231,15 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     revealScreen();
     announce(next);
     res.json(next);
+  }));
+  app.put('/api/worlds/live/doors/:doorId', requireDm, json, route((req, res) => {
+    const data = store.readActiveWorld([]);
+    if (!data || req.body?.id !== data.map.id) return res.status(409).json({ error: 'На экране уже другая карта' });
+    if (typeof req.body.open !== 'boolean') return res.status(400).json({ error: 'Укажите состояние двери' });
+    const door = data.map.objects.find(prop => prop.kind === 'door' && prop.id === req.params.doorId);
+    if (!door) return res.status(404).json({ error: 'Дверь не найдена на опубликованной карте' });
+    if (setDoor(data.map, door, req.body.open)) announce(data);
+    res.json({ open: req.body.open });
   }));
   app.post('/api/worlds/live/change', requireDm, json, route((req, res) => {
     const data = store.readActiveWorld([]);

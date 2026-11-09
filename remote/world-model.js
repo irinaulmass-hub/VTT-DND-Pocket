@@ -109,7 +109,20 @@
       { id: 'roadside-shrub', kind: 'bush', x: 6, y: -1, turn: 0 },
     ] };
   }
-  const api = { size, limit, terrain, props, valid, address, get, set, sample, wallCells, structures, linkedSections, propGroups, footprint };
+  function sceneScope(layout) {
+    return {
+      worldId: layout.parentWorldId || layout.id,
+      sceneId: layout.parentSceneId || (layout.parentWorldId ? layout.id : 'overworld'),
+      floorId: layout.parentSceneId ? layout.id : 'ground',
+    };
+  }
+
+  function locationMapId({ worldId, sceneId, floorId }) {
+    if (floorId !== 'ground') return floorId;
+    return sceneId === 'overworld' ? worldId : sceneId;
+  }
+
+  const api = { size, limit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

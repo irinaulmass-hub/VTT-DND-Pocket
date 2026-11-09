@@ -1,7 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
-const { valid, get, set } = require('./remote/world-model');
+const { valid, get, set, sceneScope, locationMapId } = require('./remote/world-model');
 
 const steps = {
   north: [0, -1],
@@ -11,7 +11,7 @@ const steps = {
 };
 
 module.exports = function registerCharacterPositions(app, {
-  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, stepVisibility, findTransition, explorationNotice,
+  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, stepVisibility, findTransition, explorationNotice, doorVisibility,
 }) {
   const stateFile = () => gameFile('character-positions.json');
 
@@ -30,8 +30,17 @@ module.exports = function registerCharacterPositions(app, {
     return JSON.stringify([worldId, sceneId, floorId]);
   }
 
-  function getExploration(worldId, sceneId, floorId) {
-    return readState().explored[explorationKey(worldId, sceneId, floorId)] || {};
+  function openDoorsAt(state, id) {
+    return new Set(state.doors?.[id] || []);
+  }
+
+  function mapState(layout) {
+    const state = readState();
+    const { worldId, sceneId, floorId } = sceneScope(layout);
+    return {
+      explored: state.explored[explorationKey(worldId, sceneId, floorId)] || {},
+      openDoors: openDoorsAt(state, layout.id),
+    };
   }
 
   function recordExploration(state, { worldId, sceneId, floorId }, cells) {
@@ -46,10 +55,14 @@ module.exports = function registerCharacterPositions(app, {
     return changed;
   }
 
-  function savePosition(file, state, position) {
-    state.positions = { ...state.positions, [position.characterId]: position };
+  function writeState(file, state) {
     fs.writeFileSync(file + '.tmp', JSON.stringify(state));
     fs.renameSync(file + '.tmp', file);
+  }
+
+  function savePosition(file, state, position) {
+    state.positions = { ...state.positions, [position.characterId]: position };
+    writeState(file, state);
     broadcast({ type: 'CHARACTER_POSITION', characterId: position.characterId, position });
   }
 
@@ -101,7 +114,7 @@ module.exports = function registerCharacterPositions(app, {
     }
     const position = { ...current, ...destination, revision: current.revision + 1 };
     if (!valid(position.x) || !valid(position.y)) return res.status(400).json({ error: 'Достигнута граница мира' });
-    const visible = stepVisibility(position);
+    const visible = stepVisibility(position, openDoorsAt(state, locationMapId(position)));
     if (!visible) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
     const originChanged = recordExploration(state, current, [current]);
     const destinationChanged = recordExploration(state, position, visible);
@@ -137,5 +150,31 @@ module.exports = function registerCharacterPositions(app, {
     res.json({ position });
   }));
 
-  return { getPosition, getExploration };
+  function setDoor(layout, door, open) {
+    const file = stateFile();
+    const state = readState(file);
+    const current = openDoorsAt(state, layout.id);
+    if (current.has(door.id) === open) return false;
+
+    const next = new Set(current);
+    if (open) next.add(door.id);
+    else next.delete(door.id);
+    (state.doors ||= {})[layout.id] = [...next];
+
+    if (open) {
+      const { worldId, sceneId, floorId } = sceneScope(layout);
+      const heroes = new Set(loadCharacters().characters.map(hero => hero.id));
+      for (const position of Object.values(state.positions)) {
+        if (!heroes.has(position.characterId) || position.worldId !== worldId ||
+            position.sceneId !== sceneId || position.floorId !== floorId) continue;
+        const visible = doorVisibility(position, layout.objects, door, current, next);
+        if (visible.length) recordExploration(state, position, visible);
+      }
+    }
+
+    writeState(file, state);
+    return true;
+  }
+
+  return { getPosition, mapState, setDoor };
 };

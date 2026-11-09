@@ -1,7 +1,7 @@
 'use strict';
 
 (() => {
-  const { terrain, props, get, set } = window.WorldMap;
+  const { terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
   editor.className = 'book-widget book-world-editor';
@@ -14,7 +14,8 @@
       <h2>Большая карта мира</h2>
       <form class="book-toolbar" data-world-create>
         <input class="book-select" name="title" required maxlength="80" placeholder="Название карты" aria-label="Название карты мира">
-        <select class="book-select" name="parentWorldId" aria-label="Основной мир для новой сцены"></select>
+        <select class="book-select" name="parentMap" aria-label="Тип и расположение новой карты"></select>
+        <label data-world-elevation hidden>Номер этажа <input class="book-select" type="number" name="elevation" step="1" disabled></label>
         <label><input type="checkbox" name="sample"> Начать с деревни у озера</label>
         <button class="book-button primary">Создать карту</button>
       </form>
@@ -142,20 +143,12 @@
   const transitionForm = e('transition-form');
   const transitionUrl = id => '/api/worlds/' + encodeURIComponent(id) + '/transitions';
 
-  function positionScope(layout) {
-    return {
-      worldId: layout.parentWorldId || layout.id,
-      sceneId: layout.parentWorldId ? layout.id : 'overworld',
-      floorId: 'ground',
-    };
-  }
-
   function updateDestinations() {
     const select = transitionForm.elements.toMapId;
     const value = select.value;
-    const scope = draft && positionScope(draft);
+    const scope = draft && sceneScope(draft);
     const targets = scope ? availableMaps.filter(item =>
-      item.id !== draft.id && positionScope(item).worldId === scope.worldId) : [];
+      item.id !== draft.id && sceneScope(item).worldId === scope.worldId) : [];
     select.replaceChildren(new Option('Карта назначения', ''), ...targets.map(item => new Option(item.name, item.id)));
     if (targets.some(item => item.id === value)) select.value = value;
   }
@@ -166,7 +159,7 @@
     if (draft?.id !== id) return;
     const nodes = links.map(link => {
       const item = document.createElement('li');
-      const target = link.to.sceneId === 'overworld' ? link.to.worldId : link.to.sceneId;
+      const target = locationMapId(link.to);
       const name = availableMaps.find(map => map.id === target)?.name || 'Сцена';
       item.textContent = '(' + link.from.x + ', ' + link.from.y + ') → ' + name +
         ' (' + link.to.x + ', ' + link.to.y + ') ';
@@ -202,8 +195,8 @@
 
   let positionGeneration = 0;
   function describePosition(position) {
-    const scope = draft && positionScope(draft);
-    const place = position.worldId === scope?.worldId && position.sceneId === scope?.sceneId ? '' : 'на другой карте ';
+    const scope = draft && sceneScope(draft);
+    const place = position.worldId === scope?.worldId && position.sceneId === scope?.sceneId && position.floorId === scope?.floorId ? '' : 'на другой карте ';
     e('position-info').textContent = 'Личная позиция ' + place + '(' + position.x + ', ' + position.y + ')';
   }
   async function readPosition() {
@@ -244,7 +237,7 @@
       const generation = ++positionGeneration;
       run(async () => {
         const { position } = await request(positionUrl(id), json('PUT', {
-          ...positionScope(draft), x, y,
+          ...sceneScope(draft), x, y,
         }));
         if (generation === positionGeneration) describePosition(position);
         status('Личная позиция сохранена');
@@ -325,9 +318,15 @@
     const { worlds } = await request('/api/worlds');
     availableMaps = worlds;
     e('select').replaceChildren(new Option('Открыть сохранённый черновик', ''),
-      ...worlds.map(item => new Option(item.parentWorldId ? 'Сцена · ' + item.name : item.name, item.id)));
-    e('create').elements.parentWorldId.replaceChildren(new Option('Новый основной мир', ''),
-      ...worlds.filter(item => !item.parentWorldId).map(item => new Option('Сцена в мире «' + item.name + '»', item.id)));
+      ...worlds.map(item => new Option(item.parentSceneId ? 'Этаж ' + item.elevation + ' · ' + item.name :
+        item.parentWorldId ? 'Сцена · ' + item.name : item.name, item.id)));
+    const select = e('create').elements.parentMap;
+    const value = select.value;
+    select.replaceChildren(new Option('Новый основной мир', ''),
+      ...worlds.filter(item => !item.parentWorldId).map(item => new Option('Сцена в мире «' + item.name + '»', 'world:' + item.id)),
+      ...worlds.filter(item => !item.parentSceneId).map(item => new Option('Этаж карты «' + item.name + '»', 'floor:' + item.id)));
+    if ([...select.options].some(option => option.value === value)) select.value = value;
+    updateElevation();
     updateDestinations();
     e('select').value = draft?.id || '';
   }
@@ -338,14 +337,28 @@
     catch (error) { status(error.message); }
     finally { busy = false; }
   }
+  function updateElevation() {
+    const form = e('create').elements;
+    const floor = form.parentMap.value.startsWith('floor:');
+    e('elevation').hidden = !floor;
+    form.elevation.disabled = !floor;
+    form.elevation.required = floor;
+  }
+  e('create').elements.parentMap.onchange = updateElevation;
+
   e('create').onsubmit = event => {
     event.preventDefault();
     if (dirty && !confirm('Открыть новую карту без сохранения правок текущей?')) return;
     run(async () => {
       const form = event.target.elements;
-      open(await request('/api/worlds', json('POST', { name: form.title.value, sample: form.sample.checked, parentWorldId: form.parentWorldId.value || undefined })));
+      const [type, id] = form.parentMap.value.split(':');
+      const creation = { name: form.title.value, sample: form.sample.checked };
+      if (type === 'world') creation.parentWorldId = id;
+      if (type === 'floor') Object.assign(creation, { sceneMapId: id, elevation: form.elevation.valueAsNumber });
+      open(await request('/api/worlds', json('POST', creation)));
       await list();
       event.target.reset();
+      updateElevation();
     });
   };
   e('select').onchange = () => {
@@ -400,12 +413,16 @@
       <button class="book-button small" data-live-reveal>Открыть участок</button>
       <label><input type="checkbox" data-live-expand> Развернуть карту</label>
     </div>
+    <div class="book-toolbar" data-live-doors hidden>
+      <select class="book-select" data-live-door aria-label="Дверь на карте"></select>
+      <button class="book-button small" data-live-toggle-door disabled>Открыть дверь</button>
+    </div>
     <canvas class="world-canvas" data-live-canvas aria-label="Большая карта мастера без тумана"></canvas>
     <p class="book-status" data-live-status role="status">Колёсико приближает карту. Жетоны можно перетаскивать.</p>`;
   const mapSection = document.getElementById('section-map-control');
   mapSection.append(panel);
   const p = name => panel.querySelector('[data-live-' + name + ']');
-  let live, reveal = false, liveGeneration = 0;
+  let live, reveal = false, liveGeneration = 0, doorBusy = false;
   const liveView = createWorldView(p('canvas'), {
     pan: () => !reveal && !p('hero').value,
     click(x, y) {
@@ -434,6 +451,48 @@
   }
   heroes();
   new MutationObserver(heroes).observe(document.getElementById('party-list-container'), { childList: true, subtree: true });
+  function doorButton() {
+    const id = p('door').value;
+    const open = live?.openDoors?.includes(id);
+    p('toggle-door').textContent = open ? 'Закрыть дверь' : 'Открыть дверь';
+    p('toggle-door').disabled = !id || doorBusy;
+  }
+
+  function paintLive() {
+    const openDoors = new Set(live.openDoors);
+    const doors = live.map.objects.filter(prop => prop.kind === 'door');
+    const selection = p('door').value;
+    p('doors').hidden = !doors.length;
+    p('door').replaceChildren(new Option('Выбрать дверь', ''), ...doors.map(door =>
+      new Option('Дверь (' + door.x + ', ' + door.y + ') · ' +
+        (openDoors.has(door.id) ? 'открыта' : 'закрыта'), door.id)));
+    if (doors.some(door => door.id === selection)) p('door').value = selection;
+    doorButton();
+    const objects = live.map.objects.map(prop =>
+      prop.kind === 'door' && openDoors.has(prop.id) ? { ...prop, open: true } : prop);
+    liveView.data({ ...live.map, objects, tokens: live.tokens });
+  }
+
+  p('door').onchange = doorButton;
+  p('toggle-door').onclick = async () => {
+    const doorId = p('door').value;
+    if (!live || !doorId || doorBusy) return;
+    const id = live.map.id;
+    const open = !live.openDoors.includes(doorId);
+    doorBusy = true;
+    doorButton();
+    try {
+      await request('/api/worlds/live/doors/' + encodeURIComponent(doorId), json('PUT', { id, open }));
+      await sync();
+      p('status').textContent = open ? 'Дверь открыта' : 'Дверь закрыта';
+    } catch (error) {
+      p('status').textContent = error.message;
+    } finally {
+      doorBusy = false;
+      doorButton();
+    }
+  };
+
   async function sync() {
     const generation = ++liveGeneration;
     try {
@@ -447,7 +506,7 @@
       mapSection.toggleAttribute('data-world-playing', !!live);
       if (!live) return;
       p('title').textContent = live.map.name;
-      liveView.data({ ...live.map, tokens: live.tokens });
+      paintLive();
       if (changed) liveView.party();
       heroes();
     } catch (error) { p('status').textContent = error.message; }
@@ -459,7 +518,7 @@
       const result = await request('/api/worlds/live/change', json('POST', { id, action, x, y, ...extra }));
       if (live?.map.id === id && result.revision >= live.revision) {
         Object.assign(live, result);
-        liveView.data({ ...live.map, tokens: live.tokens });
+        paintLive();
       }
       p('status').textContent = action === 'frame' ? 'Кадр отправлен на второй экран' : 'Состояние карты сохранено';
     } catch (error) { p('status').textContent = error.message; }
