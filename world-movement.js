@@ -121,6 +121,7 @@ module.exports = function createWorldMovement(store, gameFile) {
   }
 
   return {
+    visibleCells,
     doorVisibility(position, objects, door, previous, next) {
       if ((position.x - door.x) ** 2 + (position.y - door.y) ** 2 > sightRadius ** 2) return [];
       if (!hasSight(position, door, sightObstacles(objects, position, previous))) return [];

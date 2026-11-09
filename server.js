@@ -1098,9 +1098,12 @@ app.post('/api/characters/:id/duplicate', requireDm, (req, res) => {
 
 app.delete('/api/characters/:id', requireDm, (req, res) => {
   const data = loadCharacters();
+  const update = data.characters.some(c => c.id === req.params.id)
+    ? worlds.rememberCharacterView(req.params.id) : null;
   data.characters = data.characters.filter(c => c.id !== req.params.id);
   saveCharacters(data);
   broadcast({ type: 'CHARACTERS_UPDATE', characters: data.characters });
+  if (update) broadcast(update);
   res.json({ ok: true });
 });
 

@@ -444,6 +444,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   tiles.set(world.chunks,20,-1,'grass');
   world.objects.push(
     {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
+    {id:'remembered-torch',kind:'torch',x:29,y:0,turn:0},
     {id:'private-party-torch',kind:'torch',x:21,y:0,turn:0,hidden:true},
   );
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
@@ -470,6 +471,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
   assert.equal(tiles.get(firstExplored.chunks,22,0),'path','the wall cell itself is visible');
+  assert.equal(tiles.get(firstExplored.visible,21,0),true);
+  assert.equal(tiles.get(firstExplored.visible,23,0),undefined);
   assert.equal(tiles.get(firstExplored.chunks,23,0),undefined,'the wall blocks sight beyond it');
   assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass','sight crosses chunk boundaries');
   assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-torch'));
@@ -486,6 +489,8 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   for(const x of [20,21,23,24,25,29]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
   assert.equal(tiles.get(partyMap.chunks,30,0),undefined,'cells outside both heroes’ sight stay hidden');
   assert.deepEqual(partyMap.tokens,[]);
+  for(const x of [21,25,29]) assert.equal(tiles.get(partyMap.visible,x,0),true,'current sight combines both heroes');
+  assert.deepEqual(partyMap.objects.find(prop=>prop.id==='remembered-torch'),{id:'remembered-torch',kind:'torch',x:29,y:0,turn:0});
 
   const sceneResponse=await worldWrite('','POST',{name:'Нижняя пещера',parentWorldId:world.id});
   assert.equal(sceneResponse.status,201);
@@ -558,6 +563,12 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const openedCave=await tableWorld();
   assert.equal(tiles.get(openedCave.chunks,7,4),'caveFloor','stationary hero sees past the opened door');
   assert.equal(openedCave.objects.find(prop=>prop.id==='cave-door').open,true);
+  assert.equal(tiles.get(openedCave.visible,7,4),true);
+  assert.equal((await changeDoor(false)).status,200);
+  const rememberedCave=await tableWorld();
+  assert.equal(tiles.get(rememberedCave.chunks,7,4),'caveFloor');
+  assert.equal(tiles.get(rememberedCave.visible,7,4),undefined,'closing the door moves the cell beyond it out of live sight');
+  assert.equal((await changeDoor(true)).status,200);
   assert.deepEqual(await readOwnPosition(otherToken.token),afterBridge);
   const doorStep=await movePosition({direction:'east',revision:8});
   assert.equal(doorStep.status,200);
@@ -582,7 +593,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const afterStairs=await stairsStep.json();
   assert.deepEqual(afterStairs.position,{characterId:secondHero.id,...link.to,x:7,revision:7});
   assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
-  assert.equal(tiles.get((await tableWorld()).chunks,21,0),'path');
+  const departedWorld=await tableWorld();
+  assert.equal(tiles.get(departedWorld.chunks,21,0),'path');
+  assert.deepEqual(departedWorld.visible,{},'heroes on other maps leave only the party’s memory');
 
 
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
@@ -596,7 +609,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const [otherChunk]=tiles.address(-70,-41);
   const manifest=JSON.parse(fs.readFileSync(path.join(worldDir,world.id+'-chunks.json')));
   const unrelatedFile=path.join(worldDir,world.id+'-chunks',manifest.index[otherChunk].hash+'.json');
-  const chunkPatch={revision:savedWorld.revision,chunks:{'0,0':{...savedWorld.chunks['0,0'],0:'water'},'7,7':null}};
+  const editedTerrain={'0,0':{...savedWorld.chunks['0,0'],0:'water'},'7,7':null};
+  tiles.set(editedTerrain,29,0,'dirt');
+  tiles.set(editedTerrain,28,0,null);
+  tiles.set(editedTerrain,28,1,'grass');
+  const chunkPatch={revision:savedWorld.revision,chunks:editedTerrain};
   fs.renameSync(unrelatedFile,unrelatedFile+'.held');
   try {
    const partial=await fetch(chunkUrl,{headers:{Cookie:cookie}});
@@ -615,6 +632,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(updatedDraft.chunks,0,0),'water');
   assert.equal(updatedDraft.chunks['7,7'],undefined);
   assert.deepEqual(updatedDraft.objects,savedWorld.objects);
+  Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
+  const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
+  assert.equal(editedWorld.revision,savedWorld.revision+2);
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');
@@ -628,6 +648,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
   for(const socket of sockets) socket.terminate();
   await stop();
+  // Simulate a cell discovered before snapshots existed. Its old published terrain must survive republish.
+  const positionsFile=path.join(worldDir,'..','character-positions.json');
+  const legacyExploration=JSON.parse(fs.readFileSync(positionsFile));
+  delete legacyExploration.memory[JSON.stringify([world.id,'overworld','ground'])].chunks['0,0'][0];
+  fs.writeFileSync(positionsFile,JSON.stringify(legacyExploration));
   execFileSync(process.execPath,[path.join(root,'import-world.js'),path.dirname(worldDir),legacyId]);
   child=launch();
   await waitForServer();
@@ -674,12 +699,17 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(await tableWorld(),null);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(worldDir,'..','active-world.json'))),{id:null});
   assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:false});
-  const republish=await resumedWorldWrite('/'+world.id+'/publish',{revision:savedWorld.revision+1,fog:true});
+  const republish=await resumedWorldWrite('/'+world.id+'/publish',{revision:editedWorld.revision,fog:true});
   assert.equal(republish.status,200);
   const republished=await tableWorld();
   assert.deepEqual(republished.tokens,resumedWorld.tokens);
   assert.deepEqual(republished.seen,resumedWorld.seen);
-  assert.equal(tiles.get(republished.chunks,0,0),'water');
+  assert.equal(tiles.get(republished.chunks,0,0),'path','legacy discovery keeps the outgoing published tile');
+  assert.equal(tiles.get(republished.chunks,29,0),'path','terrain outside live sight stays as remembered');
+  assert.equal(tiles.get(republished.chunks,28,0),'path','removing unseen terrain stays private');
+  assert.equal(tiles.get(republished.seen,28,1),true);
+  assert.equal(tiles.get(republished.chunks,28,1),undefined,'an observed empty tile stays empty in memory');
+  assert.deepEqual(republished.objects.find(prop=>prop.id==='remembered-torch'),{id:'remembered-torch',kind:'torch',x:29,y:0,turn:0});
   const restorePublished=(id,revision)=>fetch(worldBase+'/'+id+'/publish'+worldGame,{
     method:'POST',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify({revision,fog:true}),
   });
@@ -687,7 +717,50 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await tableWorld()).objects.find(prop=>prop.id==='cave-door').open,true);
   assert.equal((await restorePublished(lowerFloor.id,floorSaved.revision)).status,200);
   assert.equal(tiles.get((await tableWorld()).chunks,7,4),'stone');
-  assert.equal((await restorePublished(world.id,savedWorld.revision+1)).status,200);
+  assert.equal((await restorePublished(world.id,editedWorld.revision)).status,200);
+  assert.equal((await resumedWorldWrite('/live/change',{id:world.id,action:'reveal',x:0,y:0})).status,200);
+  const revealedAgain=await tableWorld();
+  assert.equal(tiles.get(revealedAgain.chunks,0,0),'water','an explicit reveal refreshes map memory');
+  assert.equal(tiles.get(revealedAgain.visible,0,0),undefined);
+
+  const returnToWorld=(x,y)=>fetch(base+'/api/character-positions/'+secondHero.id+worldGame,{
+    method:'PUT',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify({...firstPosition,x,y}),
+  });
+  assert.equal((await returnToWorld(25,0)).status,200);
+  assert.equal((await movePosition({direction:'east',revision:8},secondInvitation.token)).status,200);
+  const revisited=await tableWorld();
+  assert.equal(tiles.get(revisited.visible,29,0),true);
+  assert.equal(tiles.get(revisited.chunks,29,0),'dirt');
+  assert.equal(tiles.get(revisited.chunks,28,0),undefined);
+  assert.equal(tiles.get(revisited.chunks,28,1),'grass');
+  assert.deepEqual(revisited.objects.filter(prop=>prop.id==='remembered-torch'),[{id:'remembered-torch',kind:'torch',x:28,y:0,turn:1}]);
+  assert.ok(revisited.objects.every(prop=>prop.id!=='private-party-torch' && prop.id!=='secret-door'));
+
+  const revisitedScreen=await open(undefined,campaign.id,'table');sockets.push(revisitedScreen);
+  next=message(revisitedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  assert.equal((await returnToWorld(80,80)).status,200);
+  await next;
+  const leftAgain=await tableWorld();
+  assert.deepEqual(leftAgain.visible,{});
+  assert.equal(tiles.get(leftAgain.chunks,29,0),'dirt','the latest observation remains when heroes leave');
+
+  assert.equal((await returnToWorld(25,0)).status,200);
+  assert.equal((await movePosition({direction:'east',revision:11},secondInvitation.token)).status,200);
+  tiles.set(editedWorld.chunks,29,0,'stone');
+  const liveEdit=await fetch(worldBase+'/'+world.id+worldGame,{
+    method:'PUT',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify(editedWorld),
+  });
+  assert.equal(liveEdit.status,200);
+  assert.equal((await restorePublished(world.id,(await liveEdit.json()).revision)).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,29,0),'stone','a published edit in current sight is visible at once');
+  next=message(revisitedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  assert.equal((await fetch(base+'/api/characters/'+secondHero.id+worldGame,{
+    method:'DELETE',headers:{Cookie:newCookie},
+  })).status,200);
+  await next;
+  const afterRemoval=await tableWorld();
+  assert.deepEqual(afterRemoval.visible,{});
+  assert.equal(tiles.get(afterRemoval.chunks,29,0),'stone','removing a hero ends sight and preserves their last observation');
 
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });

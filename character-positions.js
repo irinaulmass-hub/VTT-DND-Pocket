@@ -1,7 +1,8 @@
 'use strict';
 
 const fs = require('node:fs');
-const { valid, get, set, sceneScope, locationMapId } = require('./remote/world-model');
+const { valid, set, sceneScope, locationMapId } = require('./remote/world-model');
+const { mask, remember } = require('./world-exploration');
 
 const steps = {
   north: [0, -1],
@@ -11,7 +12,8 @@ const steps = {
 };
 
 module.exports = function registerCharacterPositions(app, {
-  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast, stepVisibility, findTransition, explorationNotice, doorVisibility,
+  express, requireDm, gameFile, loadCharacters, assignedCharacter, locationExists, movementLocked, broadcast,
+  stepVisibility, findTransition, explorationNotice, doorVisibility, visibleCells, readPublishedMap,
 }) {
   const stateFile = () => gameFile('character-positions.json');
 
@@ -26,7 +28,7 @@ module.exports = function registerCharacterPositions(app, {
     return { ...position, revision: position.revision ?? 0 };
   }
 
-  function explorationKey(worldId, sceneId, floorId) {
+  function explorationKey({ worldId, sceneId, floorId }) {
     return JSON.stringify([worldId, sceneId, floorId]);
   }
 
@@ -34,25 +36,100 @@ module.exports = function registerCharacterPositions(app, {
     return new Set(state.doors?.[id] || []);
   }
 
-  function mapState(layout) {
+  function mapObservers(state, layout, activeOnly = false) {
+    const key = explorationKey(sceneScope(layout));
+    const candidates = Object.values(state.positions).filter(position =>
+      explorationKey(position) === key && (!activeOnly || isObserving(state, position)));
+    if (!candidates.length) return [];
+    const heroes = new Set(loadCharacters().characters.map(hero => hero.id));
+    return candidates.filter(position => heroes.has(position.characterId));
+  }
+
+  function isObserving(state, position) {
+    return state.observing?.[position.characterId] === (position.revision ?? 0);
+  }
+
+  function liveMask(state, layout, openDoors, observers = mapObservers(state, layout, true)) {
+    return mask(observers.filter(position => isObserving(state, position))
+      .flatMap(position => visibleCells(position, layout.objects, openDoors)));
+  }
+
+  function mapState(layout, includeVisibility = false) {
     const state = readState();
-    const { worldId, sceneId, floorId } = sceneScope(layout);
+    const key = explorationKey(sceneScope(layout));
+    const openDoors = openDoorsAt(state, layout.id);
     return {
-      explored: state.explored[explorationKey(worldId, sceneId, floorId)] || {},
-      openDoors: openDoorsAt(state, layout.id),
+      explored: state.explored[key] || {},
+      memory: state.memory?.[key] || { chunks: {}, objects: {} },
+      openDoors,
+      visible: includeVisibility ? liveMask(state, layout, openDoors) : {},
     };
   }
 
-  function recordExploration(state, { worldId, sceneId, floorId }, cells) {
-    const key = explorationKey(worldId, sceneId, floorId);
-    const seen = state.explored[key] ||= {};
-    let changed = false;
-    for (const { x, y } of cells) {
-      if (get(seen, x, y)) continue;
-      set(seen, x, y, true);
-      changed = true;
+  function recordExploration(state, position, cells) {
+    const seen = state.explored[explorationKey(position)] ||= {};
+    for (const { x, y } of cells) set(seen, x, y, true);
+  }
+
+  function capture(state, id, observed) {
+    const keys = Object.keys(observed);
+    if (!keys.length) return;
+    const source = readPublishedMap(id, keys);
+    if (!source) return;
+    const memories = state.memory ||= {};
+    const memory = memories[explorationKey(sceneScope(source))] ||= { chunks: {}, objects: {} };
+    remember(memory, source, observed, openDoorsAt(state, id));
+  }
+
+  function captureDeparture(state, position, includeOrigin = false) {
+    const id = locationMapId(position);
+    const layout = readPublishedMap(id, []);
+    if (!layout) return;
+    const cells = includeOrigin ? [position] : [];
+    if (isObserving(state, position)) {
+      cells.push(...visibleCells(position, layout.objects, openDoorsAt(state, id)));
     }
-    return changed;
+    capture(state, id, mask(cells));
+  }
+
+  function preservePublication(previous) {
+    if (!previous) return;
+    const layout = previous.map;
+    const file = stateFile();
+    const state = readState(file);
+    const key = explorationKey(sceneScope(layout));
+    const known = state.memory?.[key]?.chunks || {};
+    const explored = state.explored[key] || {};
+    const manual = previous.seen || {};
+    const observed = liveMask(state, layout, openDoorsAt(state, layout.id));
+    // Fill legacy discovery from the outgoing publication before replacing it.
+    for (const chunk of new Set([...Object.keys(manual), ...Object.keys(explored)])) {
+      const cells = { ...manual[chunk], ...explored[chunk] };
+      for (const [offset, seen] of Object.entries(cells)) {
+        if (seen && !Object.hasOwn(known[chunk] || {}, offset)) (observed[chunk] ||= {})[offset] = true;
+      }
+    }
+    if (Object.keys(observed).length) {
+      capture(state, layout.id, observed);
+      writeState(file, state);
+    }
+  }
+
+  function rememberCharacterView(characterId) {
+    const file = stateFile();
+    const state = readState(file);
+    const position = getPosition(characterId, state.positions);
+    if (!position || !isObserving(state, position)) return null;
+    captureDeparture(state, position);
+    writeState(file, state);
+    return explorationNotice(position);
+  }
+
+  function rememberReveal(id, observed) {
+    const file = stateFile();
+    const state = readState(file);
+    capture(state, id, observed);
+    writeState(file, state);
   }
 
   function writeState(file, state) {
@@ -116,12 +193,14 @@ module.exports = function registerCharacterPositions(app, {
     if (!valid(position.x) || !valid(position.y)) return res.status(400).json({ error: 'Достигнута граница мира' });
     const visible = stepVisibility(position, openDoorsAt(state, locationMapId(position)));
     if (!visible) return res.status(409).json({ error: 'В эту клетку нельзя пройти' });
-    const originChanged = recordExploration(state, current, [current]);
-    const destinationChanged = recordExploration(state, position, visible);
-    // At most one of the two maps can be on the table.
-    const notice = (originChanged && explorationNotice(current)) ||
-      (destinationChanged && explorationNotice(position));
+    captureDeparture(state, current, true);
+    recordExploration(state, current, [current]);
+    recordExploration(state, position, visible);
+    capture(state, locationMapId(position), mask(visible));
+    (state.observing ||= {})[characterId] = position.revision;
     savePosition(file, state, position);
+    // At most one of the two maps can be on the table.
+    const notice = explorationNotice(current) || explorationNotice(position);
     if (notice) broadcast(notice);
     res.json({ position });
   }));
@@ -144,9 +223,16 @@ module.exports = function registerCharacterPositions(app, {
 
     const file = stateFile();
     const state = readState(file);
-    const revision = (getPosition(characterId, state.positions)?.revision ?? 0) + 1;
+    const previous = getPosition(characterId, state.positions);
+    const observed = previous && isObserving(state, previous);
+    if (observed) captureDeparture(state, previous);
+    const revision = (previous?.revision ?? 0) + 1;
     const position = { characterId, worldId, sceneId, floorId, x, y, revision };
     savePosition(file, state, position);
+    if (observed) {
+      const notice = explorationNotice(previous);
+      if (notice) broadcast(notice);
+    }
     res.json({ position });
   }));
 
@@ -156,25 +242,26 @@ module.exports = function registerCharacterPositions(app, {
     const current = openDoorsAt(state, layout.id);
     if (current.has(door.id) === open) return false;
 
+    const observers = mapObservers(state, layout);
+    capture(state, layout.id, liveMask(state, layout, current, observers));
     const next = new Set(current);
     if (open) next.add(door.id);
     else next.delete(door.id);
     (state.doors ||= {})[layout.id] = [...next];
 
     if (open) {
-      const { worldId, sceneId, floorId } = sceneScope(layout);
-      const heroes = new Set(loadCharacters().characters.map(hero => hero.id));
-      for (const position of Object.values(state.positions)) {
-        if (!heroes.has(position.characterId) || position.worldId !== worldId ||
-            position.sceneId !== sceneId || position.floorId !== floorId) continue;
+      for (const position of observers) {
         const visible = doorVisibility(position, layout.objects, door, current, next);
-        if (visible.length) recordExploration(state, position, visible);
+        if (!visible.length) continue;
+        recordExploration(state, position, visible);
+        (state.observing ||= {})[position.characterId] = position.revision ?? 0;
       }
     }
+    capture(state, layout.id, liveMask(state, layout, next, observers));
 
     writeState(file, state);
     return true;
   }
 
-  return { getPosition, mapState, setDoor };
+  return { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView };
 };

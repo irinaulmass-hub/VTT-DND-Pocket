@@ -5,6 +5,7 @@ const map = require('./remote/world-model');
 const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
+const { project } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen }) => {
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -14,11 +15,13 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   const movement = createWorldMovement(store, gameFile);
 
-  const { getPosition, mapState, setDoor } = registerCharacterPositions(app, {
+  const { getPosition, mapState, setDoor, preservePublication, rememberReveal, rememberCharacterView } = registerCharacterPositions(app, {
     express, requireDm, gameFile, loadCharacters, assignedCharacter, movementLocked, broadcast,
     locationExists: movement.locationExists,
     stepVisibility: movement.stepVisibility,
     doorVisibility: movement.doorVisibility,
+    visibleCells: movement.visibleCells,
+    readPublishedMap: (id, keys) => store.readPublished(id, keys)?.map,
     findTransition: movement.findTransition,
     explorationNotice(position) {
       const id = map.locationMapId(position);
@@ -132,25 +135,9 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const keys = new Set(requested);
     const data = store.readPublished(activeId, keys);
     if (!data) return res.json(null);
-    const chunks = {};
-    const seen = {};
-    const { explored, openDoors } = mapState(data.map);
-    for (const key of keys) {
-      if (data.fog && (data.seen[key] || explored[key])) {
-        seen[key] = { ...data.seen[key], ...explored[key] };
-      }
-      const tiles = data.map.chunks[key];
-      if (!tiles) continue;
-      chunks[key] = data.fog ? Object.fromEntries(Object.entries(tiles).filter(([offset]) => seen[key]?.[offset])) : tiles;
-    }
-    const visible = prop => {
-      const [key, offset] = map.address(prop.x, prop.y);
-      return keys.has(key) && (!data.fog || !!seen[key]?.[offset]);
-    };
     res.json({
       id: data.map.id, revision: data.revision, frame: data.frame, tokens: data.tokens,
-      chunks, seen, fog: data.fog, objects: data.map.objects.filter(prop => !prop.hidden && visible(prop))
-        .map(prop => prop.kind === 'door' && openDoors.has(prop.id) ? { ...prop, open: true } : prop),
+      fog: data.fog, ...project(data, keys, mapState(data.map, data.fog)),
     });
   }));
   app.get('/api/worlds/:id/transitions', requireDm, route((req, res) => {
@@ -222,6 +209,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.status(404).json({ error: 'Карта не найдена' });
     if (data.revision !== req.body?.revision) return res.status(409).json({ error: 'Сначала сохраните актуальный черновик' });
     const previous = store.readPublished(data.id, []);
+    preservePublication(previous);
     const next = {
       tokens: [], seen: {}, frame: { x: 0, y: 0, scale: 24, serial: 0 }, ...previous,
       map: data, fog: req.body.fog === true, revision: (previous?.revision || 0) + 1,
@@ -256,9 +244,12 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
         if (token) Object.assign(token, { x, y, name: hero.name });
         else data.tokens.push({ id: hero.id, name: hero.name, x, y });
       }
+      const revealed = {};
       for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
-        if (dx * dx + dy * dy <= 16 && map.valid(x + dx) && map.valid(y + dy)) map.set(data.seen, x + dx, y + dy, true);
+        if (dx * dx + dy * dy <= 16 && map.valid(x + dx) && map.valid(y + dy)) map.set(revealed, x + dx, y + dy, true);
       }
+      rememberReveal(data.map.id, revealed);
+      for (const [key, cells] of Object.entries(revealed)) data.seen[key] = { ...data.seen[key], ...cells };
     } else return res.status(400).json({ error: 'Действие недоступно' });
     data.revision++;
     store.updatePublishedState(data.map.id, data);
@@ -266,5 +257,5 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.json({ tokens: data.tokens, revision: data.revision, frame: data.frame });
   }));
   app.post('/api/worlds/live/hide', requireDm, route((req, res) => res.json({ hidden: hide() })));
-  return { hide, getPosition, notice: () => notice(store.readActiveWorld([])) };
+  return { hide, getPosition, rememberCharacterView, notice: () => notice(store.readActiveWorld([])) };
 };

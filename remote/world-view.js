@@ -57,9 +57,11 @@
           paintProp(ctx, prop, options.selected?.() === prop.id, structures);
         }
         if (options.player && data.fog) {
-          ctx.fillStyle = '#121915';
           for (let y = area.top; y < area.bottom; y++) for (let x = area.left; x < area.right; x++) {
-            if (!get(data.seen, x, y)) ctx.fillRect(x, y, 1.002, 1.002);
+            const seen = get(data.seen, x, y);
+            if (seen && (!data.visible || get(data.visible, x, y))) continue;
+            ctx.fillStyle = seen ? 'rgba(18,25,21,.48)' : '#121915';
+            ctx.fillRect(x, y, 1.002, 1.002);
           }
         }
         for (const token of data.tokens || []) {
