@@ -4,6 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const characterView = require('./character-view');
 
 const app = express();
 const server = http.createServer(app);
@@ -394,9 +395,10 @@ function sendView(client, data) {
     }
   }
   if (!game().dmClients.has(client) && data.type === 'CHARACTERS_UPDATE') {
-    data = { ...data, characters: data.characters.filter(ch => ch.id === client.characterId) };
+    data = { ...data, characters: data.characters.filter(ch => ch.id === client.characterId).map(characterView) };
   }
   if (!game().dmClients.has(client) && data.type === 'PLAYER_DATA_UPDATE' && data.player.id !== client.characterId) return;
+  if (!game().dmClients.has(client) && data.type === 'PLAYER_DATA_UPDATE') data = { ...data, player: characterView(data.player) };
   client.send(JSON.stringify(data));
 }
 
@@ -758,7 +760,7 @@ function initializeConnection(ws, req, context) {
           ws.accessToken = message.token;
           ws.characterId = characterId;
           ws.playerName = character.name;
-          ws.send(JSON.stringify({ type: 'CHARACTERS_UPDATE', characters: [character] }));
+          sendView(ws, { type: 'CHARACTERS_UPDATE', characters: [character] });
           break;
         }
         case 'player-login':
@@ -978,7 +980,7 @@ function visibleCharacters(req) {
   const characters = loadCharacters().characters;
   if (isDmAuthed(req)) return characters;
   const id = assignedCharacter(req);
-  return characters.filter(character => character.id === id);
+  return characters.filter(character => character.id === id).map(characterView);
 }
 require('./loot')(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast, assignedCharacter });
 
