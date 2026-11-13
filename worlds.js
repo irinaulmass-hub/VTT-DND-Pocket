@@ -7,6 +7,7 @@ const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
 const createWorldDiscoveries = require('./world-discoveries');
 const registerWorldTemplates = require('./world-templates');
+const createWorldDistricts = require('./world-districts');
 const { validGenerators } = require('./remote/world-generators');
 const { project, isRevealedSecret } = require('./world-exploration');
 
@@ -18,6 +19,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   registerWorldTemplates(app, { express, requireDm, gameFile });
   const movement = createWorldMovement(store, gameFile);
+  const districts = createWorldDistricts(movement);
   const discoveries = createWorldDiscoveries(gameFile);
 
   const {
@@ -172,6 +174,11 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!store.readDraft(req.params.id, [])) return res.status(404).json({ error: 'Карта не найдена' });
     res.json({ links: movement.listTransitions(req.params.id), revision: movement.linksRevision() });
   }));
+  app.post('/api/worlds/:id/district-preview', requireDm, json, route((req, res) => {
+    const data = store.readDraft(req.params.id);
+    if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
+    res.json(districts.preview(data, req.body));
+  }));
   app.post('/api/worlds/:id/building-links', requireDm, json, route((req, res) => {
     const body = req.body || {};
     const fields = ['buildingId', 'sourceRevision', 'targetRevision', 'linksRevision', 'x', 'y', 'toMapId', 'toX', 'toY'];
@@ -247,6 +254,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const objects = req.body.objects.map(({ id, kind, x, y, turn, hidden }) => ({ id, kind, x, y, turn, hidden: hidden === true }));
     const next = { ...data, revision: data.revision + 1, chunks: req.body.chunks, objects };
     if (generators !== undefined) next.generators = generators;
+    districts.verifySave(data, next, req.body.districtGuard);
     store.writeDraft(next);
     res.json(next);
   }));

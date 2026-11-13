@@ -366,7 +366,7 @@
     return { chunks, count, plants };
   }
 
-  function generateDistrict(recipe, draft, excludedCells = new Set(), excludedIds = new Set()) {
+  function generateDistrict(recipe, draft, excludedCells = new Set(), excludedIds = new Set(), retainedObjects = []) {
     if (recipe?.kind !== 'district' || !validRecipe(recipe)) {
       throw new RangeError('Район: задай прямоугольник от 11×11 до 4096 клеток и от 1 до 24 домов.');
     }
@@ -374,6 +374,17 @@
     const cx = Math.floor((left + right) / 2), cy = Math.floor((top + bottom) / 2);
     const occupied = new Set(), obstacles = new Set(), ids = new Set(draft.objects.map(prop => prop.id));
     const inside = (x, y) => x >= left && x <= right && y >= top && y <= bottom;
+    const requested = recipe.params.count - retainedObjects.length;
+    if (requested < 0) throw new RangeError('Число домов меньше числа связанных построек. Сначала измени связи.');
+    for (const prop of retainedObjects) {
+      const bounds = cellBounds(prop);
+      const [x, y] = [[prop.x,bounds.bottom+1],[bounds.left-1,prop.y],
+        [prop.x,bounds.top-1],[bounds.right+1,prop.y]][prop.turn];
+      if (!inside(bounds.left, bounds.top) || !inside(bounds.right, bounds.bottom) ||
+          !inside(x, y) || (Math.abs(x - cx) > 1 && Math.abs(y - cy) > 1)) {
+        throw new RangeError('Новый контур или улица отрезает связанную постройку. Измени контур или связь.');
+      }
+    }
     const eachCell = (bounds, visit, margin = 0) => {
       for (let y = Math.max(top, bounds.top - margin); y <= Math.min(bottom, bounds.bottom + margin); y++) {
         for (let x = Math.max(left, bounds.left - margin); x <= Math.min(right, bounds.right + margin); x++) visit(x, y);
@@ -416,7 +427,7 @@
       [slots[i], slots[j]] = [slots[j], slots[i]];
     }
     for (const prop of slots) {
-      if (objects.length === recipe.params.count) break;
+      if (objects.length === requested) break;
       if (ids.has(prop.id) || excludedIds.has(prop.id)) continue;
       const bounds = cellBounds(prop);
       if (!inside(bounds.left, bounds.top) || !inside(bounds.right, bounds.bottom)) continue;
@@ -431,7 +442,7 @@
       eachCell(bounds, (x, y) => set(chunks, x, y, 'dirt'));
       eachCell(bounds, (x, y) => occupied.add(x + ',' + y), 1);
     }
-    if (objects.length !== recipe.params.count) {
+    if (objects.length !== requested) {
       throw new RangeError('В районе недостаточно свободных мест для указанного числа домов. Уменьши число или увеличь участок.');
     }
     if (draft.objects.length + objects.length > objectLimit) throw new RangeError('Район превысит лимит объектов');
@@ -503,7 +514,7 @@
     } };
   }
 
-  function generationChange(recipe, draft) {
+  function generationChange(recipe, draft, { pinnedIds = [], reservedCells = [] } = {}) {
     const parameters = ({ id, kind, version, seed, params }) => ({ id, kind, version, seed, params });
     recipe = parameters(recipe);
     if (!validRecipe(recipe)) throw new RangeError('Проверь параметры генератора');
@@ -520,6 +531,23 @@
     const protectedTiles = new Map((old?.protectedTiles || []).map(cell => [cellKey(cell), cell]));
     const protectedObjects = new Set(old?.protectedObjects || []);
     const currentObjects = new Map(draft.objects.map(prop => [prop.id, prop]));
+    const pinned = new Set(recipe.kind === 'district' ? pinnedIds : []);
+    const reserved = new Set(recipe.kind === 'district' ? reservedCells.map(cellKey) : []);
+    const retained = (old?.objects || []).filter(prop => pinned.has(prop.id)).map(prop => {
+      const current = currentObjects.get(prop.id);
+      if (!current || current.kind !== 'house' || current.hidden) throw new RangeError('Связанная постройка изменилась. Проверь связь с интерьером.');
+      const bounds = cellBounds(current);
+      const area = forestBounds(recipe.params.points);
+      for (const cell of reservedCells) {
+        const adjacent = ((cell.x === bounds.left - 1 || cell.x === bounds.right + 1) && cell.y >= bounds.top && cell.y <= bounds.bottom) ||
+          ((cell.y === bounds.top - 1 || cell.y === bounds.bottom + 1) && cell.x >= bounds.left && cell.x <= bounds.right);
+        if (adjacent && (cell.x < area.left || cell.x > area.right || cell.y < area.top || cell.y > area.bottom)) {
+          throw new RangeError('Новый контур отсекает клетку входа связанной постройки. Измени контур или связь.');
+        }
+      }
+      for (let y = bounds.top; y <= bounds.bottom; y++) for (let x = bounds.left; x <= bounds.right; x++) reserved.add(x + ',' + y);
+      return current;
+    });
     for (const cell of old?.tiles || []) {
       if ((get(draft.chunks, cell.x, cell.y) ?? null) !== cell.after) protectedTiles.set(cellKey(cell), { x: cell.x, y: cell.y });
     }
@@ -529,8 +557,8 @@
     // Never reclaim cells recorded by another generator, even when their values match.
     const foreignCells = new Set(generators.filter(item => item.id !== recipe.id)
       .flatMap(item => [...(item.state?.tiles || []), ...(item.state?.protectedTiles || [])].map(cellKey)));
-    const excluded = new Set([...foreignCells, ...protectedTiles.keys()]);
-    const ownedIds = new Set((old?.objects || []).filter(prop => !protectedObjects.has(prop.id)).map(prop => prop.id));
+    const excluded = new Set([...foreignCells, ...protectedTiles.keys(), ...reserved]);
+    const ownedIds = new Set((old?.objects || []).filter(prop => !protectedObjects.has(prop.id) && !pinned.has(prop.id)).map(prop => prop.id));
     const remaining = draft.objects.filter(prop => !ownedIds.has(prop.id));
     const working = copyChunks(draft.chunks);
     const affected = new Map();
@@ -556,8 +584,10 @@
     }
     const output = recipe.kind === 'forest' ? generateForest(recipe, base, excluded, protectedObjects) :
       recipe.kind === 'room' ? generateRoom(recipe, base, excluded, protectedObjects) :
-      recipe.kind === 'district' ? generateDistrict(recipe, base, excluded, protectedObjects) : generatePath(recipe);
-    const tiles = [];
+      recipe.kind === 'district' ? generateDistrict(recipe, base, excluded, protectedObjects, retained) : generatePath(recipe);
+    // Keep ownership of temporarily pinned pads/entrances, so unlinking can restore source ground.
+    const tiles = (old?.tiles || []).filter(cell => reserved.has(cellKey(cell)) &&
+      !protectedTiles.has(cellKey(cell)) && !foreignCells.has(cellKey(cell)));
     for (const cell of cells(output.chunks)) {
       if (excluded.has(cellKey(cell))) continue;
       tiles.push({ ...cell, before: get(working.chunks, cell.x, cell.y) ?? null });
@@ -565,7 +595,7 @@
     }
     const generatedObjects = output.objects || output.plants || [];
     const afterObjects = [...remaining, ...generatedObjects];
-    const nextRecipe = { ...recipe, state: { version: 1, tiles, objects: generatedObjects,
+    const nextRecipe = { ...recipe, state: { version: 1, tiles, objects: [...retained, ...generatedObjects],
       protectedTiles: [...protectedTiles.values()], protectedObjects: [...protectedObjects] } };
     const nextGenerators = previous ? generators.map(item => item.id === recipe.id ? nextRecipe : item) : [...generators, nextRecipe];
     if (!validGenerators(nextGenerators)) throw new RangeError('Превышен лимит рецептов или сохранённых ручных правок');

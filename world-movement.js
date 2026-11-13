@@ -187,6 +187,27 @@ module.exports = function createWorldMovement(store, gameFile) {
     },
     findTransition,
     saveBuildingLink,
+    districtContext(layout) {
+      const links = readLinks();
+      const local = links.filter(link => link.pairId && locationMapId(link.from) === layout.id);
+      const pinnedIds = new Set(), reservedCells = [];
+      for (const link of local) {
+        const pair = links.filter(item => item.pairId === link.pairId);
+        if (pair.length !== 2 || !pair.every(item => JSON.stringify(item.building) === JSON.stringify(link.building)) ||
+            !pair.some(item => samePoint(item.from, link.to) && samePoint(item.to, link.from))) {
+          fail(409, 'Пара переходов повреждена. Проверь связь с интерьером перед регенерацией.');
+        }
+        if (link.building?.mapId === layout.id) {
+          if (!buildingMatches(layout, link.building)) fail(409, 'Связанная постройка изменилась. Сначала настрой её связь заново.');
+          pinnedIds.add(link.building.objectId);
+        }
+        if (!passable(layout, link.from.x, link.from.y, new Set())) {
+          fail(409, 'Клетка входа или возврата перекрыта. Освободи её перед регенерацией.');
+        }
+        reservedCells.push({ x: link.from.x, y: link.from.y });
+      }
+      return { pinnedIds: [...pinnedIds], reservedCells, linksRevision: revisionOf(links), hasBindings: !!local.length };
+    },
     linksRevision: () => revisionOf(readLinks()),
     listTransitions(id) {
       return readLinks().filter(link => locationMapId(link.from) === id);

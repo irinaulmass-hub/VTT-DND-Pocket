@@ -872,7 +872,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     generators:districtChange.generators.after};
   const districtSave=await worldWrite('/'+districtWorld.id,'PUT',districtDraft);
   assert.equal(districtSave.status,200);
-  const districtSaved=await districtSave.json();
+  let districtSaved=await districtSave.json();
   assert.equal(districtSaved.objects.length,8);
   assert.equal((await worldWrite('/'+districtWorld.id,'PUT',{...districtSaved,
     generators:[{...districtRecipe,params:{...districtRecipe.params,count:25}}]})).status,400,
@@ -920,6 +920,54 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const floorBindingInput={...bindingInput,buildingId:'home-floor',x:10,toMapId:buildingFloor.id,
     targetRevision:buildingFloorSaved.revision,linksRevision:bindingPair.revision};
   assert.equal((await worldWrite(bindingEndpoint,'POST',floorBindingInput)).status,201);
+  const districtPreviewPath='/'+districtWorld.id+'/district-preview';
+  const districtRequest={revision:districtSaved.revision,recipe:{...districtRecipe,seed:0,params:{...districtRecipe.params,count:3}}};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+districtPreviewPath+worldGame+query,{
+      method:'POST',redirect:'manual',headers,body:JSON.stringify(districtRequest),
+    })).status,302,'only the master can preview a full district');
+  }
+  assert.equal((await fetch(worldBase+districtPreviewPath+'?game='+packedCampaign.id,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify(districtRequest),
+  })).status,404,'district preview is scoped to the current campaign');
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,extra:true})).status,400);
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,revision:0})).status,409);
+  const unboundDistrictPreview=await (await worldWrite(districtPreviewPath,'POST',districtRequest)).json();
+  const districtHouse=districtSaved.objects[0], districtBounds=tiles.cellBounds(districtHouse);
+  const [districtX,districtY]=[[districtHouse.x,districtBounds.bottom+1],[districtBounds.left-1,districtHouse.y],
+    [districtHouse.x,districtBounds.top-1],[districtBounds.right+1,districtHouse.y]][districtHouse.turn];
+  const districtInterior=await prepareInterior(await (await worldWrite('','POST',{
+    name:'Интерьер дома района',parentWorldId:districtWorld.id,
+  })).json(),'wood');
+  const districtBinding=await (await worldWrite('/'+districtWorld.id+'/building-links','POST',{
+    buildingId:districtHouse.id,sourceRevision:districtSaved.revision,targetRevision:districtInterior.revision,
+    linksRevision:(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json()).revision,
+    x:districtX,y:districtY,toMapId:districtInterior.id,toX:3,toY:1,
+  })).json();
+  assert.equal(districtBinding.links.length,2);
+  const districtBody=preview=>({...districtSaved,chunks:preview.change.chunks,
+    objects:preview.change.objects?.after||districtSaved.objects,generators:preview.change.generators.after,districtGuard:preview.guard});
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',districtBody(unboundDistrictPreview))).status,409,
+    'a binding created after preview invalidates the old result');
+  const unguardedDistrict=districtBody(unboundDistrictPreview);delete unguardedDistrict.districtGuard;
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',unguardedDistrict)).status,409,
+    'an old caller cannot regenerate linked houses without a guard');
+  const guardedDistrictResponse=await worldWrite(districtPreviewPath,'POST',districtRequest);
+  assert.equal(guardedDistrictResponse.status,200);
+  const guardedDistrict=await guardedDistrictResponse.json();
+  const changedDistrictBody=districtBody(guardedDistrict);changedDistrictBody.objects=structuredClone(changedDistrictBody.objects);
+  changedDistrictBody.objects[0].x++;
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',changedDistrictBody)).status,409,
+    'the server recomputes the protected preview instead of trusting changed objects');
+  const districtCommit=await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict));
+  assert.equal(districtCommit.status,200);
+  districtSaved=await districtCommit.json();
+  assert.equal(districtSaved.districtGuard,undefined,'preview guards are not persisted in the map');
+  assert.equal(districtSaved.objects.length,3);
+  assert.deepEqual(districtSaved.objects.find(prop=>prop.id===districtHouse.id),districtHouse);
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict))).status,409,
+    'a preview cannot be replayed on a newer map revision');
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');
@@ -1169,6 +1217,15 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(publishedDistrict.chunks,0,0),'path');
   assert.equal((await resumedWorldWrite('/'+districtWorld.id+'/publish',{revision:0,fog:false})).status,409,
     'District publication uses the existing revision guard');
+  assert.equal((await resumedWorldWrite('/'+districtInterior.id+'/publish',{revision:districtInterior.revision,fog:true})).status,200);
+  const districtLinkedPosition=await (await setPosition(otherChar.id,districtBinding.links[0].from,resumedHeaders)).json();
+  const enterRegeneratedDistrict=await movePosition({direction:'enter',revision:districtLinkedPosition.position.revision});
+  assert.equal(enterRegeneratedDistrict.status,200,'the bound entry works after regeneration and server restart');
+  const inRegeneratedDistrict=await enterRegeneratedDistrict.json();
+  const returnRegeneratedDistrict=await movePosition({direction:'enter',revision:inRegeneratedDistrict.position.revision});
+  assert.equal(returnRegeneratedDistrict.status,200);
+  const returnedDistrict=(await returnRegeneratedDistrict.json()).position;
+  for(const key of ['worldId','sceneId','floorId','x','y'])assert.equal(returnedDistrict[key],districtBinding.links[0].from[key]);
   await publishBindingMap(buildingOutsideSaved);
   const exteriorPosition={worldId:buildingOutside.id,sceneId:'overworld',floorId:'ground',x:-1,y:2};
   const exteriorPlaced=await (await setPosition(otherChar.id,exteriorPosition,resumedHeaders)).json();
