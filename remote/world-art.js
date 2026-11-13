@@ -586,6 +586,12 @@
       ctx.fillStyle = '#30382d38';
       ctx.fillRect(-center.width / 2 + .12, -center.height / 2 + .17, center.width, center.height);
     }
+    if (WorldMap.furnitureKinds.has(prop.kind)) {
+      // World-space shadow stays southeast when furniture turns.
+      ctx.fillStyle = '#29271f35';
+      ctx.fillRect(-center.width * .44 + .08, -center.height * .34 + .12,
+        center.width * .88, center.height * .68);
+    }
     if (!vegetation) ctx.rotate((prop.kind === 'door' ? (layout?.doorAxis(prop) ?? prop.turn) : prop.turn)*Math.PI/2);
     const decor = window.WorldDecor.paint[prop.kind];
     if (building) {

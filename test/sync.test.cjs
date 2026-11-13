@@ -849,6 +849,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     points:[{x:0,y:0},{x:6,y:0},{x:6,y:6},{x:0,y:6}],entrance:{x:3,y:0}}};
   const roomChange=generators.generationChange(roomRecipe,roomWorld);
   const roomDraft={...roomWorld,chunks:roomChange.chunks,objects:roomChange.objects.after,generators:roomChange.generators.after};
+  const interiorObjects=[
+    {id:'room-table',kind:'table',x:1,y:3,turn:0},
+    {id:'room-bed',kind:'bed',x:5,y:4,turn:0},
+    {id:'room-stairs',kind:'stairs',x:4,y:2,turn:0},
+    {id:'room-bench',kind:'bench',x:1,y:5,turn:0},
+    {id:'room-torch',kind:'torch',x:1,y:1,turn:0},
+  ];
+  roomDraft.objects.push(...interiorObjects);
   tiles.set(roomDraft.chunks,3,-1,'grass');
   const invalidRoom={...roomDraft,generators:[{...roomRecipe,params:{...roomRecipe.params,entrance:{x:0,y:0}}}]};
   assert.equal((await worldWrite('/'+roomWorld.id,'PUT',invalidRoom)).status,400);
@@ -1120,6 +1128,21 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(roomOpenView.chunks,3,-1),'grass','opening a generated door reveals the exterior');
   assert.equal(roomOpenView.objects.find(prop=>prop.id===roomDoor.id).open,true);
   assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,200);
+  const reopenedInterior=await (await fetch(worldBase+'/'+roomWorld.id+worldGame,{headers:resumedHeaders})).json();
+  assert.deepEqual(reopenedInterior.objects.filter(prop=>interiorObjects.some(item=>item.id===prop.id)),
+    interiorObjects.map(prop=>({...prop,hidden:false})), 'interior props survive the server restart');
+  const interiorPublication=await resumedWorldWrite('/'+roomWorld.id+'/publish',{revision:roomSaved.revision,fog:false});
+  assert.equal(interiorPublication.status,200);
+  const interiorView=await tableWorld('0,0');
+  assert.ok(interiorObjects.every(prop=>interiorView.objects.some(item=>item.id===prop.id && item.kind===prop.kind)),
+    'published furniture and stairs reach the common screen');
+  const furniturePosition={...roomPosition,x:1,y:2};
+  const atFurniture=await (await setPosition(otherChar.id,furniturePosition,resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'south',revision:atFurniture.position.revision})).status,409,
+    'the server rejects walking onto a table');
+  const atStairs=await (await setPosition(otherChar.id,{...roomPosition,x:3,y:2},resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'east',revision:atStairs.position.revision})).status,200,
+    'stairs remain walkable without an implicit scene transfer');
   async function publishBindingMap(layout) {
     assert.equal((await resumedWorldWrite('/'+layout.id+'/publish',{revision:layout.revision,fog:true})).status,200);
   }

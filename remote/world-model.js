@@ -18,7 +18,8 @@
     campfire: ['Костёр', 1, 1], barrel: ['Бочка', 1, 1], vineBarrel: ['Бочка (особая)', 1, 1],
     chest: ['Сундук', 1, 1], openChest: ['Сундук (приоткрытый)', 1, 1],
     palisade: ['Частокол', 2, 1], ruinedHouse: ['Разрушенный дом', 3, 3],
-    table: ['Стол', 2, 1], bench: ['Скамейка', 2, 1], bearTrap: ['Капкан', 1, 1],
+    table: ['Стол', 2, 1], bench: ['Скамейка', 2, 1], bed: ['Кровать', 1, 2],
+    stairs: ['Лестница', 2, 3], bearTrap: ['Капкан', 1, 1],
     brazier: ['Жаровня', 1, 1], goblinTotems: ['Тотемы гоблинов', 2, 1],
     barn: ['Амбар', 6, 4], well: ['Колодец', 1, 1], cart: ['Телега', 3, 1],
     pole: ['Столб', 1, 1], pumpkin: ['Тыква', 1, 1], smallPumpkin: ['Тыква (маленькая)', 1, 1],
@@ -29,12 +30,14 @@
     goblinAxes: ['Гоблин с топорами', 1, 1],
   };
   const buildingKinds = new Set(['house', 'tavern', 'barn']);
+  // Low furniture blocks occupied cells, but does not block sight like a wall.
+  const furnitureKinds = new Set(['table', 'bench', 'bed']);
   const linkedSections = new Set(['wall','palisade','fence']);
   const propGroups = {
     'Существа': ['goblinArcher','goblinShield','goblinAxes'],
     'Постройки и природа': ['house','tavern','barn','bridge','well','tree','bush','wall','door','fence','palisade','ruinedHouse','burningRoof','boulder'],
     'Деревня и лагерь': ['wagon','wreckedWagon','cart','campfire','pole','pumpkin','smallPumpkin','garland'],
-    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
+    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','bed','stairs','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
   };
   const directions = [[0,-1],[1,0],[0,1],[-1,0]];
   function wallCells(prop) {
@@ -134,7 +137,7 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, propGroups, footprint, cellBounds };
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

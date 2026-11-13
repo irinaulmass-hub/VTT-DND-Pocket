@@ -21,6 +21,7 @@ function passable(layout, x, y, openDoors) {
     if (barriers.has(prop.kind) && map.wallCells(prop).some(([col, row]) => col === x && row === y)) return false;
     if (prop.kind === 'door' && !openDoors.has(prop.id) && prop.x === x && prop.y === y) return false;
     if (solid.has(prop.kind) && covers(prop, x, y)) return false;
+    if (map.furnitureKinds.has(prop.kind) && covers(prop, x, y)) return false;
     if (prop.kind === 'bridge' && covers(prop, x, y)) bridge = true;
   }
   return bridge || map.get(layout.chunks, x, y) !== 'water';

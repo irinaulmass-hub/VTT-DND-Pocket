@@ -50,6 +50,28 @@ if (!qaStore.readDraft(exteriorId, [])) {
     qaStore.writeDraft({ ...map, chunks: change.chunks, objects: change.objects.after, generators: change.generators.after });
   }
 }
+const interiorId = '30000000-0000-0000-0000-000000000001';
+if (!qaStore.readDraft(interiorId, [])) {
+  const { generationChange } = require('../remote/world-generators');
+  const room = { id: interiorId, name: 'Интерьер · Мебель и свет', revision: 0,
+    parentWorldId: exteriorId, chunks: {}, objects: [] };
+  const change = generationChange({ id: 'qa-furnished-room', kind: 'room', version: 1, seed: 17,
+    params: { floor: 'wood', points: [{ x:-7,y:-5 }, { x:7,y:-5 }, { x:7,y:5 }, { x:-7,y:5 }],
+      entrance: { x:0,y:5 } } }, room);
+  const furniture = [
+    { id:'qa-stairs',kind:'stairs',x:-4,y:-2,turn:0 },
+    { id:'qa-bed',kind:'bed',x:4,y:-2,turn:0 },
+    { id:'qa-bed-turned',kind:'bed',x:4,y:2,turn:1 },
+    { id:'qa-table',kind:'table',x:-1,y:0,turn:0 },
+    { id:'qa-bench',kind:'bench',x:-1,y:2,turn:0 },
+    { id:'qa-chest',kind:'chest',x:4,y:4,turn:0 },
+    { id:'qa-torch',kind:'torch',x:-5,y:3,turn:0 },
+    { id:'qa-torch-east',kind:'torch',x:4,y:0,turn:0 },
+    { id:'qa-brazier',kind:'brazier',x:-4,y:-4,turn:0 },
+  ];
+  qaStore.writeDraft({ ...room, chunks: change.chunks, objects: [...change.objects.after,...furniture],
+    generators: change.generators.after });
+}
 const password = randomBytes(32).toString('hex');
 const upstream = spawn(process.execPath, ['server.js'], {
   cwd: root, env: { ...process.env, PORT: String(upstreamPort), DATA_DIR: dataDir, DM_PASSWORD: password },
