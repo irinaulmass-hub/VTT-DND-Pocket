@@ -1,7 +1,7 @@
 'use strict';
 
 (() => {
-  const { terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
+  const { terrain, props, get, set, sceneScope, locationMapId, buildingKinds, cellBounds } = window.WorldMap;
   const { generationChange, protectManualChanges, maxPathPoints, maxForestPoints, validTemplate } = window.WorldGenerators;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
@@ -86,6 +86,7 @@
           <span data-world-size></span>
           <button class="book-button" data-world-turn>Повернуть</button>
           <button class="book-button" data-world-delete>Удалить выбранный</button>
+          <button class="book-button" data-world-building-link hidden>Связать с интерьером</button>
           <label><input type="checkbox" data-world-secret> Видно только мастеру</label>
         </div>
         <div class="book-toolbar">
@@ -96,14 +97,15 @@
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
         <details data-world-transitions>
           <summary>Переходы между сценами</summary>
-          <form class="book-toolbar" data-world-transition-form>
+          <form class="book-toolbar" data-world-transition-form aria-label="Связь между картами">
+            <select class="book-select" data-world-transition-building aria-label="Постройка для входа"></select>
             <button class="book-button" type="button" data-tool="transition">Указать клетку на карте</button>
             <label>X <input class="book-select" type="number" name="x" required></label>
             <label>Y <input class="book-select" type="number" name="y" required></label>
             <select class="book-select" name="toMapId" aria-label="Карта назначения" required></select>
             <label>X назначения <input class="book-select" type="number" name="toX" required></label>
             <label>Y назначения <input class="book-select" type="number" name="toY" required></label>
-            <button class="book-button">Сохранить переход</button>
+            <button class="book-button" data-world-transition-submit>Сохранить переход</button>
           </form>
           <ul data-world-transition-list></ul>
         </details>
@@ -228,6 +230,8 @@
     paintGeneratorControls();
     const object = draft.objects.find(item => item.id === selected);
     e('object').hidden = !object;
+    e('building-link').hidden = !object || !buildingKinds.has(object.kind);
+    updateBuildings();
     if (object) {
       const { width, height } = window.WorldMap.footprint(object);
       e('size').textContent = props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
@@ -275,35 +279,60 @@
   const positionUrl = id => '/api/character-positions/' + encodeURIComponent(id);
   const transitionForm = e('transition-form');
   const transitionUrl = id => '/api/worlds/' + encodeURIComponent(id) + '/transitions';
+  let transitionRevision = null, transitionGeneration = 0;
+
+  function updateBuildings() {
+    const select = e('transition-building'), value = select.value;
+    const buildings = (draft?.objects || []).filter(item => buildingKinds.has(item.kind));
+    select.replaceChildren(new Option('Обычный переход без постройки', ''), ...buildings.map(item =>
+      new Option(props[item.kind][0] + ' · ' + item.x + ', ' + item.y, item.id)));
+    if (buildings.some(item => item.id === value)) select.value = value;
+    e('transition-submit').textContent = select.value ? 'Связать вход и возврат' : 'Сохранить переход';
+  }
 
   function updateDestinations() {
     const select = transitionForm.elements.toMapId;
     const value = select.value;
     const scope = draft && sceneScope(draft);
     const targets = scope ? availableMaps.filter(item =>
-      item.id !== draft.id && sceneScope(item).worldId === scope.worldId) : [];
+      item.id !== draft.id && sceneScope(item).worldId === scope.worldId &&
+      (!e('transition-building').value || item.parentWorldId)) : [];
     select.replaceChildren(new Option('Карта назначения', ''), ...targets.map(item => new Option(item.name, item.id)));
     if (targets.some(item => item.id === value)) select.value = value;
   }
 
   async function showTransitions() {
-    const id = draft.id;
-    const { links } = await request(transitionUrl(id));
-    if (draft?.id !== id) return;
+    const id = draft.id, generation = ++transitionGeneration;
+    const { links, revision } = await request(transitionUrl(id));
+    if (draft?.id !== id || generation !== transitionGeneration) return;
+    transitionRevision = revision;
     const nodes = links.map(link => {
       const item = document.createElement('li');
       const target = locationMapId(link.to);
       const name = availableMaps.find(map => map.id === target)?.name || 'Сцена';
       item.textContent = '(' + link.from.x + ', ' + link.from.y + ') → ' + name +
-        ' (' + link.to.x + ', ' + link.to.y + ') ';
+        ' (' + link.to.x + ', ' + link.to.y + ')' + (link.pairId ? ' · Вход и возврат ' : ' ');
       const button = document.createElement('button');
       button.className = 'book-button small';
-      button.textContent = 'Удалить переход';
+      button.textContent = link.pairId ? 'Удалить вход и возврат' : 'Удалить переход';
       button.onclick = () => run(async () => {
-        await request(transitionUrl(id) + '/' + encodeURIComponent(link.id), { method: 'DELETE' });
-        await showTransitions();
+        ++transitionGeneration;
+        try {
+          const query = link.pairId ? '?linksRevision=' + encodeURIComponent(revision) : '';
+          await request(transitionUrl(id) + '/' + encodeURIComponent(link.id) + query, { method: 'DELETE' });
+        } finally { await showTransitions(); }
       });
       item.append(button);
+      if (link.pairId) {
+        const visit = document.createElement('button');
+        visit.className = 'book-button small';
+        visit.textContent = link.building.mapId === id ? 'Открыть интерьер' : 'Открыть наружную карту';
+        visit.onclick = () => {
+          if (dirty && !confirm('Открыть другую карту без сохранения текущих правок?')) return;
+          run(async () => { open(await request('/api/worlds/' + encodeURIComponent(target))); e('select').value = target; });
+        };
+        item.append(visit);
+      }
       return item;
     });
     e('transition-list').replaceChildren(...nodes);
@@ -317,13 +346,36 @@
     run(async () => {
       await save();
       const { x, y, toMapId, toX, toY } = transitionForm.elements;
-      await request(transitionUrl(draft.id), json('POST', {
-        x: x.valueAsNumber, y: y.valueAsNumber, toMapId: toMapId.value,
-        toX: toX.valueAsNumber, toY: toY.valueAsNumber,
-      }));
-      await showTransitions();
-      status('Переход сохранён');
+      const buildingId = e('transition-building').value;
+      const body = { x: x.valueAsNumber, y: y.valueAsNumber, toMapId: toMapId.value,
+        toX: toX.valueAsNumber, toY: toY.valueAsNumber };
+      if (buildingId) {
+        if (!transitionRevision) { await showTransitions(); return status('Список переходов обновлён. Повтори привязку.'); }
+        const target = await request('/api/worlds/' + encodeURIComponent(toMapId.value));
+        Object.assign(body, { buildingId, sourceRevision: draft.revision, targetRevision: target.revision, linksRevision: transitionRevision });
+      }
+      ++transitionGeneration;
+      try {
+        const url = buildingId ? '/api/worlds/' + encodeURIComponent(draft.id) + '/building-links' : transitionUrl(draft.id);
+        await request(url, json('POST', body));
+      } finally { await showTransitions(); }
+      status(buildingId ? 'Вход и возврат сохранены. Опубликуй обе карты для путешествия героев.' : 'Переход сохранён');
     });
+  };
+
+  e('transition-building').onchange = () => { updateBuildings(); updateDestinations(); };
+  e('building-link').onclick = () => {
+    if (!draft || busy) return;
+    const building = draft.objects.find(item => item.id === selected && buildingKinds.has(item.kind));
+    if (!building) return;
+    const bounds = cellBounds(building);
+    e('transition-building').value = building.id;
+    transitionForm.elements.x.value = Math.floor((bounds.left + bounds.right) / 2);
+    transitionForm.elements.y.value = bounds.bottom + 1;
+    e('transitions').open = true;
+    updateBuildings(); updateDestinations();
+    showTransitions().catch(error => status(error.message));
+    status('Выбери внутреннюю сцену или этаж и проходимую клетку. Вход снаружи можно уточнить на карте.');
   };
 
   let positionGeneration = 0;
@@ -460,6 +512,8 @@
     undo.length = redo.length = 0;
     e('editor').hidden = false;
     transitionForm.reset();
+    transitionRevision = null; ++transitionGeneration;
+    e('transition-building').value = '';
     e('transition-list').replaceChildren();
     updateDestinations();
     if (e('transitions').open) showTransitions().catch(error => status(error.message));

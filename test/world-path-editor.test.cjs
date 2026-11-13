@@ -10,11 +10,11 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
   const tool = { dataset: { tool: 'generate-path' }, setAttribute() {} };
   const roomTool = { dataset: { tool: 'generate-room' }, setAttribute() {} };
   const forestTool = { dataset: { tool: 'generate-forest' }, setAttribute() {} };
-  const manualTools = ['stone', 'erase', 'select', 'delete-object'].map(name => ({ dataset: { tool: name }, setAttribute() {} }));
+  const manualTools = ['stone', 'erase', 'select', 'delete-object', 'house'].map(name => ({ dataset: { tool: name }, setAttribute() {} }));
   let nextId = 0;
   class Element {
     nodes = new Map();
-    elements = { parentMap: { value: '' }, toMapId: { value: '', replaceChildren() {} }, elevation: {} };
+    elements = { parentMap: { value: '' }, toMapId: { value: '', replaceChildren() {} }, elevation: {}, x: {}, y: {}, toX: {}, toY: {} };
     value = '';
     get valueAsNumber() { return this.value === '' ? NaN : Number(this.value); }
     querySelector(selector) {
@@ -27,7 +27,7 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
     toggleAttribute() {}
     addEventListener() {}
     prepend() {}
-    append() {}
+    append(...nodes) { this.children = [...(this.children || []), ...nodes]; }
     reset() {}
   }
   const root = new Element();
@@ -41,10 +41,11 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
   const writes = [];
   let templates = { revision: 0, templates: [] };
   let holdTemplateRead = false, releaseTemplateRead;
+  let transitionBody, transitionLinks = [], transitionRevision = 'links-initial';
   const context = vm.createContext({
     WorldMap: world, location: { hash: '' },
     document: {
-      createElement: () => elements.shift(),
+      createElement: () => elements.shift() || new Element(),
       getElementById: id => root.querySelector(id),
       body: { dataset: {} },
     },
@@ -76,6 +77,22 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
           templates = { revision: revision + 1, templates: [...templates.templates, { id: 'template-' + (revision + 1), ...settings }] };
         }
         return structuredClone(templates);
+      }
+      if (url === '/api/worlds/world-id/transitions') return { links: structuredClone(transitionLinks), revision: transitionRevision };
+      if (url === '/api/worlds/inside-id') return { id: 'inside-id', name: 'Интерьер', revision: 9, parentWorldId: 'world-id', chunks: {}, objects: [] };
+      if (url === '/api/worlds/world-id/building-links') {
+        transitionBody = JSON.parse(options.body);
+        transitionRevision = 'links-saved';
+        transitionLinks = [{ id: 'binding', pairId: 'pair', building: { mapId: 'world-id' },
+          from: { worldId: 'world-id', sceneId: 'overworld', floorId: 'ground', x: 100, y: 102 },
+          to: { worldId: 'world-id', sceneId: 'inside-id', floorId: 'ground', x: 3, y: 1 } }];
+        return { links: structuredClone(transitionLinks), revision: transitionRevision };
+      }
+      if (url.startsWith('/api/worlds/world-id/transitions/binding?')) {
+        assert.equal(options.method, 'DELETE');
+        if (!url.endsWith('linksRevision=' + transitionRevision)) throw new Error('Переходы изменились');
+        transitionLinks = []; transitionRevision = 'links-deleted';
+        return { links: [] };
       }
       if (url.startsWith('/api/worlds/live')) return null;
       assert.equal(url, '/api/worlds/world-id');
@@ -346,5 +363,39 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
   assert.equal(world.get(saved.chunks, 63, 3), 'stone');
   control('path-clear-points').onclick();
   assert.equal(control('room-entry-info').textContent, 'Вход не выбран');
+
+  manualTools[4].onclick();
+  canvas.click(100, 100);
+  manualTools[2].onclick();
+  canvas.pickProp(100.5, 100.5);
+  assert.equal(control('building-link').hidden, false);
+  control('building-link').onclick();
+  await new Promise(setImmediate);
+  assert.equal(control('transitions').open, true);
+  assert.equal(control('transition-submit').textContent, 'Связать вход и возврат');
+  const form = control('transition-form');
+  assert.equal(form.elements.x.value, 100);
+  assert.equal(form.elements.y.value, 102, 'the suggested entrance is adjacent to the building footprint');
+  form.elements.x.valueAsNumber = 100;
+  form.elements.y.valueAsNumber = 102;
+  form.elements.toX.valueAsNumber = 3;
+  form.elements.toY.valueAsNumber = 1;
+  form.elements.toMapId.value = 'inside-id';
+  form.onsubmit({ preventDefault() {} });
+  await new Promise(setImmediate);
+  assert.equal(transitionBody.sourceRevision, saved.revision, 'binding saves pending map edits first');
+  assert.equal(transitionBody.targetRevision, 9);
+  assert.equal(transitionBody.linksRevision, 'links-initial');
+  assert.equal(transitionBody.buildingId, saved.objects.at(-1).id);
+  const linkItem = control('transition-list').options[0];
+  assert.equal(linkItem.children[0].textContent, 'Удалить вход и возврат');
+  assert.equal(linkItem.children[1].textContent, 'Открыть интерьер');
+  transitionRevision = 'links-refreshed';
+  control('transitions').ontoggle();
+  await new Promise(setImmediate);
+  await linkItem.children[0].onclick();
+  assert.equal(transitionLinks.length, 1, 'an old rendered delete action must use its own revision and be rejected');
+  await control('transition-list').options[0].children[0].onclick();
+  assert.deepEqual(transitionLinks, []);
 
 });

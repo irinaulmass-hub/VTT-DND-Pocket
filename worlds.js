@@ -98,6 +98,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     res.setHeader('Cache-Control', 'no-store');
     try { handler(req, res); }
     catch (error) {
+      if ([400, 404, 409].includes(error.status)) return res.status(error.status).json({ error: error.message });
       console.error('World map:', error.message);
       res.status(500).json({ error: 'Не удалось прочитать или сохранить карту мира' });
     }
@@ -169,7 +170,20 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   }));
   app.get('/api/worlds/:id/transitions', requireDm, route((req, res) => {
     if (!store.readDraft(req.params.id, [])) return res.status(404).json({ error: 'Карта не найдена' });
-    res.json({ links: movement.listTransitions(req.params.id) });
+    res.json({ links: movement.listTransitions(req.params.id), revision: movement.linksRevision() });
+  }));
+  app.post('/api/worlds/:id/building-links', requireDm, json, route((req, res) => {
+    const body = req.body || {};
+    const fields = ['buildingId', 'sourceRevision', 'targetRevision', 'linksRevision', 'x', 'y', 'toMapId', 'toX', 'toY'];
+    if (Object.keys(body).length !== fields.length || fields.some(field => !Object.hasOwn(body, field)) ||
+        typeof body.buildingId !== 'string' || !body.buildingId.length || body.buildingId.length > 64 ||
+        typeof body.toMapId !== 'string' || typeof body.linksRevision !== 'string' || !/^[a-f0-9]{64}$/.test(body.linksRevision) ||
+        ![body.sourceRevision, body.targetRevision].every(value => Number.isSafeInteger(value) && value >= 0) ||
+        ![body.x, body.y, body.toX, body.toY].every(map.valid)) return res.status(400).json({ error: 'Проверь постройку, клетки и версии карт и переходов.' });
+    const source = store.readDraft(req.params.id, []), target = store.readDraft(body.toMapId, []);
+    if (!source || !target) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
+    const links = movement.saveBuildingLink(source, target, body);
+    res.status(201).json({ links, revision: movement.linksRevision() });
   }));
   app.post('/api/worlds/:id/transitions', requireDm, json, route((req, res) => {
     const { x, y, toMapId, toX, toY } = req.body || {};
@@ -191,8 +205,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   }));
   app.delete('/api/worlds/:id/transitions/:linkId', requireDm, route((req, res) => {
     if (!store.readDraft(req.params.id, [])) return res.status(404).json({ error: 'Карта не найдена' });
-    movement.removeTransition(req.params.id, req.params.linkId);
-    res.json({ links: movement.listTransitions(req.params.id) });
+    movement.removeTransition(req.params.id, req.params.linkId, req.query.linksRevision);
+    res.json({ links: movement.listTransitions(req.params.id), revision: movement.linksRevision() });
   }));
   app.get('/api/worlds/:id/chunks', requireDm, route((req, res) => {
     const keys = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];

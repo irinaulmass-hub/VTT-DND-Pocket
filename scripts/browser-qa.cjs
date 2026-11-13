@@ -32,6 +32,24 @@ if (!fs.existsSync(legacyFile) && !fs.existsSync(legacyFile.replace('.json', '-c
   fs.writeFileSync(legacyFile, JSON.stringify({ id: legacyId, name: 'Старый рецепт · F1–F3', revision: 0,
     chunks: generatePath(recipe).chunks, objects: [], generators: [recipe] }));
 }
+// Ready-to-edit building and interior fixtures, created only in this disposable DATA_DIR.
+const qaStore = require('../world-store')(name => path.join(dataDir, name));
+const exteriorId = '20000000-0000-0000-0000-000000000001';
+if (!qaStore.readDraft(exteriorId, [])) {
+  const { sample } = require('../remote/world-model');
+  const { generationChange } = require('../remote/world-generators');
+  qaStore.writeDraft({ id: exteriorId, name: 'Привязка · Снаружи', revision: 0, ...sample() });
+  const insideId = '20000000-0000-0000-0000-000000000002';
+  for (const [id, name, floor, parent] of [
+    [insideId, 'Привязка · Интерьер', 'wood', {}],
+    ['20000000-0000-0000-0000-000000000003', 'Привязка · Подвал', 'stone', { parentSceneId: insideId, elevation: -1 }],
+  ]) {
+    const map = { id, name, revision: 0, parentWorldId: exteriorId, ...parent, chunks: {}, objects: [] };
+    const change = generationChange({ id: 'qa-room-' + id, kind: 'room', version: 1, seed: 7,
+      params: { floor, points: [{ x:0,y:0 }, { x:6,y:0 }, { x:6,y:6 }, { x:0,y:6 }], entrance: { x:3,y:0 } } }, map);
+    qaStore.writeDraft({ ...map, chunks: change.chunks, objects: change.objects.after, generators: change.generators.after });
+  }
+}
 const password = randomBytes(32).toString('hex');
 const upstream = spawn(process.execPath, ['server.js'], {
   cwd: root, env: { ...process.env, PORT: String(upstreamPort), DATA_DIR: dataDir, DM_PASSWORD: password },

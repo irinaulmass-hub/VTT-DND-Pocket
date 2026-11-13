@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const { createHash } = require('node:crypto');
 const map = require('./remote/world-model');
 
 const barriers = new Set(['wall', 'palisade', 'fence']);
@@ -110,6 +111,65 @@ module.exports = function createWorldMovement(store, gameFile) {
     fs.renameSync(file + '.tmp', file);
   }
 
+  const linkId = position => JSON.stringify([locationMapId(position), position.x, position.y]);
+  const revisionOf = links => createHash('sha256').update(JSON.stringify(links)).digest('hex');
+  const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
+  const samePoint = (a, b) => a && b && ['worldId', 'sceneId', 'floorId', 'x', 'y'].every(key => a[key] === b[key]);
+  const buildingMatches = (layout, building) => !!building && layout?.id === building.mapId &&
+    layout.objects.some(prop => prop.id === building.objectId && map.buildingKinds.has(prop.kind) &&
+      ['kind', 'x', 'y', 'turn'].every(key => prop[key] === building[key]) && !prop.hidden);
+  const publishedAt = position => {
+    const layout = store.readPublished(locationMapId(position), new Set([map.address(position.x, position.y)[0]]))?.map;
+    return layout && samePoint({ ...sceneScope(layout), x: position.x, y: position.y }, position) ? layout : null;
+  };
+
+  function findTransition(position, openDoors = new Set()) {
+    const links = readLinks();
+    const link = links.find(({ from }) => samePoint(from, position));
+    if (!link) return null;
+    if (link.pairId) {
+      const pair = links.filter(item => item.pairId === link.pairId);
+      const source = publishedAt(link.from), target = publishedAt(link.to);
+      const building = link.building;
+      if (pair.length !== 2 || !pair.every(item => JSON.stringify(item.building) === JSON.stringify(building)) ||
+          !pair.some(item => samePoint(item.from, link.to) && samePoint(item.to, link.from)) || !source || !target ||
+          !buildingMatches(source.id === building?.mapId ? source : target, building) ||
+          !passable(source, position.x, position.y, openDoors)) return null;
+      const interior = source.id === building.mapId ? { layout: target, point: link.to } : { layout: source, point: link.from };
+      if (map.get(interior.layout.chunks, interior.point.x, interior.point.y) === undefined) return null;
+    }
+    return link.to;
+  }
+
+  function saveBuildingLink(source, target, body) {
+    const { buildingId, sourceRevision, targetRevision, linksRevision, x, y, toX, toY } = body;
+    if (source.revision !== sourceRevision || target.revision !== targetRevision) fail(409, 'Карта изменилась. Открой актуальные черновики и повтори привязку.');
+    const from = { ...sceneScope(source), x, y }, to = { ...sceneScope(target), x: toX, y: toY };
+    if (source.id === target.id || from.worldId !== to.worldId || !target.parentWorldId) {
+      fail(400, 'Выбери внутреннюю сцену или этаж того же мира.');
+    }
+    const prop = source.objects.find(item => item.id === buildingId && map.buildingKinds.has(item.kind));
+    if (!prop) fail(404, 'Постройка не найдена на исходной карте.');
+    if (prop.hidden) fail(409, 'Скрытую постройку сначала нужно сделать доступной игрокам.');
+    const bounds = cellBounds(prop);
+    const adjacent = ((x === bounds.left - 1 || x === bounds.right + 1) && y >= bounds.top && y <= bounds.bottom) ||
+      ((y === bounds.top - 1 || y === bounds.bottom + 1) && x >= bounds.left && x <= bounds.right);
+    if (!adjacent) fail(400, 'Вход должен находиться рядом с краем постройки, а не внутри неё или по диагонали.');
+    if (!canStep(from, false) || !canStep(to, false)) fail(409, 'Обе клетки перехода должны быть проходимыми.');
+    if (map.get(store.readDraft(target.id, new Set([map.address(toX, toY)[0]])).chunks, toX, toY) === undefined) {
+      fail(409, 'Сначала подготовь пол в клетке внутренней сцены.');
+    }
+    const links = readLinks();
+    if (revisionOf(links) !== linksRevision) fail(409, 'Переходы изменились. Обнови список и повтори привязку.');
+    const pairId = JSON.stringify(['building', source.id, buildingId]);
+    const remaining = links.filter(item => item.pairId !== pairId);
+    if (remaining.some(item => [linkId(from), linkId(to)].includes(item.id))) fail(409, 'Одна из клеток уже занята другим переходом.');
+    const building = { mapId: source.id, objectId: prop.id, kind: prop.kind, x: prop.x, y: prop.y, turn: prop.turn };
+    const pair = [{ id: linkId(from), from, to, pairId, building }, { id: linkId(to), from: to, to: from, pairId, building }];
+    writeLinks([...remaining, ...pair]);
+    return pair;
+  }
+
   return {
     visibleCells,
     doorVisibility(position, objects, door, previous, next) {
@@ -124,23 +184,25 @@ module.exports = function createWorldMovement(store, gameFile) {
       const layout = layoutAt(position, [key]);
       return layout && passable(layout, position.x, position.y, openDoors) ? visibleCells(position, layout.objects, openDoors) : null;
     },
-    findTransition(position) {
-      return readLinks().find(({ from }) => from.worldId === position.worldId &&
-        from.sceneId === position.sceneId && from.floorId === position.floorId &&
-        from.x === position.x && from.y === position.y)?.to || null;
-    },
+    findTransition,
+    saveBuildingLink,
+    linksRevision: () => revisionOf(readLinks()),
     listTransitions(id) {
       return readLinks().filter(link => locationMapId(link.from) === id);
     },
     saveTransition(from, to) {
       const links = readLinks();
-      const id = JSON.stringify([locationMapId(from), from.x, from.y]);
+      const id = linkId(from);
+      if (links.some(item => item.id === id && item.pairId)) fail(409, 'Здесь уже есть вход в здание. Измени или удали всю пару.');
       const link = { id, from, to };
       writeLinks([...links.filter(item => item.id !== id), link]);
       return link;
     },
-    removeTransition(sceneMapId, id) {
-      writeLinks(readLinks().filter(link => link.id !== id || locationMapId(link.from) !== sceneMapId));
+    removeTransition(sceneMapId, id, revision) {
+      const links = readLinks();
+      const link = links.find(item => item.id === id && locationMapId(item.from) === sceneMapId);
+      if (link?.pairId && revisionOf(links) !== revision) fail(409, 'Переходы изменились. Обнови список и повтори удаление.');
+      writeLinks(links.filter(item => link?.pairId ? item.pairId !== link.pairId : item !== link));
     },
   };
 };

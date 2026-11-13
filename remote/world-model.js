@@ -28,6 +28,7 @@
     goblinArcher: ['Гоблин-лучник', 1, 1], goblinShield: ['Гоблин со щитом', 1, 1],
     goblinAxes: ['Гоблин с топорами', 1, 1],
   };
+  const buildingKinds = new Set(['house', 'tavern', 'barn']);
   const linkedSections = new Set(['wall','palisade','fence']);
   const propGroups = {
     'Существа': ['goblinArcher','goblinShield','goblinAxes'],
@@ -133,7 +134,7 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, propGroups, footprint, cellBounds };
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, propGroups, footprint, cellBounds };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

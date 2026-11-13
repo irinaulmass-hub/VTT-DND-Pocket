@@ -856,6 +856,49 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(roomSaveResponse.status,200);
   const roomSaved=await roomSaveResponse.json();
   const roomDoor=roomSaved.objects.find(prop=>prop.kind==='door');
+  const buildingOutside=await (await worldWrite('','POST',{name:'Дом с интерьером'})).json();
+  buildingOutside.objects=[{id:'home-main',kind:'house',x:0,y:0,turn:0},{id:'home-floor',kind:'house',x:10,y:0,turn:0}];
+  for (let x=-1;x<=11;x++) tiles.set(buildingOutside.chunks,x,2,'grass');
+  const buildingOutsideSaved=await (await worldWrite('/'+buildingOutside.id,'PUT',buildingOutside)).json();
+  const buildingInside=await (await worldWrite('','POST',{name:'Внутри дома',parentWorldId:buildingOutside.id})).json();
+  const buildingFloor=await (await worldWrite('','POST',{name:'Подвал дома',sceneMapId:buildingInside.id,elevation:-1})).json();
+  async function prepareInterior(layout,floor) {
+    const change=generators.generationChange({...roomRecipe,id:'room-'+layout.id,params:{...roomRecipe.params,floor}},layout);
+    return (await worldWrite('/'+layout.id,'PUT',{...layout,chunks:change.chunks,objects:change.objects.after,generators:change.generators.after})).json();
+  }
+  const buildingInsideSaved=await prepareInterior(buildingInside,'wood');
+  const buildingFloorSaved=await prepareInterior(buildingFloor,'stone');
+  const bindingEndpoint='/'+buildingOutside.id+'/building-links';
+  const bindingPath=worldBase+bindingEndpoint+worldGame;
+  const bindingListUrl=worldBase+'/'+buildingOutside.id+'/transitions'+worldGame;
+  const readBindingList=headers=>fetch(bindingListUrl,{headers}).then(r=>r.json());
+  const bindingInput={buildingId:'home-main',sourceRevision:buildingOutsideSaved.revision,targetRevision:buildingInsideSaved.revision,
+    linksRevision:(await readBindingList(noteHeaders)).revision,x:0,y:2,toMapId:buildingInside.id,toX:3,toY:1};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(bindingPath+query,{method:'POST',redirect:'manual',headers,body:JSON.stringify(bindingInput)})).status,302);
+  }
+  for (const patch of [{sourceRevision:0},{targetRevision:0},{x:0,y:0},{x:2,y:2},{toMapId:secondWorld.id}]) {
+    const response=await worldWrite(bindingEndpoint,'POST',{...bindingInput,...patch});
+    assert.ok([400,409].includes(response.status));
+  }
+  assert.equal((await worldWrite(bindingEndpoint,'POST',{...bindingInput,extra:true})).status,400);
+  assert.equal((await worldWrite(bindingEndpoint,'POST',{...bindingInput,buildingId:'missing'})).status,404);
+  assert.equal((await fetch(worldBase+bindingEndpoint+'?game='+packedCampaign.id,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify(bindingInput),
+  })).status,404);
+  const bindingResponse=await worldWrite(bindingEndpoint,'POST',bindingInput);
+  assert.equal(bindingResponse.status,201);
+  const bindingPair=await bindingResponse.json();
+  assert.equal(bindingPair.links.length,2);
+  assert.deepEqual(bindingPair.links[1].to,bindingPair.links[0].from);
+  assert.equal((await worldWrite(bindingEndpoint,'POST',bindingInput)).status,409,'stale link writers cannot replace a pair');
+  assert.equal((await worldWrite('/'+buildingOutside.id+'/transitions','POST',{
+    x:0,y:2,toMapId:buildingInside.id,toX:3,toY:1,
+  })).status,409,'a generic transition cannot overwrite one half of a pair');
+  const floorBindingInput={...bindingInput,buildingId:'home-floor',x:10,toMapId:buildingFloor.id,
+    targetRevision:buildingFloorSaved.revision,linksRevision:bindingPair.revision};
+  assert.equal((await worldWrite(bindingEndpoint,'POST',floorBindingInput)).status,201);
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');
@@ -883,6 +926,9 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
+  const bindingsAfterRestart=await readBindingList({Cookie:newCookie});
+  assert.equal(bindingsAfterRestart.links.length,2);
+  assert.deepEqual(bindingsAfterRestart.links[0],bindingPair.links[0],'binding metadata survives server restart');
   assert.deepEqual(await (await readTemplates(templateUrl,{Cookie:newCookie})).json(),savedTemplates,'template settings survive restart');
   assert.deepEqual(await readOwnPosition(otherToken.token),afterDoor);
   assert.deepEqual(await readPosition(secondHero.id,newCookie),afterStairs);
@@ -1074,6 +1120,51 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(tiles.get(roomOpenView.chunks,3,-1),'grass','opening a generated door reveals the exterior');
   assert.equal(roomOpenView.objects.find(prop=>prop.id===roomDoor.id).open,true);
   assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,200);
+  async function publishBindingMap(layout) {
+    assert.equal((await resumedWorldWrite('/'+layout.id+'/publish',{revision:layout.revision,fog:true})).status,200);
+  }
+  await publishBindingMap(buildingOutsideSaved);
+  const exteriorPosition={worldId:buildingOutside.id,sceneId:'overworld',floorId:'ground',x:-1,y:2};
+  const exteriorPlaced=await (await setPosition(otherChar.id,exteriorPosition,resumedHeaders)).json();
+  const atEntrance=await (await movePosition({direction:'east',revision:exteriorPlaced.position.revision})).json();
+  assert.equal((await movePosition({direction:'enter',revision:atEntrance.position.revision})).status,409,'unpublished interior is not accessible');
+  await publishBindingMap(buildingInsideSaved);
+  await publishBindingMap(buildingFloorSaved);
+  await publishBindingMap(buildingOutsideSaved);
+  const enteredBuilding=await movePosition({direction:'enter',revision:atEntrance.position.revision});
+  assert.equal(enteredBuilding.status,200);
+  const inBuilding=await enteredBuilding.json();
+  assert.deepEqual(inBuilding.position,{...bindingPair.links[0].to,characterId:otherChar.id,revision:atEntrance.position.revision+1});
+  const outsideAfterEntry=await tableWorld();
+  assert.equal(outsideAfterEntry.id,buildingOutside.id);
+  assert.notEqual(tiles.get(outsideAfterEntry.chunks,3,1),'wood','interior exploration does not replace the external map');
+  await publishBindingMap(buildingInsideSaved);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'wood');
+  await publishBindingMap(buildingFloorSaved);
+  assert.equal(Object.values((await tableWorld()).chunks).flatMap(chunk=>Object.keys(chunk)).length,0,
+    'the ground-floor exploration does not reveal the basement');
+  const returnedBuilding=await movePosition({direction:'enter',revision:inBuilding.position.revision});
+  assert.equal(returnedBuilding.status,200);
+  const returnedOutside=await returnedBuilding.json();
+  assert.deepEqual({...returnedOutside.position,revision:0},{...bindingPair.links[0].from,characterId:otherChar.id,revision:0});
+  const atFloorEntrance=await (await setPosition(otherChar.id,{...exteriorPosition,x:10},resumedHeaders)).json();
+  const enteredFloor=await movePosition({direction:'enter',revision:atFloorEntrance.position.revision});
+  assert.equal(enteredFloor.status,200);
+  const onFloor=await enteredFloor.json();
+  assert.equal(onFloor.position.floorId,buildingFloor.id);
+  assert.equal(onFloor.position.sceneId,buildingInside.id);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'stone');
+  await publishBindingMap(buildingInsideSaved);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'wood','the basement does not overwrite ground-floor memory');
+  const floorReturn=await movePosition({direction:'enter',revision:onFloor.position.revision});
+  assert.equal(floorReturn.status,200);
+  assert.equal((await floorReturn.json()).position.x,10);
+  const floorLinks=await fetch(worldBase+'/'+buildingFloor.id+'/transitions'+worldGame,{headers:resumedHeaders}).then(r=>r.json());
+  assert.equal(floorLinks.links.length,1);
+  const pairDeleteUrl=worldBase+'/'+buildingFloor.id+'/transitions/'+encodeURIComponent(floorLinks.links[0].id)+worldGame;
+  assert.equal((await fetch(pairDeleteUrl,{method:'DELETE',headers:resumedHeaders})).status,409);
+  assert.equal((await fetch(pairDeleteUrl+'&linksRevision='+floorLinks.revision,{method:'DELETE',headers:resumedHeaders})).status,200);
+  assert.equal((await readBindingList(resumedHeaders)).links.length,1,'deleting the return removes its entire pair');
   const revokedDiscovery=message(positionAfterRestart,msg=>msg.type==='ACCESS_REVOKED');
   const replacementInvite=await fetch(base+'/api/player-access'+worldGame,{
     method:'POST',headers:resumedHeaders,body:JSON.stringify({characterId:otherChar.id}),

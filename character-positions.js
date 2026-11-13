@@ -212,7 +212,7 @@ module.exports = function registerCharacterPositions(app, {
 
     let destination;
     if (direction === 'enter') {
-      destination = findTransition(current);
+      destination = findTransition(current, openDoorsAt(state, locationMapId(current)));
       if (!destination) return res.status(409).json({ error: 'Здесь нет перехода' });
     } else {
       const [dx, dy] = steps[direction];
