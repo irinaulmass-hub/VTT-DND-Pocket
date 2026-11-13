@@ -724,14 +724,54 @@
     status('Нажми на клетку входа на прямой стороне контура.'); paint();
   };
   e('path-preview').onclick = previewGenerator;
+  const sameDistrictValue = (a, b) => a === b || (!!a && !!b && typeof a === 'object' && typeof b === 'object' &&
+    Array.isArray(a) === Array.isArray(b) && Object.keys(a).length === Object.keys(b).length &&
+    Object.keys(a).every(key => Object.hasOwn(b, key) && sameDistrictValue(a[key], b[key])));
+  const sameDistrictSnapshot = (a, b) => sameDistrictValue(a.chunks, b.chunks) &&
+    sameDistrictValue(a.generators || [], b.generators || []) && a.objects.length === b.objects.length &&
+    a.objects.every((item, index) => ['id','kind','x','y','turn'].every(key => item[key] === b.objects[index][key]) &&
+      (item.hidden === true) === (b.objects[index].hidden === true));
+  async function districtWrite(source, target, url, options, decode) {
+    try {
+      const response = await request(url, options);
+      const next = decode(response);
+      if (draft !== source || next.id !== source.id || next.revision !== source.revision + 1 ||
+          !sameDistrictSnapshot(next, target)) throw new Error('Ответ сохранения не совпадает с картой.');
+      return next;
+    } catch (error) {
+      // A response can be lost after the server committed. Never retry a write blindly.
+      let current;
+      try { current = await request('/api/worlds/' + source.id); }
+      catch { throw new Error('Не удалось подтвердить сохранение. Открой карту заново перед продолжением.'); }
+      if (draft === source && current.id === source.id && current.revision === source.revision + 1 &&
+          sameDistrictSnapshot(current, target)) return current;
+      if (current.id !== source.id || current.revision !== source.revision ||
+          !sameDistrictSnapshot(current, source)) {
+        throw new Error('Карта изменилась. Открой актуальную карту перед продолжением.');
+      }
+      throw error;
+    }
+  }
   e('path-apply').onclick = () => {
     if (!draft || busy || !generatorPreview) return;
     if (generatorPreview.districtGuard) {
       const preview = generatorPreview;
       return run(async () => {
         try {
-          const next = await request('/api/worlds/' + draft.id, json('PUT', { ...draft, chunks: preview.chunks,
-            objects: preview.objects?.after || draft.objects, generators: preview.generators.after, districtGuard: preview.districtGuard }));
+          const source = draft;
+          const target = { ...source, chunks: preview.chunks, objects: preview.objects?.after || source.objects,
+            generators: preview.generators.after };
+          const next = await districtWrite(source, target, '/api/worlds/' + source.id + '/district-apply',
+            json('POST', { districtGuard: preview.districtGuard }), response => {
+              if (response.id !== source.id || response.baseRevision !== source.revision ||
+                  response.revision !== source.revision + 1 || response.change?.format !== 'delta-v1' ||
+                  response.history?.before !== preview.districtHistory.before || response.history?.after !== preview.districtHistory.after) {
+                throw new Error('Некорректный ответ применения района.');
+              }
+              const change = window.WorldGenerators.expandGenerationChange(response.change, source);
+              return { ...source, revision: response.revision, chunks: change.chunks,
+                objects: change.objects?.after || source.objects, generators: change.generators.after };
+            });
           undo.push({ tiles: preview.tiles, objects: preview.objects, generators: preview.generators,
             districtId: preview.id, districtHistory: preview.districtHistory, linksRevision: preview.districtGuard.linksRevision });
           if (undo.length > 50) undo.shift();
@@ -767,7 +807,7 @@
       target.generators = backwards ? change.generators.before : change.generators.after;
       target.districtGuard = { revision: draft.revision, linksRevision: change.linksRevision,
         historyProof: change.districtHistory[backwards ? 'before' : 'after'] };
-      const next = await request('/api/worlds/' + draft.id, json('PUT', target));
+      const next = await districtWrite(draft, target, '/api/worlds/' + draft.id, json('PUT', target), response => response);
       from.pop(); to.push(change); draft = next; dirty = false; generatorPreview = null;
       if (tool === 'generate-district') {
         const recipe = (draft.generators || []).find(item => item.id === change.districtId);

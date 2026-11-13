@@ -17,10 +17,10 @@ const profiles = {
 };
 
 function argumentsFor(args) {
-  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1' };
+  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1', 'save-mode':'full' };
   for (let i=0;i<args.length;i+=2) {
     const name=args[i], value=args[i+1];
-    if (!['--samples','--profile','--output','--ref','--worker','--preview-format'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
+    if (!['--samples','--profile','--output','--ref','--worker','--preview-format','--save-mode'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
     options[name.slice(2)] = value;
   }
   options.samples=Number(options.samples);
@@ -28,6 +28,7 @@ function argumentsFor(args) {
   if (options.profile!=='all' && !profiles[options.profile] || options.worker && !profiles[options.worker]) throw Error('Unknown benchmark profile');
   if (options.ref && !/^[a-f0-9]{40}$/.test(options.ref)) throw Error('--ref must be the application commit SHA');
   if (!['full','delta-v1'].includes(options['preview-format'])) throw Error('Unknown preview format');
+  if (!['full','district-apply'].includes(options['save-mode'])) throw Error('Unknown save mode');
   return options;
 }
 
@@ -80,7 +81,7 @@ function aggregate(rows) {
   }));
 }
 
-async function runProfile(name,samples,previewFormat) {
+async function runProfile(name,samples,previewFormat,saveMode) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vtt-world-benchmark-'));
   let child;
   try {
@@ -121,7 +122,7 @@ async function runProfile(name,samples,previewFormat) {
       const serializeStart=performance.now(), payload=body===undefined?undefined:JSON.stringify(body);
       const serializeMs=performance.now()-serializeStart, probeId='request-'+(++sequence);
       const start=performance.now();
-      const response=await fetch(base+endpoint,{method:body===undefined?'GET':endpoint.endsWith('/district-preview')||endpoint.endsWith('/publish')?'POST':'PUT',
+      const response=await fetch(base+endpoint,{method:body===undefined?'GET':/\/(district-preview|district-apply|publish)$/.test(endpoint)?'POST':'PUT',
         headers:{Cookie:cookie,'Content-Type':'application/json','x-vtt-benchmark-id':probeId},body:payload,signal:AbortSignal.timeout(30000)});
       const text=await response.text();
       let value;try{value=JSON.parse(text);}catch{value={error:text.slice(0,200)};}
@@ -144,9 +145,18 @@ async function runProfile(name,samples,previewFormat) {
       if(sample>=0)rows.at(-1).expandMs=performance.now()-expandStart;
       const next={...saved,chunks:preview.change.chunks,objects:preview.change.objects?.after||saved.objects,
         generators:preview.change.generators.after,districtGuard:preview.guard};
-      const result=await call('/api/worlds/'+id,next,label('full_save'));maxSaveBytes=Math.max(maxSaveBytes,result.requestBytes);
+      const compact=saveMode==='district-apply';
+      const result=await call('/api/worlds/'+id+(compact?'/district-apply':''),compact?{districtGuard:preview.guard}:next,
+        label(compact?'district_apply':'full_save'));maxSaveBytes=Math.max(maxSaveBytes,result.requestBytes);
       if(result.status===413)return {name,dimensions,status:'blocked_request_body_limit',maxSaveBytes,rows,summary:aggregate(rows)};
-      saved=result.value;
+      if(compact){
+        assert.equal(result.value.id,id);assert.equal(result.value.baseRevision,saved.revision);
+        assert.equal(result.value.revision,saved.revision+1);assert.deepEqual(result.value.history,preview.history);
+        const start=performance.now(), change=generators.expandGenerationChange(result.value.change,saved);
+        if(sample>=0)rows.at(-1).expandMs=performance.now()-start;
+        saved={...saved,revision:result.value.revision,chunks:change.chunks,
+          objects:change.objects?.after||saved.objects,generators:change.generators.after};
+      }else saved=result.value;
       assert.equal(saved.objects.length,dimensions.objects);
       assert.deepEqual(saved.objects.find(prop=>prop.id===built.house.id),built.house,'bound house geometry stays intact');
       const viewport=(await call('/api/worlds/table?chunks=0,0;1,0;0,1;1,1',undefined,label('viewport_read'))).value;
@@ -165,24 +175,24 @@ async function runProfile(name,samples,previewFormat) {
 
 async function main() {
   const options=argumentsFor(process.argv.slice(2));
-  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'])));return;}
+  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'],options['save-mode'])));return;}
   const results=[];
   for(const name of options.profile==='all'?Object.keys(profiles):[options.profile]) {
     console.error('Measuring '+name+' ('+options.samples+' samples after one warm-up)');
     const child=spawnSync(process.execPath,['--expose-gc',__filename,'--worker',name,'--samples',String(options.samples),
-      '--preview-format',options['preview-format']],{
+      '--preview-format',options['preview-format'],'--save-mode',options['save-mode']],{
       cwd:root,encoding:'utf8',maxBuffer:10*1024*1024,timeout:180000});
     if(child.status!==0)throw Error(child.stderr||child.error?.message||'Benchmark worker failed');
     results.push(JSON.parse(child.stdout));
   }
   const report={schemaVersion:1,applicationRef:options.ref,createdAt:new Date().toISOString(),samples:options.samples,
-    sourceSha256:Object.fromEntries(['world-districts.js','remote/world-generators.js','dm/world.js',
+    sourceSha256:Object.fromEntries(['worlds.js','world-districts.js','remote/world-generators.js','dm/world.js',
       'scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs'].map(file=>
       [file,createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')])),
     environment:{node:process.version,platform:process.platform,arch:process.arch,osRelease:os.release(),
       cpu:os.cpus()[0]?.model,availableParallelism:os.availableParallelism(),osReportedMemoryBytes:os.totalmem()},
     method:{transport:'loopback HTTP; response download and JSON parse included',requests:'sequential',
-      previewFormat:options['preview-format'],expansion:'client delta reconstruction measured separately in preview rows as expandMs',
+      previewFormat:options['preview-format'],saveMode:options['save-mode'],expansion:'client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured',
       cache:'warm filesystem/OS cache; one unrecorded warm-up; no forced server GC',
       memory:'server heap after each request; RSS and lifetime process peak; fixture built outside the server',
       viewport:'four published chunks; object metadata is not spatially filtered by the current store',

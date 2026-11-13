@@ -22,6 +22,7 @@ function editorFixture() {
   const control=name=>editor.querySelector('[data-world-'+name+']');
   let saved={id:'district-map',name:'District UI',revision:1,chunks:{},objects:[],generators:[]};
   let rendered, canvas, nextId=0, linksRevision='a'.repeat(64), failWrite=false, holdPreview=false, releasePreview;
+  let loseWrite, failRead=false, corruptReply=false, foreignWrite=false;
   const requests=[];
   const server=require('../world-districts')({districtContext:()=>({pinnedIds:[],reservedCells:[],hasBindings:false,linksRevision})});
   const globals={WorldMap:world,location:{hash:''},
@@ -43,6 +44,14 @@ function editorFixture() {
         if(holdPreview)return new Promise(resolve=>{releasePreview=()=>resolve(result);});
         return result;
       }
+      if(url.endsWith('/district-apply')){
+        assert.equal(options.method,'POST');assert.deepEqual(Object.keys(body),['districtGuard']);
+        if(failWrite)throw new Error('Переходы изменились. Повтори предпросмотр района.');
+        const prepared=server.prepareApply(saved,body);saved=prepared.next;
+        if(foreignWrite){saved=copy(saved);world.set(saved.chunks,100,100,'water');saved.revision++;}
+        if(loseWrite==='apply'){loseWrite=undefined;throw new TypeError('lost apply response');}
+        return copy(corruptReply?{...prepared.response,id:'wrong-map'}:prepared.response);
+      }
       assert.equal(url,'/api/worlds/district-map');
       if(options?.method==='PUT'){
         if(failWrite)throw new Error('Переходы изменились. Повтори предпросмотр района.');
@@ -50,7 +59,9 @@ function editorFixture() {
         const next={...saved,chunks:body.chunks,objects:body.objects.map(prop=>({...prop,hidden:prop.hidden===true})),
           generators:body.generators,revision:saved.revision+1};
         server.verifySave(saved,next,body.districtGuard);saved=next;
+        if(loseWrite==='history' && body.districtGuard?.historyProof){loseWrite=undefined;throw new TypeError('lost history response');}
       }
+      else if(failRead)throw new TypeError('offline');
       return copy(saved);
     }}};
   globals.window=globals;
@@ -60,7 +71,8 @@ function editorFixture() {
     async open(){control('select').value='district-map';control('select').onchange();await new Promise(setImmediate);},
     begin(){tools[3].onclick();control('district-count').value='8';control('path-seed').value='47';canvas.click(-16,-12);canvas.click(16,12);},
     hold(){holdPreview=true;},release(){holdPreview=false;releasePreview();},
-    changeLinks(){linksRevision='b'.repeat(64);},failWrite(value){failWrite=value;}};
+    changeLinks(){linksRevision='b'.repeat(64);},failWrite(value){failWrite=value;},
+    loseNext(kind){loseWrite=kind;},failRead(value){failRead=value;},corruptReply(){corruptReply=true;},foreignWrite(){foreignWrite=true;}};
 }
 
 test('District editor saves manual work before preview, applies with guard and persists exact Undo/Redo', async () => {
@@ -77,6 +89,7 @@ test('District editor saves manual work before preview, applies with guard and p
   assert.ok(f.requests.findIndex(r=>r.body?.districtGuard===undefined&&r.body?.chunks)<f.requests.findIndex(r=>r.url.endsWith('/district-preview')));
   await c('path-apply').onclick();
   const first=copy(f.saved);
+  assert.equal(f.requests.filter(r=>r.url.endsWith('/district-apply')).length,1);
   assert.equal(first.objects.length,8);
   assert.equal(c('path-saved').value,first.generators[0].id);
   assert.equal(c('path-apply').disabled,true);
@@ -96,6 +109,40 @@ test('District editor saves manual work before preview, applies with guard and p
   await f.open();c('path-saved').value=f.saved.generators[0].id;c('path-saved').onchange();
   assert.equal(c('district-count').value,'4');assert.equal(c('path-seed').value,'0');
   assert.equal(c('path-preview').disabled,false);
+});
+
+test('lost apply and history responses are reconciled by a read, with no duplicate writes or history entries', async () => {
+  const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();
+  f.loseNext('apply');await c('path-apply').onclick();
+  assert.equal(f.saved.objects.length,8);assert.deepEqual(f.rendered,f.saved);
+  assert.equal(f.requests.filter(r=>r.url.endsWith('/district-apply')).length,1);
+  f.loseNext('history');await c('undo').onclick();
+  assert.equal(f.saved.objects.length,0);assert.equal(c('undo').disabled,true);assert.equal(c('redo').disabled,false);
+  f.loseNext('history');await c('redo').onclick();assert.equal(f.saved.objects.length,8);
+  await c('undo').onclick();assert.equal(f.saved.objects.length,0);assert.equal(c('undo').disabled,true);
+});
+
+test('unconfirmed or competing commits never enter the local history or replace the open draft', async () => {
+  for(const offline of [true,false]) {
+    const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();
+    f.loseNext('apply');if(offline)f.failRead(true);else f.foreignWrite();
+    await c('path-apply').onclick();
+    assert.equal(f.rendered.objects.length,0);assert.equal(c('undo').disabled,true);assert.equal(c('redo').disabled,true);
+    assert.equal(c('path-apply').disabled,true);
+    assert.match(c('status').textContent,offline?/подтвердить сохранение/:/Карта изменилась/);
+    f.failRead(false);await f.open();assert.deepEqual(f.rendered,f.saved,'explicit reopen loads the authoritative version');
+  }
+  const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();await c('path-apply').onclick();
+  f.loseNext('history');f.failRead(true);await c('undo').onclick();
+  assert.equal(f.saved.objects.length,0);assert.equal(f.rendered.objects.length,8);
+  assert.equal(c('undo').disabled,false);assert.equal(c('redo').disabled,true,'unconfirmed undo does not move the stack');
+  f.failRead(false);await f.open();assert.deepEqual(f.rendered,f.saved);
+});
+
+test('an invalid compact reply is rejected and reconciled from the actual stored map', async () => {
+  const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();f.corruptReply();
+  await c('path-apply').onclick();assert.equal(f.saved.objects.length,8);assert.deepEqual(f.rendered,f.saved);
+  await c('undo').onclick();assert.equal(f.saved.objects.length,0);
 });
 
 test('District conflicts leave draft and history intact and a pending request locks map/tool changes', async () => {
