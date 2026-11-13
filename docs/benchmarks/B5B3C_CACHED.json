@@ -1,0 +1,2585 @@
+{
+  "schemaVersion": 1,
+  "applicationRef": null,
+  "createdAt": "2026-11-13T17:53:42.855Z",
+  "samples": 5,
+  "sourceSha256": {
+    "worlds.js": "48aae1933d755bc9aa671b400870cbfd4d6023277c9c05e3674e4b1a62ff0b91",
+    "world-districts.js": "cf0e6180bf9390b7088c1a5f9d7f267e03cd17a3c74ce17be76c92fff46f313c",
+    "remote/world-generators.js": "5d478dd3e2679c7dbc11eecae4c0ca07ef7d0e418c80cb2dc2d59798ff134337",
+    "dm/world.js": "c910386ac0edced94339fc76bfcc02e7a4fe58d6703b23b0f8d09d580c21e671",
+    "world-store.js": "c7d7bffd738009bf786d470f359d28570b4f22f6145e706675a205bffa4b7007",
+    "world-movement.js": "7bd6455b7853f24ebf4f17405a3fc5d1a8094ae4ab5ca5f4e76c73a673cafef7",
+    "scripts/world-benchmark.cjs": "64b2ca3589d44c8afdb9b46152604705fd1db3ba311a1acaaa6aa592f6792234",
+    "scripts/world-benchmark-probe.cjs": "c6edebc6112961e32c6861147d44c1705707e9f8acbbdd70c16fa699a58dd983",
+    "scripts/world-benchmark-stages.cjs": "adc1fc48f8bb0e174f92d008db1dfeb6ddeb4b87e92b985a20c02bf645f4a71f"
+  },
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "6.18.57",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "availableParallelism": 9,
+    "osReportedMemoryBytes": 10451427328
+  },
+  "method": {
+    "transport": "loopback HTTP; response download and JSON parse included",
+    "requests": "sequential",
+    "previewFormat": "delta-v1",
+    "saveMode": "district-apply",
+    "historyMode": "delta-v1",
+    "stages": "on",
+    "stageTiming": "optional benchmark-only synchronous wrappers; inclusive totalMs and exclusive selfMs; do not sum inclusive times",
+    "signatureInput": "createHmac-to-first-update interval in District proof: normalization, canonicalization and JSON serialization combined; crypto calls timed separately",
+    "stageRemainder": "server time outside exclusive stage spans, including route validation, response serialization and HTTP; District selfMs includes its remaining validation and delta work",
+    "verification": "sha256 of canonical revision/chunks/objects/generators; object-key order ignored, array order preserved",
+    "history": "optional undo/redo followed by unmeasured verification reads",
+    "expansion": "client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured",
+    "cache": "warm filesystem/OS cache; one unrecorded warm-up; no forced server GC",
+    "memory": "server heap after each request; RSS and lifetime process peak; fixture built outside the server",
+    "viewport": "four published chunks; object metadata is not spatially filtered by the current store",
+    "p95": "nearest-rank; with 5 samples p95 equals the maximum",
+    "exclusions": "browser rendering/FPS, Wi-Fi latency, physical devices and Windows are not measured"
+  },
+  "results": [
+    {
+      "name": "limit",
+      "dimensions": {
+        "plots": 125,
+        "objects": 3000,
+        "tiles": 150000,
+        "chunks": 599,
+        "draftJsonBytes": 6020857,
+        "generatorStateJsonBytes": 3749332
+      },
+      "status": "verified",
+      "verificationSha256": "252f9dfddad23fe63d3ced611f767dd1e5b5df01750bb7f230db9d71c7166870",
+      "maxSaveBytes": 284,
+      "rows": [
+        {
+          "type": "world-benchmark",
+          "id": "request-10",
+          "status": 200,
+          "serverMs": 84.29495899999984,
+          "cpuMs": 85.776,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072891,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 41.21649900000011,
+              "selfMs": 41.21649900000011
+            }
+          },
+          "unmeasuredMs": 43.07845999999972,
+          "heapBeforeBytes": 40628008,
+          "heapAfterBytes": 72673808,
+          "rssBytes": 289583104,
+          "processPeakRssBytes": 299683840,
+          "operation": "full_load",
+          "wallMs": 116.55153900000005,
+          "serializeMs": 0.0005600000004051253,
+          "requestBytes": 0,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-11",
+          "status": 200,
+          "serverMs": 271.88439100000005,
+          "cpuMs": 306.916,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 38.72201500000028,
+              "selfMs": 38.72201500000028
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.26635699999997087,
+              "selfMs": 0.26635699999997087
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 83.90251499999977,
+              "selfMs": 83.90251499999977
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 7.78651200000013,
+              "selfMs": 7.78651200000013
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 138.55149999999958,
+              "selfMs": 138.55149999999958
+            },
+            "district.preview": {
+              "calls": 1,
+              "totalMs": 231.81230700000015,
+              "selfMs": 1.305423000000701
+            }
+          },
+          "unmeasuredMs": 1.3500689999996212,
+          "heapBeforeBytes": 72688488,
+          "heapAfterBytes": 126049632,
+          "rssBytes": 300019712,
+          "processPeakRssBytes": 306884608,
+          "operation": "district_preview",
+          "wallMs": 274.1468789999999,
+          "serializeMs": 0.013550000001487206,
+          "requestBytes": 201,
+          "responseBytes": 38608,
+          "expandMs": 1.2149789999984932
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-12",
+          "status": 200,
+          "serverMs": 374.8282330000002,
+          "cpuMs": 456.721,
+          "reads": 602,
+          "uniqueReadFiles": 578,
+          "readBytes": 10143877,
+          "writes": 5,
+          "writeBytes": 4077530,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 58.47400999999991,
+              "selfMs": 58.47400999999991
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.2756400000002941,
+              "selfMs": 0.2756400000002941
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 66.76915800000006,
+              "selfMs": 66.76915800000006
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 8.321557000000212,
+              "selfMs": 8.321557000000212
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 150.156117,
+              "selfMs": 150.156117
+            },
+            "district.prepareApply": {
+              "calls": 1,
+              "totalMs": 230.36998900000026,
+              "selfMs": 4.847516999999698
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.13141599999971731,
+              "selfMs": 0.13141599999971731
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 44.65583800000013,
+              "selfMs": 44.52442200000041
+            }
+          },
+          "unmeasuredMs": 41.328395999999884,
+          "heapBeforeBytes": 126067024,
+          "heapAfterBytes": 70244064,
+          "rssBytes": 296681472,
+          "processPeakRssBytes": 306884608,
+          "operation": "district_apply",
+          "wallMs": 376.26741500000026,
+          "serializeMs": 0.006750000000465661,
+          "requestBytes": 282,
+          "responseBytes": 38409,
+          "expandMs": 0.8774560000001657
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-13",
+          "status": 200,
+          "serverMs": 211.41525999999976,
+          "cpuMs": 244.368,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144977,
+          "writes": 1,
+          "writeBytes": 4069917,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 39.52571200000011,
+              "selfMs": 39.52571200000011
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.6953759999996691,
+              "selfMs": 0.6953759999996691
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 3.8004870000004303,
+              "selfMs": 3.8004870000004303
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 93.89559099999997,
+              "selfMs": 93.89559099999997
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 99.92018000000007,
+              "selfMs": 1.528726000000006
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.15375900000026377,
+              "selfMs": 0.15375900000026377
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 39.33990499999982,
+              "selfMs": 39.18614599999955
+            }
+          },
+          "unmeasuredMs": 32.62946299999976,
+          "heapBeforeBytes": 70256664,
+          "heapAfterBytes": 119674528,
+          "rssBytes": 300769280,
+          "processPeakRssBytes": 306884608,
+          "operation": "history_undo",
+          "wallMs": 212.77754000000095,
+          "serializeMs": 0.1155720000006113,
+          "requestBytes": 38469,
+          "responseBytes": 75
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-15",
+          "status": 200,
+          "serverMs": 247.80237100000068,
+          "cpuMs": 301.151,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144946,
+          "writes": 1,
+          "writeBytes": 4069928,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 51.0021770000003,
+              "selfMs": 51.0021770000003
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.7504470000003494,
+              "selfMs": 0.7504470000003494
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 3.8677979999993113,
+              "selfMs": 3.8677979999993113
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 116.03281699999934,
+              "selfMs": 116.03281699999934
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 122.48129599999993,
+              "selfMs": 1.830234000000928
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.2810989999998128,
+              "selfMs": 0.2810989999998128
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 44.53531899999962,
+              "selfMs": 44.254219999999805
+            }
+          },
+          "unmeasuredMs": 29.783579000000827,
+          "heapBeforeBytes": 151950944,
+          "heapAfterBytes": 127900488,
+          "rssBytes": 319344640,
+          "processPeakRssBytes": 321216512,
+          "operation": "history_redo",
+          "wallMs": 249.83823099999972,
+          "serializeMs": 0.11480099999971571,
+          "requestBytes": 38368,
+          "responseBytes": 75
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-17",
+          "status": 200,
+          "serverMs": 3.7356010000003153,
+          "cpuMs": 3.699,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {},
+          "unmeasuredMs": 3.7356010000003153,
+          "heapBeforeBytes": 38474904,
+          "heapAfterBytes": 40264952,
+          "rssBytes": 305025024,
+          "processPeakRssBytes": 323407872,
+          "operation": "viewport_read",
+          "wallMs": 4.936197999999422,
+          "serializeMs": 0.0012109999988751952,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-18",
+          "status": 200,
+          "serverMs": 93.83649400000013,
+          "cpuMs": 93.901,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072911,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 43.10826499999985,
+              "selfMs": 43.10826499999985
+            }
+          },
+          "unmeasuredMs": 50.72822900000028,
+          "heapBeforeBytes": 40292584,
+          "heapAfterBytes": 72598224,
+          "rssBytes": 321146880,
+          "processPeakRssBytes": 323407872,
+          "operation": "full_load",
+          "wallMs": 126.34419700000035,
+          "serializeMs": 0.0001900000006571645,
+          "requestBytes": 0,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-19",
+          "status": 200,
+          "serverMs": 327.93841299999985,
+          "cpuMs": 390.497,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073980,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 47.29674999999952,
+              "selfMs": 47.29674999999952
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.2402780000002167,
+              "selfMs": 0.2402780000002167
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 87.1806400000005,
+              "selfMs": 87.1806400000005
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 10.031723999999485,
+              "selfMs": 10.031723999999485
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 179.63069300000006,
+              "selfMs": 179.63069300000006
+            },
+            "district.preview": {
+              "calls": 1,
+              "totalMs": 278.724389,
+              "selfMs": 1.6410539999997127
+            }
+          },
+          "unmeasuredMs": 1.9172740000003614,
+          "heapBeforeBytes": 72607984,
+          "heapAfterBytes": 119597928,
+          "rssBytes": 326103040,
+          "processPeakRssBytes": 338710528,
+          "operation": "district_preview",
+          "wallMs": 329.73187300000063,
+          "serializeMs": 0.014160999999148771,
+          "requestBytes": 202,
+          "responseBytes": 38710,
+          "expandMs": 0.9080119999998715
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-20",
+          "status": 200,
+          "serverMs": 413.867158,
+          "cpuMs": 488.214,
+          "reads": 602,
+          "uniqueReadFiles": 578,
+          "readBytes": 10143908,
+          "writes": 1,
+          "writeBytes": 4069917,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 57.0617170000005,
+              "selfMs": 57.0617170000005
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.20323300000018207,
+              "selfMs": 0.20323300000018207
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 76.7935010000001,
+              "selfMs": 76.7935010000001
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 11.794848999998067,
+              "selfMs": 11.794848999998067
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 178.09991600000012,
+              "selfMs": 178.09991600000012
+            },
+            "district.prepareApply": {
+              "calls": 1,
+              "totalMs": 272.4266369999996,
+              "selfMs": 5.535138000001098
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.13656400000036228,
+              "selfMs": 0.13656400000036228
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 45.84722199999942,
+              "selfMs": 45.71065799999906
+            }
+          },
+          "unmeasuredMs": 38.531582000000526,
+          "heapBeforeBytes": 119607768,
+          "heapAfterBytes": 114038304,
+          "rssBytes": 326127616,
+          "processPeakRssBytes": 338710528,
+          "operation": "district_apply",
+          "wallMs": 417.6654890000009,
+          "serializeMs": 0.007079999999405118,
+          "requestBytes": 283,
+          "responseBytes": 38510,
+          "expandMs": 1.1275380000006407
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-21",
+          "status": 200,
+          "serverMs": 247.54796799999986,
+          "cpuMs": 284.467,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144946,
+          "writes": 1,
+          "writeBytes": 4069928,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 44.93380199999956,
+              "selfMs": 44.93380199999956
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.6423370000002251,
+              "selfMs": 0.6423370000002251
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.760446999999658,
+              "selfMs": 4.760446999999658
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 106.6379109999998,
+              "selfMs": 106.6379109999998
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 113.48807999999917,
+              "selfMs": 1.4473849999994854
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.18339299999934155,
+              "selfMs": 0.18339299999934155
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 48.62116200000037,
+              "selfMs": 48.437769000001026
+            }
+          },
+          "unmeasuredMs": 40.504924000000756,
+          "heapBeforeBytes": 114053488,
+          "heapAfterBytes": 162014624,
+          "rssBytes": 340783104,
+          "processPeakRssBytes": 340783104,
+          "operation": "history_undo",
+          "wallMs": 249.53662299999996,
+          "serializeMs": 0.17900600000029954,
+          "requestBytes": 38368,
+          "responseBytes": 75
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-23",
+          "status": 200,
+          "serverMs": 229.1074150000004,
+          "cpuMs": 283.101,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144977,
+          "writes": 1,
+          "writeBytes": 4069918,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 41.262737999999445,
+              "selfMs": 41.262737999999445
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.5627580000000307,
+              "selfMs": 0.5627580000000307
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 3.8799460000009276,
+              "selfMs": 3.8799460000009276
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 103.11841600000025,
+              "selfMs": 103.11841600000025
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 109.54589399999986,
+              "selfMs": 1.9847739999986516
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.12156100000083825,
+              "selfMs": 0.12156100000083825
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 41.83922600000005,
+              "selfMs": 41.717664999999215
+            }
+          },
+          "unmeasuredMs": 36.45955700000104,
+          "heapBeforeBytes": 37264472,
+          "heapAfterBytes": 99125472,
+          "rssBytes": 325386240,
+          "processPeakRssBytes": 344846336,
+          "operation": "history_redo",
+          "wallMs": 230.91104499999892,
+          "serializeMs": 0.1142199999994773,
+          "requestBytes": 38469,
+          "responseBytes": 76
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-25",
+          "status": 200,
+          "serverMs": 4.941085999999814,
+          "cpuMs": 9.467,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {},
+          "unmeasuredMs": 4.941085999999814,
+          "heapBeforeBytes": 52598032,
+          "heapAfterBytes": 54403080,
+          "rssBytes": 317521920,
+          "processPeakRssBytes": 344846336,
+          "operation": "viewport_read",
+          "wallMs": 6.495940000000701,
+          "serializeMs": 0.0015819999989616917,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-26",
+          "status": 200,
+          "serverMs": 98.75552700000026,
+          "cpuMs": 98.676,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072892,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 46.19426900000053,
+              "selfMs": 46.19426900000053
+            }
+          },
+          "unmeasuredMs": 52.561257999999725,
+          "heapBeforeBytes": 54413056,
+          "heapAfterBytes": 86601200,
+          "rssBytes": 327614464,
+          "processPeakRssBytes": 344846336,
+          "operation": "full_load",
+          "wallMs": 135.8927820000008,
+          "serializeMs": 0.0003400000005058246,
+          "requestBytes": 0,
+          "responseBytes": 6020858
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-27",
+          "status": 200,
+          "serverMs": 282.0194300000003,
+          "cpuMs": 316.494,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073961,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 41.07663000000048,
+              "selfMs": 41.07663000000048
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.2329570000001695,
+              "selfMs": 0.2329570000001695
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 75.3813599999994,
+              "selfMs": 75.3813599999994
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 9.00076799999988,
+              "selfMs": 9.00076799999988
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 153.4062840000006,
+              "selfMs": 153.4062840000006
+            },
+            "district.preview": {
+              "calls": 1,
+              "totalMs": 239.62062100000003,
+              "selfMs": 1.5992519999999786
+            }
+          },
+          "unmeasuredMs": 1.3221789999997782,
+          "heapBeforeBytes": 86610376,
+          "heapAfterBytes": 138309128,
+          "rssBytes": 338903040,
+          "processPeakRssBytes": 346095616,
+          "operation": "district_preview",
+          "wallMs": 283.835853999999,
+          "serializeMs": 0.01654400000006717,
+          "requestBytes": 202,
+          "responseBytes": 38609,
+          "expandMs": 0.9554020000014134
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-28",
+          "status": 200,
+          "serverMs": 372.64516299999923,
+          "cpuMs": 430.862,
+          "reads": 602,
+          "uniqueReadFiles": 578,
+          "readBytes": 10143879,
+          "writes": 1,
+          "writeBytes": 4069929,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 45.155061999999816,
+              "selfMs": 45.155061999999816
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.269600999999966,
+              "selfMs": 0.269600999999966
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 92.9624730000005,
+              "selfMs": 92.9624730000005
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 7.7554750000008426,
+              "selfMs": 7.7554750000008426
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 147.84417399999984,
+              "selfMs": 147.84417399999984
+            },
+            "district.prepareApply": {
+              "calls": 1,
+              "totalMs": 252.89345999999932,
+              "selfMs": 4.061736999998175
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.12885199999891483,
+              "selfMs": 0.12885199999891483
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 41.98752700000023,
+              "selfMs": 41.85867500000131
+            }
+          },
+          "unmeasuredMs": 32.60911399999986,
+          "heapBeforeBytes": 138319040,
+          "heapAfterBytes": 192300224,
+          "rssBytes": 343678976,
+          "processPeakRssBytes": 356335616,
+          "operation": "district_apply",
+          "wallMs": 374.45000900000014,
+          "serializeMs": 0.0072309999995923135,
+          "requestBytes": 283,
+          "responseBytes": 38411,
+          "expandMs": 1.4705990000002203
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-29",
+          "status": 200,
+          "serverMs": 223.65353099999993,
+          "cpuMs": 276.018,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144979,
+          "writes": 1,
+          "writeBytes": 4069918,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 39.587673999999424,
+              "selfMs": 39.587673999999424
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.5549959999998464,
+              "selfMs": 0.5549959999998464
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 3.860235999998622,
+              "selfMs": 3.860235999998622
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 99.67592700000023,
+              "selfMs": 99.67592700000023
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 106.93468200000007,
+              "selfMs": 2.843523000001369
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.12821199999962118,
+              "selfMs": 0.12821199999962118
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 41.758184999999685,
+              "selfMs": 41.629973000000064
+            }
+          },
+          "unmeasuredMs": 35.372990000000755,
+          "heapBeforeBytes": 11976120,
+          "heapAfterBytes": 78328456,
+          "rssBytes": 326291456,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_undo",
+          "wallMs": 227.64318900000035,
+          "serializeMs": 0.11056500000086089,
+          "requestBytes": 38470,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-31",
+          "status": 200,
+          "serverMs": 243.72240599999986,
+          "cpuMs": 278.78,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144948,
+          "writes": 1,
+          "writeBytes": 4069929,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 55.51873000000069,
+              "selfMs": 55.51873000000069
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.5181119999997463,
+              "selfMs": 0.5181119999997463
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.042867999999544,
+              "selfMs": 4.042867999999544
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 105.68304900000021,
+              "selfMs": 105.68304900000021
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 111.76492299999973,
+              "selfMs": 1.5208940000002258
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.1622109999980239,
+              "selfMs": 0.1622109999980239
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 42.35371200000009,
+              "selfMs": 42.19150100000206
+            }
+          },
+          "unmeasuredMs": 34.085040999999364,
+          "heapBeforeBytes": 39091064,
+          "heapAfterBytes": 93205520,
+          "rssBytes": 326291456,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_redo",
+          "wallMs": 245.12747900000068,
+          "serializeMs": 0.12104100000033213,
+          "requestBytes": 38369,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-33",
+          "status": 200,
+          "serverMs": 3.4580980000000636,
+          "cpuMs": 3.562,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {},
+          "unmeasuredMs": 3.4580980000000636,
+          "heapBeforeBytes": 37318576,
+          "heapAfterBytes": 39088320,
+          "rssBytes": 324530176,
+          "processPeakRssBytes": 356335616,
+          "operation": "viewport_read",
+          "wallMs": 5.009917999999743,
+          "serializeMs": 0.0013120000003254972,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-34",
+          "status": 200,
+          "serverMs": 82.26753999999983,
+          "cpuMs": 82.058,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072912,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 40.53376299999945,
+              "selfMs": 40.53376299999945
+            }
+          },
+          "unmeasuredMs": 41.73377700000037,
+          "heapBeforeBytes": 39097120,
+          "heapAfterBytes": 71063448,
+          "rssBytes": 334622720,
+          "processPeakRssBytes": 356335616,
+          "operation": "full_load",
+          "wallMs": 119.18139400000109,
+          "serializeMs": 0.0001609999999345746,
+          "requestBytes": 0,
+          "responseBytes": 6020879
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-35",
+          "status": 200,
+          "serverMs": 288.07049799999913,
+          "cpuMs": 340.862,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073981,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 43.3436159999992,
+              "selfMs": 43.3436159999992
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.3125949999994191,
+              "selfMs": 0.3125949999994191
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 88.82162799999969,
+              "selfMs": 88.82162799999969
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 7.989572999998927,
+              "selfMs": 7.989572999998927
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 144.61869200000183,
+              "selfMs": 144.61869200000183
+            },
+            "district.preview": {
+              "calls": 1,
+              "totalMs": 243.2478200000005,
+              "selfMs": 1.5053320000006352
+            }
+          },
+          "unmeasuredMs": 1.4790619999994306,
+          "heapBeforeBytes": 71073208,
+          "heapAfterBytes": 115700000,
+          "rssBytes": 335941632,
+          "processPeakRssBytes": 356335616,
+          "operation": "district_preview",
+          "wallMs": 289.69168100000024,
+          "serializeMs": 0.10013900000012654,
+          "requestBytes": 203,
+          "responseBytes": 38711,
+          "expandMs": 0.8355940000001283
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-36",
+          "status": 200,
+          "serverMs": 349.94428900000094,
+          "cpuMs": 430.101,
+          "reads": 602,
+          "uniqueReadFiles": 578,
+          "readBytes": 10143910,
+          "writes": 1,
+          "writeBytes": 4069918,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 41.440231999999014,
+              "selfMs": 41.440231999999014
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.2004689999994298,
+              "selfMs": 0.2004689999994298
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 73.44420499999978,
+              "selfMs": 73.44420499999978
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 7.988832999999431,
+              "selfMs": 7.988832999999431
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 143.1146829999998,
+              "selfMs": 143.1146829999998
+            },
+            "district.prepareApply": {
+              "calls": 1,
+              "totalMs": 230.11100299999998,
+              "selfMs": 5.362813000001552
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.1812900000004447,
+              "selfMs": 0.1812900000004447
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 42.98340900000039,
+              "selfMs": 42.80211899999995
+            }
+          },
+          "unmeasuredMs": 35.40964500000155,
+          "heapBeforeBytes": 115709896,
+          "heapAfterBytes": 108838728,
+          "rssBytes": 335298560,
+          "processPeakRssBytes": 356335616,
+          "operation": "district_apply",
+          "wallMs": 351.6151460000001,
+          "serializeMs": 0.006449999998949352,
+          "requestBytes": 284,
+          "responseBytes": 38512,
+          "expandMs": 0.9215420000000449
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-37",
+          "status": 200,
+          "serverMs": 223.52320700000018,
+          "cpuMs": 288.068,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144948,
+          "writes": 1,
+          "writeBytes": 4069929,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 40.57348099999945,
+              "selfMs": 40.57348099999945
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.6475650000011228,
+              "selfMs": 0.6475650000011228
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.094986000000063,
+              "selfMs": 4.094986000000063
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 99.76920500000051,
+              "selfMs": 99.76920500000051
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 107.51244300000144,
+              "selfMs": 3.0006869999997434
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.14516600000024482,
+              "selfMs": 0.14516600000024482
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 39.45917200000076,
+              "selfMs": 39.31400600000052
+            }
+          },
+          "unmeasuredMs": 35.978110999998535,
+          "heapBeforeBytes": 11973608,
+          "heapAfterBytes": 79756368,
+          "rssBytes": 326369280,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_undo",
+          "wallMs": 227.2116879999994,
+          "serializeMs": 0.1838740000002872,
+          "requestBytes": 38369,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-39",
+          "status": 200,
+          "serverMs": 218.00298900000053,
+          "cpuMs": 250.162,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144979,
+          "writes": 1,
+          "writeBytes": 4069918,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 47.008309999999256,
+              "selfMs": 47.008309999999256
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.6907580000006419,
+              "selfMs": 0.6907580000006419
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.285007999998925,
+              "selfMs": 4.285007999998925
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 94.52872399999978,
+              "selfMs": 94.52872399999978
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 100.66724199999953,
+              "selfMs": 1.1627520000001823
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.13627199999791628,
+              "selfMs": 0.13627199999791628
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 39.27941400000054,
+              "selfMs": 39.143142000002626
+            }
+          },
+          "unmeasuredMs": 31.048023000001194,
+          "heapBeforeBytes": 39118520,
+          "heapAfterBytes": 92489312,
+          "rssBytes": 326369280,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_redo",
+          "wallMs": 219.7634790000011,
+          "serializeMs": 0.1168839999991178,
+          "requestBytes": 38470,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-41",
+          "status": 200,
+          "serverMs": 3.0021489999999176,
+          "cpuMs": 3.102,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {},
+          "unmeasuredMs": 3.0021489999999176,
+          "heapBeforeBytes": 37273360,
+          "heapAfterBytes": 39069008,
+          "rssBytes": 324534272,
+          "processPeakRssBytes": 356335616,
+          "operation": "viewport_read",
+          "wallMs": 4.262095000000045,
+          "serializeMs": 0.0013620000008813804,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-42",
+          "status": 200,
+          "serverMs": 84.79748699999982,
+          "cpuMs": 84.566,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072892,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 38.66138499999943,
+              "selfMs": 38.66138499999943
+            }
+          },
+          "unmeasuredMs": 46.13610200000039,
+          "heapBeforeBytes": 39077808,
+          "heapAfterBytes": 71097824,
+          "rssBytes": 334626816,
+          "processPeakRssBytes": 356335616,
+          "operation": "full_load",
+          "wallMs": 120.58730699999978,
+          "serializeMs": 0.000170000001162407,
+          "requestBytes": 0,
+          "responseBytes": 6020858
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-43",
+          "status": 200,
+          "serverMs": 271.4338800000005,
+          "cpuMs": 316.667,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073961,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 39.19120400000065,
+              "selfMs": 39.19120400000065
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.2520960000001651,
+              "selfMs": 0.2520960000001651
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 69.63350300000093,
+              "selfMs": 69.63350300000093
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 7.928453000000445,
+              "selfMs": 7.928453000000445
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 151.50589400000172,
+              "selfMs": 151.50589400000172
+            },
+            "district.preview": {
+              "calls": 1,
+              "totalMs": 230.71903900000143,
+              "selfMs": 1.3990929999981745
+            }
+          },
+          "unmeasuredMs": 1.5236369999984163,
+          "heapBeforeBytes": 71108304,
+          "heapAfterBytes": 115510784,
+          "rssBytes": 335945728,
+          "processPeakRssBytes": 356335616,
+          "operation": "district_preview",
+          "wallMs": 273.1889479999991,
+          "serializeMs": 0.025838999999905354,
+          "requestBytes": 202,
+          "responseBytes": 38609,
+          "expandMs": 0.972857999999178
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-44",
+          "status": 200,
+          "serverMs": 354.60451600000124,
+          "cpuMs": 416.003,
+          "reads": 602,
+          "uniqueReadFiles": 578,
+          "readBytes": 10143879,
+          "writes": 1,
+          "writeBytes": 4069929,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 41.288565999999264,
+              "selfMs": 41.288565999999264
+            },
+            "movement.districtContext": {
+              "calls": 1,
+              "totalMs": 0.3114740000000893,
+              "selfMs": 0.3114740000000893
+            },
+            "generation": {
+              "calls": 1,
+              "totalMs": 71.69690400000036,
+              "selfMs": 71.69690400000036
+            },
+            "signature.crypto": {
+              "calls": 6,
+              "totalMs": 8.49365399999806,
+              "selfMs": 8.49365399999806
+            },
+            "signature.input": {
+              "calls": 2,
+              "totalMs": 150.09211999999934,
+              "selfMs": 150.09211999999934
+            },
+            "district.prepareApply": {
+              "calls": 1,
+              "totalMs": 234.29714599999897,
+              "selfMs": 3.7029940000011266
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.16231300000072224,
+              "selfMs": 0.16231300000072224
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 41.58572800000002,
+              "selfMs": 41.423414999999295
+            }
+          },
+          "unmeasuredMs": 37.433076000002984,
+          "heapBeforeBytes": 115520632,
+          "heapAfterBytes": 108992904,
+          "rssBytes": 335302656,
+          "processPeakRssBytes": 356335616,
+          "operation": "district_apply",
+          "wallMs": 356.4324319999996,
+          "serializeMs": 0.0058380000009492505,
+          "requestBytes": 283,
+          "responseBytes": 38411,
+          "expandMs": 0.9276410000002215
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-45",
+          "status": 200,
+          "serverMs": 224.50380699999914,
+          "cpuMs": 255.864,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144979,
+          "writes": 1,
+          "writeBytes": 4069918,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 39.431361000000834,
+              "selfMs": 39.431361000000834
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.5058929999995598,
+              "selfMs": 0.5058929999995598
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.012933999998495,
+              "selfMs": 4.012933999998495
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 95.44230400000015,
+              "selfMs": 95.44230400000015
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 101.53522400000111,
+              "selfMs": 1.5740930000029039
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.13055600000006962,
+              "selfMs": 0.13055600000006962
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 48.446883000000525,
+              "selfMs": 48.316327000000456
+            }
+          },
+          "unmeasuredMs": 35.090338999996675,
+          "heapBeforeBytes": 109003136,
+          "heapAfterBytes": 157996936,
+          "rssBytes": 339378176,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_undo",
+          "wallMs": 225.7009139999991,
+          "serializeMs": 0.10972399999991467,
+          "requestBytes": 38470,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-47",
+          "status": 200,
+          "serverMs": 232.74865599999976,
+          "cpuMs": 286.17,
+          "reads": 603,
+          "uniqueReadFiles": 578,
+          "readBytes": 10144948,
+          "writes": 1,
+          "writeBytes": 4069929,
+          "stages": {
+            "store.readDraft": {
+              "calls": 1,
+              "totalMs": 42.07002900000043,
+              "selfMs": 42.07002900000043
+            },
+            "movement.districtContext": {
+              "calls": 2,
+              "totalMs": 0.6100770000011835,
+              "selfMs": 0.6100770000011835
+            },
+            "signature.crypto": {
+              "calls": 3,
+              "totalMs": 4.465945000001739,
+              "selfMs": 4.465945000001739
+            },
+            "signature.input": {
+              "calls": 1,
+              "totalMs": 101.41990299999998,
+              "selfMs": 101.41990299999998
+            },
+            "district.prepareHistory": {
+              "calls": 1,
+              "totalMs": 108.24452599999859,
+              "selfMs": 1.7486009999956877
+            },
+            "store.chunkHash": {
+              "calls": 4,
+              "totalMs": 0.14520599999923434,
+              "selfMs": 0.14520599999923434
+            },
+            "store.writeDraftChanges": {
+              "calls": 1,
+              "totalMs": 43.12136299999838,
+              "selfMs": 42.97615699999915
+            }
+          },
+          "unmeasuredMs": 39.312738000002355,
+          "heapBeforeBytes": 36955064,
+          "heapAfterBytes": 94697792,
+          "rssBytes": 326373376,
+          "processPeakRssBytes": 356335616,
+          "operation": "history_redo",
+          "wallMs": 234.62297300000137,
+          "serializeMs": 0.11816499999986263,
+          "requestBytes": 38369,
+          "responseBytes": 77
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-49",
+          "status": 200,
+          "serverMs": 4.321120000000519,
+          "cpuMs": 4.274,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "stages": {},
+          "unmeasuredMs": 4.321120000000519,
+          "heapBeforeBytes": 52864000,
+          "heapAfterBytes": 54622008,
+          "rssBytes": 318509056,
+          "processPeakRssBytes": 356335616,
+          "operation": "viewport_read",
+          "wallMs": 5.414543000002595,
+          "serializeMs": 0.001211999999213731,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        }
+      ],
+      "summary": {
+        "full_load": {
+          "samples": 5,
+          "wallMs": {
+            "min": 116.55153900000005,
+            "median": 120.58730699999978,
+            "p95": 135.8927820000008,
+            "max": 135.8927820000008
+          },
+          "serverMs": {
+            "min": 82.26753999999983,
+            "median": 84.79748699999982,
+            "p95": 98.75552700000026,
+            "max": 98.75552700000026
+          },
+          "cpuMs": {
+            "min": 82.058,
+            "median": 85.776,
+            "p95": 98.676,
+            "max": 98.676
+          },
+          "responseBytes": {
+            "min": 6020857,
+            "median": 6020858,
+            "p95": 6020879,
+            "max": 6020879
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.0001609999999345746,
+            "median": 0.0001900000006571645,
+            "p95": 0.0005600000004051253,
+            "max": 0.0005600000004051253
+          },
+          "reads": {
+            "min": 600,
+            "median": 600,
+            "p95": 600,
+            "max": 600
+          },
+          "readBytes": {
+            "min": 6072891,
+            "median": 6072892,
+            "p95": 6072912,
+            "max": 6072912
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 71063448,
+            "median": 72598224,
+            "p95": 86601200,
+            "max": 86601200
+          },
+          "rssBytes": {
+            "min": 289583104,
+            "median": 327614464,
+            "p95": 334626816,
+            "max": 334626816
+          },
+          "stages": {
+            "store.readDraft": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 38.66138499999943,
+                "median": 41.21649900000011,
+                "p95": 46.19426900000053,
+                "max": 46.19426900000053
+              },
+              "selfMs": {
+                "min": 38.66138499999943,
+                "median": 41.21649900000011,
+                "p95": 46.19426900000053,
+                "max": 46.19426900000053
+              }
+            }
+          },
+          "unmeasuredMs": {
+            "min": 41.73377700000037,
+            "median": 46.13610200000039,
+            "p95": 52.561257999999725,
+            "max": 52.561257999999725
+          }
+        },
+        "district_preview": {
+          "samples": 5,
+          "wallMs": {
+            "min": 273.1889479999991,
+            "median": 283.835853999999,
+            "p95": 329.73187300000063,
+            "max": 329.73187300000063
+          },
+          "serverMs": {
+            "min": 271.4338800000005,
+            "median": 282.0194300000003,
+            "p95": 327.93841299999985,
+            "max": 327.93841299999985
+          },
+          "cpuMs": {
+            "min": 306.916,
+            "median": 316.667,
+            "p95": 390.497,
+            "max": 390.497
+          },
+          "responseBytes": {
+            "min": 38608,
+            "median": 38609,
+            "p95": 38711,
+            "max": 38711
+          },
+          "requestBytes": {
+            "min": 201,
+            "median": 202,
+            "p95": 203,
+            "max": 203
+          },
+          "serializeMs": {
+            "min": 0.013550000001487206,
+            "median": 0.01654400000006717,
+            "p95": 0.10013900000012654,
+            "max": 0.10013900000012654
+          },
+          "reads": {
+            "min": 601,
+            "median": 601,
+            "p95": 601,
+            "max": 601
+          },
+          "readBytes": {
+            "min": 6073960,
+            "median": 6073961,
+            "p95": 6073981,
+            "max": 6073981
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 115510784,
+            "median": 119597928,
+            "p95": 138309128,
+            "max": 138309128
+          },
+          "rssBytes": {
+            "min": 300019712,
+            "median": 335941632,
+            "p95": 338903040,
+            "max": 338903040
+          },
+          "stages": {
+            "store.readDraft": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 38.72201500000028,
+                "median": 41.07663000000048,
+                "p95": 47.29674999999952,
+                "max": 47.29674999999952
+              },
+              "selfMs": {
+                "min": 38.72201500000028,
+                "median": 41.07663000000048,
+                "p95": 47.29674999999952,
+                "max": 47.29674999999952
+              }
+            },
+            "movement.districtContext": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 0.2329570000001695,
+                "median": 0.2520960000001651,
+                "p95": 0.3125949999994191,
+                "max": 0.3125949999994191
+              },
+              "selfMs": {
+                "min": 0.2329570000001695,
+                "median": 0.2520960000001651,
+                "p95": 0.3125949999994191,
+                "max": 0.3125949999994191
+              }
+            },
+            "generation": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 69.63350300000093,
+                "median": 83.90251499999977,
+                "p95": 88.82162799999969,
+                "max": 88.82162799999969
+              },
+              "selfMs": {
+                "min": 69.63350300000093,
+                "median": 83.90251499999977,
+                "p95": 88.82162799999969,
+                "max": 88.82162799999969
+              }
+            },
+            "signature.crypto": {
+              "calls": {
+                "min": 6,
+                "median": 6,
+                "p95": 6,
+                "max": 6
+              },
+              "totalMs": {
+                "min": 7.78651200000013,
+                "median": 7.989572999998927,
+                "p95": 10.031723999999485,
+                "max": 10.031723999999485
+              },
+              "selfMs": {
+                "min": 7.78651200000013,
+                "median": 7.989572999998927,
+                "p95": 10.031723999999485,
+                "max": 10.031723999999485
+              }
+            },
+            "signature.input": {
+              "calls": {
+                "min": 2,
+                "median": 2,
+                "p95": 2,
+                "max": 2
+              },
+              "totalMs": {
+                "min": 138.55149999999958,
+                "median": 151.50589400000172,
+                "p95": 179.63069300000006,
+                "max": 179.63069300000006
+              },
+              "selfMs": {
+                "min": 138.55149999999958,
+                "median": 151.50589400000172,
+                "p95": 179.63069300000006,
+                "max": 179.63069300000006
+              }
+            },
+            "district.preview": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 230.71903900000143,
+                "median": 239.62062100000003,
+                "p95": 278.724389,
+                "max": 278.724389
+              },
+              "selfMs": {
+                "min": 1.305423000000701,
+                "median": 1.5053320000006352,
+                "p95": 1.6410539999997127,
+                "max": 1.6410539999997127
+              }
+            }
+          },
+          "unmeasuredMs": {
+            "min": 1.3221789999997782,
+            "median": 1.4790619999994306,
+            "p95": 1.9172740000003614,
+            "max": 1.9172740000003614
+          }
+        },
+        "district_apply": {
+          "samples": 5,
+          "wallMs": {
+            "min": 351.6151460000001,
+            "median": 374.45000900000014,
+            "p95": 417.6654890000009,
+            "max": 417.6654890000009
+          },
+          "serverMs": {
+            "min": 349.94428900000094,
+            "median": 372.64516299999923,
+            "p95": 413.867158,
+            "max": 413.867158
+          },
+          "cpuMs": {
+            "min": 416.003,
+            "median": 430.862,
+            "p95": 488.214,
+            "max": 488.214
+          },
+          "responseBytes": {
+            "min": 38409,
+            "median": 38411,
+            "p95": 38512,
+            "max": 38512
+          },
+          "requestBytes": {
+            "min": 282,
+            "median": 283,
+            "p95": 284,
+            "max": 284
+          },
+          "serializeMs": {
+            "min": 0.0058380000009492505,
+            "median": 0.006750000000465661,
+            "p95": 0.0072309999995923135,
+            "max": 0.0072309999995923135
+          },
+          "reads": {
+            "min": 602,
+            "median": 602,
+            "p95": 602,
+            "max": 602
+          },
+          "readBytes": {
+            "min": 10143877,
+            "median": 10143879,
+            "p95": 10143910,
+            "max": 10143910
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 5,
+            "max": 5
+          },
+          "writeBytes": {
+            "min": 4069917,
+            "median": 4069929,
+            "p95": 4077530,
+            "max": 4077530
+          },
+          "heapAfterBytes": {
+            "min": 70244064,
+            "median": 108992904,
+            "p95": 192300224,
+            "max": 192300224
+          },
+          "rssBytes": {
+            "min": 296681472,
+            "median": 335298560,
+            "p95": 343678976,
+            "max": 343678976
+          },
+          "stages": {
+            "store.readDraft": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 41.288565999999264,
+                "median": 45.155061999999816,
+                "p95": 58.47400999999991,
+                "max": 58.47400999999991
+              },
+              "selfMs": {
+                "min": 41.288565999999264,
+                "median": 45.155061999999816,
+                "p95": 58.47400999999991,
+                "max": 58.47400999999991
+              }
+            },
+            "movement.districtContext": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 0.2004689999994298,
+                "median": 0.269600999999966,
+                "p95": 0.3114740000000893,
+                "max": 0.3114740000000893
+              },
+              "selfMs": {
+                "min": 0.2004689999994298,
+                "median": 0.269600999999966,
+                "p95": 0.3114740000000893,
+                "max": 0.3114740000000893
+              }
+            },
+            "generation": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 66.76915800000006,
+                "median": 73.44420499999978,
+                "p95": 92.9624730000005,
+                "max": 92.9624730000005
+              },
+              "selfMs": {
+                "min": 66.76915800000006,
+                "median": 73.44420499999978,
+                "p95": 92.9624730000005,
+                "max": 92.9624730000005
+              }
+            },
+            "signature.crypto": {
+              "calls": {
+                "min": 6,
+                "median": 6,
+                "p95": 6,
+                "max": 6
+              },
+              "totalMs": {
+                "min": 7.7554750000008426,
+                "median": 8.321557000000212,
+                "p95": 11.794848999998067,
+                "max": 11.794848999998067
+              },
+              "selfMs": {
+                "min": 7.7554750000008426,
+                "median": 8.321557000000212,
+                "p95": 11.794848999998067,
+                "max": 11.794848999998067
+              }
+            },
+            "signature.input": {
+              "calls": {
+                "min": 2,
+                "median": 2,
+                "p95": 2,
+                "max": 2
+              },
+              "totalMs": {
+                "min": 143.1146829999998,
+                "median": 150.09211999999934,
+                "p95": 178.09991600000012,
+                "max": 178.09991600000012
+              },
+              "selfMs": {
+                "min": 143.1146829999998,
+                "median": 150.09211999999934,
+                "p95": 178.09991600000012,
+                "max": 178.09991600000012
+              }
+            },
+            "district.prepareApply": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 230.11100299999998,
+                "median": 234.29714599999897,
+                "p95": 272.4266369999996,
+                "max": 272.4266369999996
+              },
+              "selfMs": {
+                "min": 3.7029940000011266,
+                "median": 4.847516999999698,
+                "p95": 5.535138000001098,
+                "max": 5.535138000001098
+              }
+            },
+            "store.chunkHash": {
+              "calls": {
+                "min": 4,
+                "median": 4,
+                "p95": 4,
+                "max": 4
+              },
+              "totalMs": {
+                "min": 0.12885199999891483,
+                "median": 0.13656400000036228,
+                "p95": 0.1812900000004447,
+                "max": 0.1812900000004447
+              },
+              "selfMs": {
+                "min": 0.12885199999891483,
+                "median": 0.13656400000036228,
+                "p95": 0.1812900000004447,
+                "max": 0.1812900000004447
+              }
+            },
+            "store.writeDraftChanges": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 41.58572800000002,
+                "median": 42.98340900000039,
+                "p95": 45.84722199999942,
+                "max": 45.84722199999942
+              },
+              "selfMs": {
+                "min": 41.423414999999295,
+                "median": 42.80211899999995,
+                "p95": 45.71065799999906,
+                "max": 45.71065799999906
+              }
+            }
+          },
+          "unmeasuredMs": {
+            "min": 32.60911399999986,
+            "median": 37.433076000002984,
+            "p95": 41.328395999999884,
+            "max": 41.328395999999884
+          }
+        },
+        "history_undo": {
+          "samples": 5,
+          "wallMs": {
+            "min": 212.77754000000095,
+            "median": 227.2116879999994,
+            "p95": 249.53662299999996,
+            "max": 249.53662299999996
+          },
+          "serverMs": {
+            "min": 211.41525999999976,
+            "median": 223.65353099999993,
+            "p95": 247.54796799999986,
+            "max": 247.54796799999986
+          },
+          "cpuMs": {
+            "min": 244.368,
+            "median": 276.018,
+            "p95": 288.068,
+            "max": 288.068
+          },
+          "responseBytes": {
+            "min": 75,
+            "median": 77,
+            "p95": 77,
+            "max": 77
+          },
+          "requestBytes": {
+            "min": 38368,
+            "median": 38469,
+            "p95": 38470,
+            "max": 38470
+          },
+          "serializeMs": {
+            "min": 0.10972399999991467,
+            "median": 0.1155720000006113,
+            "p95": 0.1838740000002872,
+            "max": 0.1838740000002872
+          },
+          "reads": {
+            "min": 603,
+            "median": 603,
+            "p95": 603,
+            "max": 603
+          },
+          "readBytes": {
+            "min": 10144946,
+            "median": 10144977,
+            "p95": 10144979,
+            "max": 10144979
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "writeBytes": {
+            "min": 4069917,
+            "median": 4069918,
+            "p95": 4069929,
+            "max": 4069929
+          },
+          "heapAfterBytes": {
+            "min": 78328456,
+            "median": 119674528,
+            "p95": 162014624,
+            "max": 162014624
+          },
+          "rssBytes": {
+            "min": 300769280,
+            "median": 326369280,
+            "p95": 340783104,
+            "max": 340783104
+          },
+          "stages": {
+            "store.readDraft": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 39.431361000000834,
+                "median": 39.587673999999424,
+                "p95": 44.93380199999956,
+                "max": 44.93380199999956
+              },
+              "selfMs": {
+                "min": 39.431361000000834,
+                "median": 39.587673999999424,
+                "p95": 44.93380199999956,
+                "max": 44.93380199999956
+              }
+            },
+            "movement.districtContext": {
+              "calls": {
+                "min": 2,
+                "median": 2,
+                "p95": 2,
+                "max": 2
+              },
+              "totalMs": {
+                "min": 0.5058929999995598,
+                "median": 0.6423370000002251,
+                "p95": 0.6953759999996691,
+                "max": 0.6953759999996691
+              },
+              "selfMs": {
+                "min": 0.5058929999995598,
+                "median": 0.6423370000002251,
+                "p95": 0.6953759999996691,
+                "max": 0.6953759999996691
+              }
+            },
+            "signature.crypto": {
+              "calls": {
+                "min": 3,
+                "median": 3,
+                "p95": 3,
+                "max": 3
+              },
+              "totalMs": {
+                "min": 3.8004870000004303,
+                "median": 4.012933999998495,
+                "p95": 4.760446999999658,
+                "max": 4.760446999999658
+              },
+              "selfMs": {
+                "min": 3.8004870000004303,
+                "median": 4.012933999998495,
+                "p95": 4.760446999999658,
+                "max": 4.760446999999658
+              }
+            },
+            "signature.input": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 93.89559099999997,
+                "median": 99.67592700000023,
+                "p95": 106.6379109999998,
+                "max": 106.6379109999998
+              },
+              "selfMs": {
+                "min": 93.89559099999997,
+                "median": 99.67592700000023,
+                "p95": 106.6379109999998,
+                "max": 106.6379109999998
+              }
+            },
+            "district.prepareHistory": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 99.92018000000007,
+                "median": 106.93468200000007,
+                "p95": 113.48807999999917,
+                "max": 113.48807999999917
+              },
+              "selfMs": {
+                "min": 1.4473849999994854,
+                "median": 1.5740930000029039,
+                "p95": 3.0006869999997434,
+                "max": 3.0006869999997434
+              }
+            },
+            "store.chunkHash": {
+              "calls": {
+                "min": 4,
+                "median": 4,
+                "p95": 4,
+                "max": 4
+              },
+              "totalMs": {
+                "min": 0.12821199999962118,
+                "median": 0.14516600000024482,
+                "p95": 0.18339299999934155,
+                "max": 0.18339299999934155
+              },
+              "selfMs": {
+                "min": 0.12821199999962118,
+                "median": 0.14516600000024482,
+                "p95": 0.18339299999934155,
+                "max": 0.18339299999934155
+              }
+            },
+            "store.writeDraftChanges": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 39.33990499999982,
+                "median": 41.758184999999685,
+                "p95": 48.62116200000037,
+                "max": 48.62116200000037
+              },
+              "selfMs": {
+                "min": 39.18614599999955,
+                "median": 41.629973000000064,
+                "p95": 48.437769000001026,
+                "max": 48.437769000001026
+              }
+            }
+          },
+          "unmeasuredMs": {
+            "min": 32.62946299999976,
+            "median": 35.372990000000755,
+            "p95": 40.504924000000756,
+            "max": 40.504924000000756
+          }
+        },
+        "history_redo": {
+          "samples": 5,
+          "wallMs": {
+            "min": 219.7634790000011,
+            "median": 234.62297300000137,
+            "p95": 249.83823099999972,
+            "max": 249.83823099999972
+          },
+          "serverMs": {
+            "min": 218.00298900000053,
+            "median": 232.74865599999976,
+            "p95": 247.80237100000068,
+            "max": 247.80237100000068
+          },
+          "cpuMs": {
+            "min": 250.162,
+            "median": 283.101,
+            "p95": 301.151,
+            "max": 301.151
+          },
+          "responseBytes": {
+            "min": 75,
+            "median": 77,
+            "p95": 77,
+            "max": 77
+          },
+          "requestBytes": {
+            "min": 38368,
+            "median": 38369,
+            "p95": 38470,
+            "max": 38470
+          },
+          "serializeMs": {
+            "min": 0.1142199999994773,
+            "median": 0.1168839999991178,
+            "p95": 0.12104100000033213,
+            "max": 0.12104100000033213
+          },
+          "reads": {
+            "min": 603,
+            "median": 603,
+            "p95": 603,
+            "max": 603
+          },
+          "readBytes": {
+            "min": 10144946,
+            "median": 10144948,
+            "p95": 10144979,
+            "max": 10144979
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "writeBytes": {
+            "min": 4069918,
+            "median": 4069928,
+            "p95": 4069929,
+            "max": 4069929
+          },
+          "heapAfterBytes": {
+            "min": 92489312,
+            "median": 94697792,
+            "p95": 127900488,
+            "max": 127900488
+          },
+          "rssBytes": {
+            "min": 319344640,
+            "median": 326291456,
+            "p95": 326373376,
+            "max": 326373376
+          },
+          "stages": {
+            "store.readDraft": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 41.262737999999445,
+                "median": 47.008309999999256,
+                "p95": 55.51873000000069,
+                "max": 55.51873000000069
+              },
+              "selfMs": {
+                "min": 41.262737999999445,
+                "median": 47.008309999999256,
+                "p95": 55.51873000000069,
+                "max": 55.51873000000069
+              }
+            },
+            "movement.districtContext": {
+              "calls": {
+                "min": 2,
+                "median": 2,
+                "p95": 2,
+                "max": 2
+              },
+              "totalMs": {
+                "min": 0.5181119999997463,
+                "median": 0.6100770000011835,
+                "p95": 0.7504470000003494,
+                "max": 0.7504470000003494
+              },
+              "selfMs": {
+                "min": 0.5181119999997463,
+                "median": 0.6100770000011835,
+                "p95": 0.7504470000003494,
+                "max": 0.7504470000003494
+              }
+            },
+            "signature.crypto": {
+              "calls": {
+                "min": 3,
+                "median": 3,
+                "p95": 3,
+                "max": 3
+              },
+              "totalMs": {
+                "min": 3.8677979999993113,
+                "median": 4.042867999999544,
+                "p95": 4.465945000001739,
+                "max": 4.465945000001739
+              },
+              "selfMs": {
+                "min": 3.8677979999993113,
+                "median": 4.042867999999544,
+                "p95": 4.465945000001739,
+                "max": 4.465945000001739
+              }
+            },
+            "signature.input": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 94.52872399999978,
+                "median": 103.11841600000025,
+                "p95": 116.03281699999934,
+                "max": 116.03281699999934
+              },
+              "selfMs": {
+                "min": 94.52872399999978,
+                "median": 103.11841600000025,
+                "p95": 116.03281699999934,
+                "max": 116.03281699999934
+              }
+            },
+            "district.prepareHistory": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 100.66724199999953,
+                "median": 109.54589399999986,
+                "p95": 122.48129599999993,
+                "max": 122.48129599999993
+              },
+              "selfMs": {
+                "min": 1.1627520000001823,
+                "median": 1.7486009999956877,
+                "p95": 1.9847739999986516,
+                "max": 1.9847739999986516
+              }
+            },
+            "store.chunkHash": {
+              "calls": {
+                "min": 4,
+                "median": 4,
+                "p95": 4,
+                "max": 4
+              },
+              "totalMs": {
+                "min": 0.12156100000083825,
+                "median": 0.14520599999923434,
+                "p95": 0.2810989999998128,
+                "max": 0.2810989999998128
+              },
+              "selfMs": {
+                "min": 0.12156100000083825,
+                "median": 0.14520599999923434,
+                "p95": 0.2810989999998128,
+                "max": 0.2810989999998128
+              }
+            },
+            "store.writeDraftChanges": {
+              "calls": {
+                "min": 1,
+                "median": 1,
+                "p95": 1,
+                "max": 1
+              },
+              "totalMs": {
+                "min": 39.27941400000054,
+                "median": 42.35371200000009,
+                "p95": 44.53531899999962,
+                "max": 44.53531899999962
+              },
+              "selfMs": {
+                "min": 39.143142000002626,
+                "median": 42.19150100000206,
+                "p95": 44.254219999999805,
+                "max": 44.254219999999805
+              }
+            }
+          },
+          "unmeasuredMs": {
+            "min": 29.783579000000827,
+            "median": 34.085040999999364,
+            "p95": 39.312738000002355,
+            "max": 39.312738000002355
+          }
+        },
+        "viewport_read": {
+          "samples": 5,
+          "wallMs": {
+            "min": 4.262095000000045,
+            "median": 5.009917999999743,
+            "p95": 6.495940000000701,
+            "max": 6.495940000000701
+          },
+          "serverMs": {
+            "min": 3.0021489999999176,
+            "median": 3.7356010000003153,
+            "p95": 4.941085999999814,
+            "max": 4.941085999999814
+          },
+          "cpuMs": {
+            "min": 3.102,
+            "median": 3.699,
+            "p95": 9.467,
+            "max": 9.467
+          },
+          "responseBytes": {
+            "min": 9524,
+            "median": 9524,
+            "p95": 9524,
+            "max": 9524
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.0012109999988751952,
+            "median": 0.0013120000003254972,
+            "p95": 0.0015819999989616917,
+            "max": 0.0015819999989616917
+          },
+          "reads": {
+            "min": 6,
+            "median": 6,
+            "p95": 6,
+            "max": 6
+          },
+          "readBytes": {
+            "min": 328328,
+            "median": 328328,
+            "p95": 328328,
+            "max": 328328
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 39069008,
+            "median": 40264952,
+            "p95": 54622008,
+            "max": 54622008
+          },
+          "rssBytes": {
+            "min": 305025024,
+            "median": 318509056,
+            "p95": 324534272,
+            "max": 324534272
+          }
+        }
+      }
+    }
+  ]
+}

@@ -20,15 +20,28 @@ const definitions = map => (map.generators || []).filter(recipe => recipe.kind =
   tiles: recipe.state?.tiles, objects: recipe.state?.objects,
 })).sort((a, b) => a.id.localeCompare(b.id));
 
-const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ?
-  Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+const canonical = (value, cache) => {
+  if (!value || typeof value !== 'object') return value;
+  const cached = cache?.get(value);
+  if (cached !== undefined) return cached;
+  const result = Array.isArray(value) ? value.map(item => canonical(item, cache)) :
+    Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key], cache)]));
+  cache?.set(value, result);
+  return result;
+};
 
 module.exports = function createWorldDistricts(movement, scope = () => '') {
   // Browser history is session-local. No extra save file or persistent signing key is needed.
   const historyKey = randomBytes(32);
-  const proof = (source, snapshot) => createHmac('sha256', historyKey).update(JSON.stringify([
-    scope(), source.id, canonical({ chunks: snapshot.chunks, objects: normalizeObjects(snapshot.objects), generators: snapshot.generators || [] }),
+  const proof = (source, snapshot, cache) => createHmac('sha256', historyKey).update(JSON.stringify([
+    scope(), source.id, canonical({ chunks: snapshot.chunks, objects: normalizeObjects(snapshot.objects), generators: snapshot.generators || [] }, cache),
   ])).digest('hex');
+  function historyProofs(source, after) {
+    // Generation has finished: the pair is synchronous and its copy-on-write snapshots
+    // share unchanged chunks/recipes. Never retain this cache for another request.
+    const cache = new WeakMap();
+    return { before: proof(source, source, cache), after: proof(source, after, cache) };
+  }
   function generate(recipe, source, context) {
     try { return generationChange(recipe, source, context); }
     catch (error) {
@@ -73,7 +86,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       const change = generate(body.recipe, source, context);
       const after = { chunks: change.chunks, objects: change.objects?.after || source.objects, generators: change.generators.after };
       return { change: compact ? compactGenerationChange(change) : change,
-        history: { before: proof(source, source), after: proof(source, after) },
+        history: historyProofs(source, after),
         guard: { recipe: body.recipe, revision: source.revision, linksRevision: context.linksRevision } };
     },
     prepareApply(source, body) {
@@ -87,7 +100,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       const normalized = { ...change, objects: isDeepStrictEqual(source.objects, next.objects) ? null :
         { before: source.objects, after: next.objects } };
       return { next, chunkChanges: chunkChanges(next, change.tiles), response: { id: source.id, baseRevision: source.revision, revision: next.revision,
-        change: compactGenerationChange(normalized), history: { before: proof(source, source), after: proof(source, next) } } };
+        change: compactGenerationChange(normalized), history: historyProofs(source, next) } };
     },
     prepareHistory(source, body) {
       if (!fields(body, ['districtGuard', 'change'])) fail(400, 'Передай подпись и изменение истории района.');
