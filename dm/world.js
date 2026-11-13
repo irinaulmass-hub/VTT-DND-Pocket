@@ -216,8 +216,9 @@
       };
       if (kind === 'district') return run(async () => {
         await save();
-        const result = await request('/api/worlds/' + draft.id + '/district-preview', json('POST', { revision: draft.revision, recipe }));
-        generatorPreview = { ...result.change, districtGuard: result.guard, districtHistory: result.history };
+        const result = await request('/api/worlds/' + draft.id + '/district-preview', json('POST', { revision: draft.revision, recipe, format: 'delta-v1' }));
+        generatorPreview = { ...window.WorldGenerators.expandGenerationChange(result.change, draft),
+          districtGuard: result.guard, districtHistory: result.history };
         const xs = generatorPoints.map(point => point.x), ys = generatorPoints.map(point => point.y);
         const width = Math.max(...xs) - Math.min(...xs) + 1, height = Math.max(...ys) - Math.min(...ys) + 1;
         editorView.setCamera({ x: (Math.min(...xs) + Math.max(...xs) + 1) / 2,

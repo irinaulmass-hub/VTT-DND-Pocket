@@ -19,6 +19,7 @@ test('world benchmark measures real HTTP operations in isolated data and never o
   assert.equal(result.status,0,result.stderr);
   const bytes = fs.readFileSync(output), report = JSON.parse(bytes);
   assert.equal(report.schemaVersion,1);
+  assert.equal(report.method.previewFormat,'delta-v1');
   assert.equal(report.results.length,1);
   const measured = report.results[0];
   assert.equal(measured.status,'verified');
@@ -42,7 +43,7 @@ test('world benchmark measures real HTTP operations in isolated data and never o
 });
 
 test('world benchmark rejects unknown profiles and invalid sample counts before running', () => {
-  for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],['--unknown','x']]) {
+  for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],['--unknown','x'],['--preview-format','missing']]) {
     const result=spawnSync(process.execPath,[script,...args],{cwd:root,encoding:'utf8',timeout:5000});
     assert.notEqual(result.status,0);
     assert.doesNotMatch(result.stderr,/Measuring/);

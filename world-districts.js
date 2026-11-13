@@ -3,7 +3,7 @@
 const { isDeepStrictEqual } = require('node:util');
 const { createHmac, randomBytes } = require('node:crypto');
 const { get } = require('./remote/world-model');
-const { validGenerators, generationChange } = require('./remote/world-generators');
+const { validGenerators, generationChange, compactGenerationChange } = require('./remote/world-generators');
 
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 const fields = (value, names) => value && typeof value === 'object' && !Array.isArray(value) &&
@@ -37,13 +37,15 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
 
   return {
     preview(source, body) {
-      if (!fields(body, ['revision', 'recipe']) || !Number.isSafeInteger(body.revision) || body.revision < 0 ||
+      const compact = fields(body, ['revision', 'recipe', 'format']) && body.format === 'delta-v1';
+      if ((!compact && !fields(body, ['revision', 'recipe'])) || !Number.isSafeInteger(body.revision) || body.revision < 0 ||
           !validRecipe(body.recipe)) fail(400, 'Проверь ревизию и параметры района.');
       if (source.revision !== body.revision) fail(409, 'Черновик изменён. Открой актуальную карту перед предпросмотром.');
       const context = movement.districtContext(source);
       const change = generate(body.recipe, source, context);
       const after = { chunks: change.chunks, objects: change.objects?.after || source.objects, generators: change.generators.after };
-      return { change, history: { before: proof(source, source), after: proof(source, after) },
+      return { change: compact ? compactGenerationChange(change) : change,
+        history: { before: proof(source, source), after: proof(source, after) },
         guard: { recipe: body.recipe, revision: source.revision, linksRevision: context.linksRevision } };
     },
     verifySave(source, next, guard) {

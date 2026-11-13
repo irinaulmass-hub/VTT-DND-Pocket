@@ -38,6 +38,7 @@ function editorFixture() {
       if(url.includes('/live'))return null;
       if(url.endsWith('/district-preview')){
         assert.equal(body.revision,saved.revision);
+        assert.equal(body.format,'delta-v1','the editor opts into the compact response');
         const result=copy(server.preview(copy(saved),body));
         if(holdPreview)return new Promise(resolve=>{releasePreview=()=>resolve(result);});
         return result;

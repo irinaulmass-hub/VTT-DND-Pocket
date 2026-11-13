@@ -932,6 +932,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     method:'POST',headers:noteHeaders,body:JSON.stringify(districtRequest),
   })).status,404,'district preview is scoped to the current campaign');
   assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,extra:true})).status,400);
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,format:'delta-v2'})).status,400);
   assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,revision:0})).status,409);
   const unboundDistrictPreview=await (await worldWrite(districtPreviewPath,'POST',districtRequest)).json();
   const districtHouse=districtSaved.objects[0], districtBounds=tiles.cellBounds(districtHouse);
@@ -955,7 +956,14 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     'an old caller cannot regenerate linked houses without a guard');
   const guardedDistrictResponse=await worldWrite(districtPreviewPath,'POST',districtRequest);
   assert.equal(guardedDistrictResponse.status,200);
-  const guardedDistrict=await guardedDistrictResponse.json();
+  const legacyDistrict=await guardedDistrictResponse.json();
+  const compactDistrictResponse=await worldWrite(districtPreviewPath,'POST',{...districtRequest,format:'delta-v1'});
+  assert.equal(compactDistrictResponse.status,200);
+  const compactDistrict=await compactDistrictResponse.json();
+  assert.equal(compactDistrict.change.format,'delta-v1');
+  assert.equal(compactDistrict.change.chunks,undefined,'compact responses do not repeat the world');
+  const guardedDistrict={...compactDistrict,change:require('../remote/world-generators').expandGenerationChange(compactDistrict.change,districtSaved)};
+  assert.deepEqual(JSON.parse(JSON.stringify(guardedDistrict)),legacyDistrict,'both wire formats restore the same signed snapshot');
   const changedDistrictBody=districtBody(guardedDistrict);changedDistrictBody.objects=structuredClone(changedDistrictBody.objects);
   changedDistrictBody.objects[0].x++;
   assert.equal((await worldWrite('/'+districtWorld.id,'PUT',changedDistrictBody)).status,409,

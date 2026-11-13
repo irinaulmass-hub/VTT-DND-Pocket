@@ -152,3 +152,29 @@ test('server-approved history restores exact snapshots and rejects altered data,
   f.link(source.objects[1],4);
   assert.throws(()=>server.verifySave(source,after,{revision:1,linksRevision:movement.linksRevision(),historyProof:preview.history.after}),{status:409});
 });
+
+test('compact District preview restores the exact bound snapshot without transmitting foreign recipes', t => {
+  const f=fixture(t), {source,recipe,districts}=f;
+  for(let i=0;i<30;i++) {
+    const x=128+i*40, y=128;
+    const change=g.generationChange({...recipe,id:'foreign-'+i,params:{count:8,
+      points:[{x,y},{x:x+32,y},{x:x+32,y:y+24},{x,y:y+24}]}},source);
+    Object.assign(source,{chunks:change.chunks,objects:change.objects.after,generators:change.generators.after});
+  }
+  const before=structuredClone(source), request={revision:1,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}};
+  const full=districts.preview(source,request), wire=JSON.parse(JSON.stringify(districts.preview(source,{...request,format:'delta-v1'})));
+  assert.deepEqual(source,before,'encoding does not mutate the source');
+  assert.equal(wire.change.chunks,undefined);
+  assert.equal(wire.change.generators.insert.length,1);
+  assert.ok(!JSON.stringify(wire).includes('foreign-'));
+  assert.ok(JSON.stringify(wire).length<JSON.stringify(full).length/10);
+  const expanded=g.expandGenerationChange(wire.change,source);
+  assert.deepEqual(JSON.parse(JSON.stringify(expanded)),JSON.parse(JSON.stringify(full.change)));
+  assert.deepEqual(wire.history,full.history);assert.deepEqual(wire.guard,full.guard);
+  const after=f.next({...wire,change:expanded});districts.verifySave(source,after,wire.guard);
+  districts.verifySave(after,{...source,revision:after.revision+1},{revision:after.revision,
+    linksRevision:wire.guard.linksRevision,historyProof:wire.history.before});
+  const tampered=structuredClone(after);map.set(tampered.chunks,1000,1000,'stone');
+  assert.throws(()=>districts.verifySave(source,tampered,wire.guard),{status:409});
+  for(const format of ['delta-v2',null,0])assert.throws(()=>districts.preview(source,{...request,format}),{status:400});
+});

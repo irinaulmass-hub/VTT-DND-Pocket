@@ -609,6 +609,61 @@
       generators: { before: generators, after: same(generators, nextGenerators) ? generators : nextGenerators } };
   }
 
+  // Wire-only deltas. Keep list order: it is part of the signed history snapshot.
+  function listDelta(before, after) {
+    const positions = new Map(before.map((value, index) => [value.id, index]));
+    const retained = new Set(), insert = [];
+    let last = -1;
+    after.forEach((value, index) => {
+      const original = positions.get(value.id);
+      if (original !== undefined && original > last && (before[original] === value || same(before[original], value))) {
+        retained.add(original); last = original;
+      } else insert.push({ index, value });
+    });
+    return { remove: before.map((_, index) => index).filter(index => !retained.has(index)), insert };
+  }
+
+  function expandListDelta(before, delta) {
+    if (!hasFields(delta, ['remove', 'insert']) || !Array.isArray(delta.remove) || !Array.isArray(delta.insert)) {
+      throw new RangeError('Некорректное изменение списка предпросмотра');
+    }
+    let last = -1;
+    for (const index of delta.remove) {
+      if (!Number.isInteger(index) || index <= last || index >= before.length) throw new RangeError('Некорректный индекс удаления');
+      last = index;
+    }
+    const removed = new Set(delta.remove), after = before.filter((_, index) => !removed.has(index));
+    last = -1;
+    for (const entry of delta.insert) {
+      if (!hasFields(entry, ['index', 'value']) || !Number.isInteger(entry.index) || entry.index <= last || entry.index > after.length) {
+        throw new RangeError('Некорректный индекс вставки');
+      }
+      after.splice(entry.index, 0, entry.value); last = entry.index;
+    }
+    return after;
+  }
+
+  function compactGenerationChange(change) {
+    return { format: 'delta-v1', id: change.id, count: change.count, tiles: change.tiles,
+      objects: change.objects ? listDelta(change.objects.before, change.objects.after) : null,
+      generators: listDelta(change.generators.before, change.generators.after) };
+  }
+
+  function expandGenerationChange(change, draft) {
+    if (!change.format) return change; // Older full responses remain readable.
+    if (change.format !== 'delta-v1') throw new RangeError('Неизвестный формат предпросмотра');
+    const working = copyChunks(draft.chunks);
+    for (const cell of change.tiles) {
+      if (!valid(cell.x) || !valid(cell.y) || get(draft.chunks, cell.x, cell.y) !== cell.before) {
+        throw new RangeError('Карта не совпадает с исходным предпросмотром');
+      }
+      working.write(cell.x, cell.y, cell.after);
+    }
+    return { id: change.id, count: change.count, tiles: change.tiles, chunks: working.chunks,
+      objects: change.objects ? { before: draft.objects, after: expandListDelta(draft.objects, change.objects) } : null,
+      generators: { before: draft.generators || [], after: expandListDelta(draft.generators || [], change.generators) } };
+  }
+
   // Manual edits and their ownership markers belong to the same Undo/Redo entry.
   function protectManualChanges(draft, change) {
     const generators = draft.generators || [];
@@ -632,6 +687,7 @@
   }
 
   const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
+    compactGenerationChange, expandGenerationChange,
     maxPathPoints, maxForestPoints, maxDistrictBuildings };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;
