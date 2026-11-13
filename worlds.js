@@ -179,6 +179,17 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
     res.json(districts.preview(data, req.body));
   }));
+  app.post('/api/worlds/:id/district-apply', requireDm, express.json({ limit: '8kb' }), route((req, res) => {
+    const data = store.readDraft(req.params.id);
+    if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
+    const { next, response } = districts.prepareApply(data, req.body);
+    if (!validMap(next) || !validGenerators(next.generators)) {
+      return res.status(400).json({ error: 'Проверьте слои карты и параметры генераторов' });
+    }
+    // The same synchronous draft commit as PUT; no publication or transition writes.
+    store.writeDraft(next);
+    res.json(response);
+  }));
   app.post('/api/worlds/:id/building-links', requireDm, json, route((req, res) => {
     const body = req.body || {};
     const fields = ['buildingId', 'sourceRevision', 'targetRevision', 'linksRevision', 'x', 'y', 'toMapId', 'toX', 'toY'];

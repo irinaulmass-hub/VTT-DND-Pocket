@@ -991,6 +991,60 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const districtRedo=await historyRestore(districtAfterGuarded,guardedDistrict.history.after);
   assert.equal(districtRedo.status,200);districtSaved=await districtRedo.json();
   assert.deepEqual(districtSaved.objects,districtAfterGuarded.objects);
+  const districtApplyPath='/'+districtWorld.id+'/district-apply';
+  const applyPreview=await (await worldWrite(districtPreviewPath,'POST',{revision:districtSaved.revision,
+    recipe:{...districtRecipe,seed:47,params:{...districtRecipe.params,count:4}},format:'delta-v1'})).json();
+  const applyBody={districtGuard:applyPreview.guard};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+districtApplyPath+worldGame+query,{method:'POST',redirect:'manual',
+      headers,body:JSON.stringify(applyBody)})).status,302,'compact apply is master-only, including a master cookie in table view');
+  }
+  assert.equal((await fetch(worldBase+districtApplyPath+'?game='+packedCampaign.id,{method:'POST',
+    headers:noteHeaders,body:JSON.stringify(applyBody)})).status,404,'apply is scoped to the campaign');
+  assert.equal((await worldWrite(districtApplyPath,'POST',{})).status,400);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{...applyBody,chunks:{}})).status,400);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{districtGuard:{...applyPreview.guard,revision:0}})).status,409);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{districtGuard:{...applyPreview.guard,linksRevision:'0'.repeat(64)}})).status,409);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{...applyBody,padding:'x'.repeat(9000)})).status,413);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json(),districtSaved,
+    'failed apply requests leave the map unchanged');
+  const applyBefore=structuredClone(districtSaved);
+  const tableBeforeApply=await tableWorld();
+  const linksBeforeApply=await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json();
+  const applyResponse=await worldWrite(districtApplyPath,'POST',applyBody);
+  assert.equal(applyResponse.status,200);
+  const applied=await applyResponse.json();
+  assert.deepEqual(Object.keys(applied).sort(),['baseRevision','change','history','id','revision']);
+  assert.ok(Buffer.byteLength(JSON.stringify(applyBody))<1024,'the request contains no full map');
+  const appliedChange=require('../remote/world-generators').expandGenerationChange(applied.change,applyBefore);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.equal(districtSaved.revision,applyBefore.revision+1);
+  assert.equal(applied.baseRevision,applyBefore.revision);assert.equal(applied.revision,districtSaved.revision);
+  assert.deepEqual(districtSaved.chunks,appliedChange.chunks);
+  assert.deepEqual(districtSaved.objects,appliedChange.objects?.after||applyBefore.objects);
+  assert.deepEqual(districtSaved.generators,appliedChange.generators.after);
+  assert.equal(districtSaved.objects.length,4);
+  assert.deepEqual(districtSaved.objects.find(prop=>prop.id===districtHouse.id),districtHouse);
+  assert.deepEqual(await tableWorld(),tableBeforeApply,'applying a draft does not publish or change the shared screen');
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json(),linksBeforeApply,
+    'applying a district does not rewrite its entry/return pair');
+  assert.equal((await worldWrite(districtApplyPath,'POST',applyBody)).status,409,'a duplicate cannot apply twice');
+  const applyAfter=structuredClone(districtSaved);
+  const applyUndo=await historyRestore(applyBefore,applied.history.before);
+  assert.equal(applyUndo.status,200);districtSaved=await applyUndo.json();
+  const applyRedo=await historyRestore(applyAfter,applied.history.after);
+  assert.equal(applyRedo.status,200);districtSaved=await applyRedo.json();
+  assert.deepEqual(districtSaved.objects,applyAfter.objects,'new apply history works with the existing PUT');
+
+  const applyLegacyId='10000000-0000-0000-0000-000000000003';
+  const applyLegacyFile=path.join(worldDir,applyLegacyId+'.json');
+  fs.writeFileSync(applyLegacyFile,JSON.stringify({id:applyLegacyId,name:'Legacy District apply',revision:0,chunks:{},objects:[]}));
+  const legacyApplyPreview=await (await worldWrite('/'+applyLegacyId+'/district-preview','POST',{
+    revision:0,recipe:districtRecipe,format:'delta-v1'})).json();
+  assert.equal((await worldWrite('/'+applyLegacyId+'/district-apply','POST',{districtGuard:legacyApplyPreview.guard})).status,200);
+  assert.equal(JSON.parse(fs.readFileSync(applyLegacyFile)).revision,1);
+  assert.equal(fs.existsSync(path.join(worldDir,applyLegacyId+'-chunks.json')),false,'legacy saves are not silently migrated');
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');

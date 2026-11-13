@@ -178,3 +178,49 @@ test('compact District preview restores the exact bound snapshot without transmi
   assert.throws(()=>districts.verifySave(source,tampered,wire.guard),{status:409});
   for(const format of ['delta-v2',null,0])assert.throws(()=>districts.preview(source,{...request,format}),{status:400});
 });
+
+test('server-prepared District apply matches guarded PUT and returns only reconstructable changes and history', t => {
+  const f=fixture(t), {source,recipe,districts,store,movement}=f;
+  map.set(source.chunks,100,100,'stone');
+  source.objects.push({id:'manual-secret',kind:'tree',x:100,y:101,turn:0,hidden:true});
+  store.writeDraft(source);
+  const untouched=structuredClone(source), links=movement.linksRevision();
+  const preview=districts.preview(source,{revision:source.revision,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
+  const {next,response}=districts.prepareApply(source,{districtGuard:preview.guard});
+  const expected=f.next(preview);expected.objects=expected.objects.map(prop=>({...prop,hidden:prop.hidden===true}));
+  assert.deepEqual(next,expected);assert.deepEqual(source,untouched);
+  assert.equal(map.get(next.chunks,100,100),'stone');
+  assert.deepEqual(next.objects.find(prop=>prop.id==='manual-secret'),source.objects.at(-1));
+  assert.deepEqual(store.readDraft(source.id),source,'preparation alone does not write');
+  assert.deepEqual(response.history,preview.history);
+  assert.equal(response.baseRevision,source.revision);assert.equal(response.revision,source.revision+1);
+  assert.deepEqual(Object.keys(response).sort(),['baseRevision','change','history','id','revision']);
+  assert.equal(response.change.format,'delta-v1');assert.equal(response.change.chunks,undefined);
+  const expanded=g.expandGenerationChange(JSON.parse(JSON.stringify(response.change)),source);
+  assert.deepEqual(expanded.chunks,next.chunks);assert.deepEqual(expanded.objects.after,next.objects);
+  assert.deepEqual(expanded.generators.after,next.generators);
+  districts.verifySave(source,next,preview.guard);
+  districts.verifySave(next,{...source,revision:next.revision+1},{revision:next.revision,linksRevision:links,historyProof:response.history.before});
+  store.writeDraft(next);assert.deepEqual(store.readDraft(source.id),next);
+  assert.equal(movement.linksRevision(),links);
+});
+
+test('compact District apply rejects malformed bodies, history guards and stale map or bindings before writing', t => {
+  const f=fixture(t), {source,recipe,districts,store,movement}=f;
+  const guard=districts.preview(source,{revision:source.revision,recipe:{...recipe,seed:0}}).guard;
+  for(const body of [null,{},[],{districtGuard:undefined},{districtGuard:guard,chunks:{}},
+    {districtGuard:{...guard,extra:true}},{districtGuard:{...guard,revision:-1}},
+    {districtGuard:{...guard,linksRevision:'invalid'}},{districtGuard:{...guard,recipe:{...recipe,kind:'path'}}},
+    {districtGuard:{revision:1,linksRevision:guard.linksRevision,historyProof:'a'.repeat(64)}}]) {
+    assert.throws(()=>districts.prepareApply(source,body),{status:400});
+  }
+  assert.throws(()=>districts.prepareApply({...source,revision:2},{districtGuard:guard}),{status:409});
+  assert.throws(()=>districts.prepareApply({...source,revision:Number.MAX_SAFE_INTEGER},
+    {districtGuard:{...guard,revision:Number.MAX_SAFE_INTEGER}}),{status:409});
+  f.link(source.objects[0],4);
+  assert.throws(()=>districts.prepareApply(source,{districtGuard:guard}),{status:409});
+  const fresh=districts.preview(source,{revision:1,recipe}).guard;
+  movement.removeTransition(source.id,movement.listTransitions(source.id)[0].id,movement.linksRevision());
+  assert.throws(()=>districts.prepareApply(source,{districtGuard:fresh}),{status:409});
+  assert.deepEqual(store.readDraft(source.id),source,'all invalid requests preserve the draft');
+});

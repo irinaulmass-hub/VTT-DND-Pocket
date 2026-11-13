@@ -34,6 +34,19 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       fail(409, error.message);
     }
   }
+  function checkedGuard(source, guard, allowHistory = true) {
+    const restoring = allowHistory && fields(guard, ['historyProof', 'revision', 'linksRevision']);
+    if ((!restoring && (!fields(guard, ['recipe', 'revision', 'linksRevision']) || !validRecipe(guard.recipe))) ||
+        (restoring && (typeof guard.historyProof !== 'string' || !/^[a-f0-9]{64}$/.test(guard.historyProof))) ||
+        !Number.isSafeInteger(guard.revision) || guard.revision < 0 ||
+        typeof guard.linksRevision !== 'string' || !/^[a-f0-9]{64}$/.test(guard.linksRevision)) {
+      fail(400, 'Некорректная версия предпросмотра района.');
+    }
+    if (guard.revision !== source.revision) fail(409, 'Карта изменилась после предпросмотра. Повтори генерацию.');
+    const context = movement.districtContext(source);
+    if (guard.linksRevision !== context.linksRevision) fail(409, 'Переходы изменились. Повтори предпросмотр района.');
+    return { context, restoring };
+  }
 
   return {
     preview(source, body) {
@@ -48,6 +61,19 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
         history: { before: proof(source, source), after: proof(source, after) },
         guard: { recipe: body.recipe, revision: source.revision, linksRevision: context.linksRevision } };
     },
+    prepareApply(source, body) {
+      if (!fields(body, ['districtGuard'])) fail(400, 'Для применения района передай только districtGuard.');
+      const { context } = checkedGuard(source, body.districtGuard, false);
+      if (source.revision >= Number.MAX_SAFE_INTEGER) fail(409, 'Исчерпана ревизия карты.');
+      const change = generate(body.districtGuard.recipe, source, context);
+      const next = { ...source, revision: source.revision + 1, chunks: change.chunks,
+        objects: normalizeObjects(change.objects?.after || source.objects), generators: change.generators.after };
+      // Match the existing PUT's normalization, including legacy objects without hidden.
+      const normalized = { ...change, objects: isDeepStrictEqual(source.objects, next.objects) ? null :
+        { before: source.objects, after: next.objects } };
+      return { next, response: { id: source.id, baseRevision: source.revision, revision: next.revision,
+        change: compactGenerationChange(normalized), history: { before: proof(source, source), after: proof(source, next) } } };
+    },
     verifySave(source, next, guard) {
       const changed = !isDeepStrictEqual(definitions(source), definitions(next));
       if (guard === undefined) {
@@ -57,16 +83,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
         }
         return;
       }
-      const restoring = fields(guard, ['historyProof', 'revision', 'linksRevision']);
-      if ((!restoring && (!fields(guard, ['recipe', 'revision', 'linksRevision']) || !validRecipe(guard.recipe))) ||
-          (restoring && (typeof guard.historyProof !== 'string' || !/^[a-f0-9]{64}$/.test(guard.historyProof))) ||
-          !Number.isSafeInteger(guard.revision) || guard.revision < 0 ||
-          typeof guard.linksRevision !== 'string' || !/^[a-f0-9]{64}$/.test(guard.linksRevision)) {
-        fail(400, 'Некорректная версия предпросмотра района.');
-      }
-      if (guard.revision !== source.revision) fail(409, 'Карта изменилась после предпросмотра. Повтори генерацию.');
-      const context = movement.districtContext(source);
-      if (guard.linksRevision !== context.linksRevision) fail(409, 'Переходы изменились. Повтори предпросмотр района.');
+      const { context, restoring } = checkedGuard(source, guard);
       if (restoring) {
         if (proof(source, next) !== guard.historyProof) fail(409, 'История района устарела или изменена. Открой карту заново.');
         movement.districtContext(next);
