@@ -1075,8 +1075,26 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   fs.writeFileSync(applyLegacyFile,JSON.stringify({id:applyLegacyId,name:'Legacy District apply',revision:0,chunks:{},objects:[]}));
   const legacyApplyPreview=await (await worldWrite('/'+applyLegacyId+'/district-preview','POST',{
     revision:0,recipe:districtRecipe,format:'delta-v1'})).json();
-  assert.equal((await worldWrite('/'+applyLegacyId+'/district-apply','POST',{districtGuard:legacyApplyPreview.guard})).status,200);
+  const legacyAppliedResponse=await worldWrite('/'+applyLegacyId+'/district-apply','POST',{districtGuard:legacyApplyPreview.guard});
+  assert.equal(legacyAppliedResponse.status,200);
+  const legacyApplied=await legacyAppliedResponse.json(), legacyAfter=JSON.parse(fs.readFileSync(applyLegacyFile));
   assert.equal(JSON.parse(fs.readFileSync(applyLegacyFile)).revision,1);
+  let legacyCurrent=legacyAfter;
+  for(const backwards of [true,false]) {
+    const target=backwards?{chunks:{},objects:[],generators:[]}:legacyAfter;
+    const delta=generators.compactGenerationChange({id:districtRecipe.id,count:legacyApplied.change.tiles.length,
+      tiles:legacyApplied.change.tiles.map(cell=>backwards?{x:cell.x,y:cell.y,before:cell.after,after:cell.before}:cell),
+      objects:{before:legacyCurrent.objects,after:target.objects},
+      generators:{before:legacyCurrent.generators||[],after:target.generators}});
+    const historyResponse=await worldWrite('/'+applyLegacyId+'/district-history','POST',{
+      districtGuard:{revision:legacyCurrent.revision,linksRevision:legacyApplyPreview.guard.linksRevision,
+        historyProof:legacyApplied.history[backwards?'before':'after']},change:delta});
+    assert.equal(historyResponse.status,200,'legacy history uses the compatible full-save fallback');
+    legacyCurrent=JSON.parse(fs.readFileSync(applyLegacyFile));
+    assert.deepEqual(legacyCurrent.chunks,target.chunks);assert.deepEqual(legacyCurrent.objects,target.objects);
+    assert.deepEqual(legacyCurrent.generators,target.generators);
+  }
+  assert.equal(legacyCurrent.revision,3);
   assert.equal(fs.existsSync(path.join(worldDir,applyLegacyId+'-chunks.json')),false,'legacy saves are not silently migrated');
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};

@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
+const { size, valid } = require('./remote/world-model');
 
 const idPattern = /^[a-f0-9-]{36}$/;
 
@@ -75,6 +76,43 @@ module.exports = function createWorldStore(gameFile) {
       return write(worldFile(draft.id, ''), draft);
     }
     saveChunkDraft(draft);
+  }
+
+  // Internal commit of an already validated District snapshot. Only supplied chunks are hashed;
+  // callers derive these replacements/deletions from the server-verified cell delta.
+  function writeDraftChanges(draft, revision, changes, limit) {
+    if (!idPattern.test(draft.id)) return { status: 'missing' };
+    if (!Number.isSafeInteger(revision) || revision < 0 || !Number.isSafeInteger(draft.revision) ||
+        draft.revision !== revision + 1 || !Number.isSafeInteger(limit) || limit < 0 ||
+        !changes || typeof changes !== 'object' || Array.isArray(changes)) throw Error('Invalid draft commit');
+    for (const [key, tiles] of Object.entries(changes)) {
+      if (!/^-?\d{1,3},-?\d{1,3}$/.test(key) || key.split(',').map(Number).join(',') !== key ||
+          key.split(',').some(n => !valid(Number(n) * size)) ||
+          (tiles !== null && (!tiles || typeof tiles !== 'object' || Array.isArray(tiles)))) {
+        throw Error('Invalid draft chunk changes');
+      }
+    }
+    const file = manifestFile(draft.id, ''), manifest = readManifest(file);
+    if (!manifest) {
+      const previous = read(worldFile(draft.id, ''));
+      if (!previous) return { status: 'missing' };
+      if (previous.revision !== revision) return { status: 'conflict' };
+      if (Object.values(draft.chunks).reduce((sum, tiles) => sum + Object.keys(tiles).length, 0) > limit) return { status: 'limit' };
+      writeDraft(draft); // Preserve the legacy format; no migration as a side effect of editing.
+      return { status: 'saved', revision: draft.revision };
+    }
+    if (manifest.map.revision !== revision) return { status: 'conflict' };
+    const count = Object.values(manifest.index).reduce((sum, entry) => sum + entry.count, 0);
+    const delta = Object.entries(changes).reduce((sum, [key, tiles]) =>
+      sum + (tiles === null ? 0 : Object.keys(tiles).length) - (manifest.index[key]?.count || 0), 0);
+    if (count + delta > limit) return { status: 'limit' };
+    const replacements = Object.fromEntries(Object.entries(changes).filter(([, tiles]) => tiles !== null));
+    const index = { ...manifest.index, ...writeChunks(draft.id, replacements) };
+    for (const [key, tiles] of Object.entries(changes)) if (tiles === null) delete index[key];
+    const { chunks, ...metadata } = draft;
+    // A failed chunk write or manifest replacement leaves the previous index authoritative.
+    write(file, { ...manifest, map: metadata, index });
+    return { status: 'saved', revision: draft.revision };
   }
 
   function patchDraft(id, revision, changes, limit) {
@@ -176,6 +214,7 @@ module.exports = function createWorldStore(gameFile) {
     },
     readDraft,
     writeDraft,
+    writeDraftChanges,
     patchDraft,
     readPublished,
     writePublished,

@@ -75,6 +75,14 @@ function summary(values) {
   const sorted=[...values].sort((a,b)=>a-b);
   return {min:sorted[0],median:sorted[Math.floor(sorted.length/2)],p95:sorted[Math.ceil(sorted.length*.95)-1],max:sorted.at(-1)};
 }
+function snapshotFingerprint(snapshot) {
+  // Chunk/index object insertion order can differ between equivalent storage paths.
+  // Arrays retain their order, as required by the signed history contract.
+  const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?
+    Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+  return createHash('sha256').update(JSON.stringify(canonical({revision:snapshot.revision,
+    chunks:snapshot.chunks,objects:snapshot.objects,generators:snapshot.generators}))).digest('hex');
+}
 function aggregate(rows) {
   return Object.fromEntries([...new Set(rows.map(row=>row.operation))].map(operation=>{
     const selected=rows.filter(row=>row.operation===operation);
@@ -194,8 +202,7 @@ async function runProfile(name,samples,previewFormat,saveMode,historyMode,stages
     assert.equal(verification.revision,saved.revision);assert.deepEqual(verification.generators,saved.generators);
     const movement=require('../world-movement')(require('../world-store')(file=>path.join(dir,file)),file=>path.join(dir,file));
     assert.equal(movement.linksRevision(),built.links,'measurement never changes the binding file');
-    const verificationSha256=createHash('sha256').update(JSON.stringify({revision:verification.revision,
-      chunks:verification.chunks,objects:verification.objects,generators:verification.generators})).digest('hex');
+    const verificationSha256=snapshotFingerprint(verification);
     return {name,dimensions,status:'verified',verificationSha256,maxSaveBytes,rows,summary:aggregate(rows)};
   } finally {
     if(child&&child.exitCode===null&&child.signalCode===null){const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await exited;}
@@ -226,6 +233,7 @@ async function main() {
       stageTiming:'optional benchmark-only synchronous wrappers; inclusive totalMs and exclusive selfMs; do not sum inclusive times',
       signatureInput:'createHmac-to-first-update interval in District proof: normalization, canonicalization and JSON serialization combined; crypto calls timed separately',
       stageRemainder:'server time outside exclusive stage spans, including route validation, response serialization and HTTP; District selfMs includes its remaining validation and delta work',
+      verification:'sha256 of canonical revision/chunks/objects/generators; object-key order ignored, array order preserved',
       history:'optional undo/redo followed by unmeasured verification reads',expansion:'client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured',
       cache:'warm filesystem/OS cache; one unrecorded warm-up; no forced server GC',
       memory:'server heap after each request; RSS and lifetime process peak; fixture built outside the server',
@@ -238,3 +246,4 @@ async function main() {
   else process.stdout.write(json);
 }
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
+module.exports={snapshotFingerprint};

@@ -2,7 +2,7 @@
 
 const { isDeepStrictEqual } = require('node:util');
 const { createHmac, randomBytes } = require('node:crypto');
-const { get, valid, terrain, objectLimit } = require('./remote/world-model');
+const { get, valid, terrain, objectLimit, address } = require('./remote/world-model');
 const { validGenerators, generationChange, compactGenerationChange, expandGenerationChange } = require('./remote/world-generators');
 
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
@@ -12,6 +12,8 @@ const validRecipe = recipe => fields(recipe, ['id', 'kind', 'version', 'seed', '
   recipe.kind === 'district' && validGenerators([recipe]);
 const normalizeObjects = objects => objects.map(({ id, kind, x, y, turn, hidden }) =>
   ({ id, kind, x, y, turn, hidden: hidden === true }));
+const chunkChanges = (next, tiles) => Object.fromEntries([...new Set(tiles.map(cell => address(cell.x, cell.y)[0]))]
+  .map(key => [key, next.chunks[key] ?? null]));
 // Ownership markers may change during normal manual edits without regenerating a district.
 const definitions = map => (map.generators || []).filter(recipe => recipe.kind === 'district').map(recipe => ({
   id: recipe.id, version: recipe.version, seed: recipe.seed, params: recipe.params,
@@ -84,7 +86,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       // Match the existing PUT's normalization, including legacy objects without hidden.
       const normalized = { ...change, objects: isDeepStrictEqual(source.objects, next.objects) ? null :
         { before: source.objects, after: next.objects } };
-      return { next, response: { id: source.id, baseRevision: source.revision, revision: next.revision,
+      return { next, chunkChanges: chunkChanges(next, change.tiles), response: { id: source.id, baseRevision: source.revision, revision: next.revision,
         change: compactGenerationChange(normalized), history: { before: proof(source, source), after: proof(source, next) } } };
     },
     prepareHistory(source, body) {
@@ -119,7 +121,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       const next = { ...source, revision: source.revision + 1, chunks: change.chunks,
         objects: normalizeObjects(change.objects?.after || source.objects), generators: change.generators.after };
       verifyHistory(source, next, body.districtGuard, context);
-      return { next, response: { id: source.id, baseRevision: source.revision, revision: next.revision } };
+      return { next, chunkChanges: chunkChanges(next, change.tiles), response: { id: source.id, baseRevision: source.revision, revision: next.revision } };
     },
     verifySave(source, next, guard) {
       const changed = !isDeepStrictEqual(definitions(source), definitions(next));

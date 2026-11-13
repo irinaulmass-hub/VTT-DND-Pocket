@@ -57,7 +57,9 @@ test('world benchmark measures real HTTP operations in isolated data and never o
   assert.equal(apply.stages.generation.calls,1);
   assert.equal(apply.stages['signature.input'].calls,2);
   assert.equal(apply.stages['signature.crypto'].calls,6,'create/update/digest per signature');
-  assert.equal(apply.stages['store.writeDraft'].calls,1);
+  assert.equal(apply.stages['store.writeDraftChanges'].calls,1);
+  assert.equal(apply.stages['store.writeDraft'],undefined,'compact routes use the bounded commit');
+  assert.ok((apply.stages['store.chunkHash']?.calls||0)<=4,'one District touches at most four fixture chunks');
   const undo=rows.find(row=>row.operation==='history_undo');
   assert.equal(undo.stages['signature.input'].calls,1);
   assert.equal(undo.stages['movement.districtContext'].calls,2);
@@ -90,6 +92,18 @@ test('world benchmark rejects unknown profiles and invalid sample counts before 
     assert.notEqual(result.status,0);
     assert.doesNotMatch(result.stderr,/Measuring/);
   }
+});
+
+test('benchmark snapshot comparison ignores object insertion order but preserves array order and data', () => {
+  const { snapshotFingerprint }=require('../scripts/world-benchmark.cjs');
+  const first={revision:4,chunks:{'2,0':{0:'grass'},'-1,-1':{1023:'path'}},
+    objects:[{id:'a',x:1},{id:'b',x:2}],generators:[]};
+  const reordered={generators:[],objects:[{x:1,id:'a'},{x:2,id:'b'}],
+    chunks:{'-1,-1':{1023:'path'},'2,0':{0:'grass'}},revision:4};
+  assert.equal(snapshotFingerprint(first),snapshotFingerprint(reordered));
+  assert.notEqual(snapshotFingerprint(first),snapshotFingerprint({...reordered,objects:[...reordered.objects].reverse()}));
+  assert.notEqual(snapshotFingerprint(first),snapshotFingerprint({...reordered,revision:5}));
+  assert.notEqual(snapshotFingerprint(first),snapshotFingerprint({...reordered,chunks:{}}));
 });
 
 test('stage accounting excludes nested spans and preserves return values and errors', () => {

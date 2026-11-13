@@ -39,6 +39,7 @@ function install(current, root) {
     wrapped.add(object);
     for (const name of names) {
       const original = object[name];
+      if (typeof original !== 'function') continue;
       object[name] = function(...args) {
         return stages.measure(prefix + name, () => original.apply(this, args));
       };
@@ -46,12 +47,23 @@ function install(current, root) {
     return object;
   }
   const factories = new Map([
-    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft'], prefix:'store.' }],
+    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges'], prefix:'store.' }],
     [path.join(root, 'world-movement.js'), { names:['districtContext'], prefix:'movement.' }],
     [path.join(root, 'world-districts.js'), { names:['preview','prepareApply','prepareHistory','verifySave'], prefix:'district.' }],
   ]);
   Module._load = function(request, parent, ...rest) {
     const value = load.call(this, request, parent, ...rest);
+    if (parent?.filename === path.join(root, 'world-store.js') && request === 'node:crypto') {
+      return { ...value, createHash(...args) {
+        if (!current()) return value.createHash(...args);
+        const start = performance.now(), hash = value.createHash(...args), digest = hash.digest;
+        hash.digest = function(...args) {
+          try { return digest.apply(this, args); }
+          finally { stages.span('store.chunkHash', performance.now() - start); }
+        };
+        return hash;
+      } };
+    }
     if (parent?.filename === path.join(root, 'world-districts.js')) {
       if (request === 'node:crypto') return { ...value, createHmac(...args) {
         if (!current()) return value.createHmac(...args);

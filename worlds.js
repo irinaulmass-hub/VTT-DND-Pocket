@@ -107,6 +107,14 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   };
   const json = express.json({ limit: '8mb' });
 
+  function saveDistrict(source, next, changes) {
+    const result = store.writeDraftChanges(next, source.revision, changes, tileLimit);
+    if (result.status !== 'saved') throw Object.assign(new Error(
+      result.status === 'missing' ? 'Карта не найдена в этой кампании.' :
+      result.status === 'limit' ? 'Превышен лимит тайлов на карте.' : 'Карта изменилась. Открой актуальный черновик.'
+    ), { status: result.status === 'missing' ? 404 : result.status === 'limit' ? 400 : 409 });
+  }
+
   app.get('/api/worlds', requireDm, route((req, res) => {
     res.json({ worlds: store.listDrafts() });
   }));
@@ -182,22 +190,22 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   app.post('/api/worlds/:id/district-apply', requireDm, express.json({ limit: '8kb' }), route((req, res) => {
     const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
-    const { next, response } = districts.prepareApply(data, req.body);
+    const { next, response, chunkChanges } = districts.prepareApply(data, req.body);
     if (!validMap(next) || !validGenerators(next.generators)) {
       return res.status(400).json({ error: 'Проверьте слои карты и параметры генераторов' });
     }
-    // The same synchronous draft commit as PUT; no publication or transition writes.
-    store.writeDraft(next);
+    // Commit only verified chunk replacements; publication and transitions are untouched.
+    saveDistrict(data, next, chunkChanges);
     res.json(response);
   }));
   app.post('/api/worlds/:id/district-history', requireDm, json, route((req, res) => {
     const data = store.readDraft(req.params.id);
     if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
-    const { next, response } = districts.prepareHistory(data, req.body);
+    const { next, response, chunkChanges } = districts.prepareHistory(data, req.body);
     if (!validMap(next) || !validGenerators(next.generators)) {
       return res.status(400).json({ error: 'Проверьте слои карты и параметры генераторов' });
     }
-    store.writeDraft(next);
+    saveDistrict(data, next, chunkChanges);
     res.json(response);
   }));
   app.post('/api/worlds/:id/building-links', requireDm, json, route((req, res) => {

@@ -186,7 +186,7 @@ test('server-prepared District apply matches guarded PUT and returns only recons
   store.writeDraft(source);
   const untouched=structuredClone(source), links=movement.linksRevision();
   const preview=districts.preview(source,{revision:source.revision,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
-  const {next,response}=districts.prepareApply(source,{districtGuard:preview.guard});
+  const {next,response,chunkChanges}=districts.prepareApply(source,{districtGuard:preview.guard});
   const expected=f.next(preview);expected.objects=expected.objects.map(prop=>({...prop,hidden:prop.hidden===true}));
   assert.deepEqual(next,expected);assert.deepEqual(source,untouched);
   assert.equal(map.get(next.chunks,100,100),'stone');
@@ -201,7 +201,9 @@ test('server-prepared District apply matches guarded PUT and returns only recons
   assert.deepEqual(expanded.generators.after,next.generators);
   districts.verifySave(source,next,preview.guard);
   districts.verifySave(next,{...source,revision:next.revision+1},{revision:next.revision,linksRevision:links,historyProof:response.history.before});
-  store.writeDraft(next);assert.deepEqual(store.readDraft(source.id),next);
+  assert.equal(Object.hasOwn(chunkChanges,map.address(100,100)[0]),false,'manual distant terrain is outside the commit');
+  assert.equal(store.writeDraftChanges(next,source.revision,chunkChanges,map.tileLimit).status,'saved');
+  assert.deepEqual(store.readDraft(source.id),next);
   assert.equal(movement.linksRevision(),links);
 });
 
@@ -235,7 +237,8 @@ test('compact history restores signed bound snapshots with exact order and a sma
   const f=fixture(t), {source,recipe,districts,movement,store}=f;
   map.set(source.chunks,100,100,'stone');store.writeDraft(source);
   const preview=districts.preview(source,{revision:1,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
-  const after=districts.prepareApply(source,{districtGuard:preview.guard}).next;
+  const applied=districts.prepareApply(source,{districtGuard:preview.guard}), after=applied.next;
+  assert.equal(store.writeDraftChanges(after,source.revision,applied.chunkChanges,map.tileLimit).status,'saved');
   const reverse=preview.change.tiles.map(c=>({x:c.x,y:c.y,before:c.after,after:c.before}));
   const links=movement.linksRevision(), before=structuredClone(after);
   const undo=districts.prepareHistory(after,compactHistory(after,source,reverse,recipe.id,preview.history.before,links));
@@ -243,10 +246,12 @@ test('compact history restores signed bound snapshots with exact order and a sma
   assert.deepEqual(undo.next.generators,source.generators);
   assert.deepEqual(undo.next.objects,source.objects.map(p=>({...p,hidden:p.hidden===true})));
   assert.deepEqual(undo.response,{id:source.id,baseRevision:2,revision:3});
-  store.writeDraft(undo.next);
+  assert.equal(store.writeDraftChanges(undo.next,after.revision,undo.chunkChanges,map.tileLimit).status,'saved');
+  assert.deepEqual(store.readDraft(source.id),undo.next);
   const redo=districts.prepareHistory(undo.next,compactHistory(undo.next,after,preview.change.tiles,recipe.id,preview.history.after,links));
   assert.deepEqual(redo.next.objects,after.objects);assert.deepEqual(redo.next.chunks,after.chunks);
-  store.writeDraft(redo.next);assert.deepEqual(store.readDraft(source.id),redo.next);
+  assert.equal(store.writeDraftChanges(redo.next,undo.next.revision,redo.chunkChanges,map.tileLimit).status,'saved');
+  assert.deepEqual(store.readDraft(source.id),redo.next);
   assert.equal(movement.linksRevision(),links);
   districts.verifySave(redo.next,{...source,revision:5},{revision:4,linksRevision:links,historyProof:preview.history.before});
 });
