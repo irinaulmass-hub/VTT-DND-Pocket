@@ -217,7 +217,7 @@
   }
 
   function paintCrown(ctx, prop) {
-    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107) ^ (prop.turn << 3)) >>> 0) % 32;
+    const frame = WorldMap.crownFrame(prop), { variant } = frame;
     const key = prop.kind + variant;
     let sprite = crowns.get(key);
     if (!sprite) {
@@ -251,9 +251,7 @@
       }
       crowns.set(key, sprite);
     }
-    const shiftX = ((variant % 7) - 3) * .038;
-    const shiftY = ((variant % 5) - 2) * .045;
-    ctx.drawImage(sprite, -1.2 + shiftX, -1.1 + shiftY, 2.4, 2.4);
+    ctx.drawImage(sprite, frame.left, frame.top, frame.width, frame.height);
   }
 
   const roofSprites = new Map();

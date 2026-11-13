@@ -1403,16 +1403,22 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     {id:'boundary-east',kind:'tavern',x:32,y:8,turn:1},
     {id:'boundary-secret',kind:'barn',x:31,y:17,turn:0,hidden:true},
     {id:'boundary-far',kind:'barn',x:200,y:2,turn:0},
+    {id:'boundary-crown',kind:'tree',x:31,y:22,turn:0},
+    {id:'boundary-roof',kind:'house',x:30,y:2,turn:0},
+    {id:'boundary-negative-crown',kind:'bush',x:-1,y:24,turn:3},
   ];
   const boundarySave=await fetch(worldBase+'/'+boundaryWorld.id+worldGame,{
     method:'PUT',headers:resumedHeaders,body:JSON.stringify(boundaryWorld)}).then(r=>r.json());
   assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:false})).status,200);
   const boundaryView=await tableWorld('0,0');
-  assert.deepEqual(boundaryView.objects.map(p=>p.id),['boundary-west','boundary-east'],
+  const boundaryIds=['boundary-west','boundary-east','boundary-crown','boundary-roof','boundary-negative-crown'];
+  assert.deepEqual(boundaryView.objects.map(p=>p.id),boundaryIds,
     'real chunk response includes overlapping buildings anchored outside the requested chunk');
   assert.deepEqual(Object.keys(boundaryView.chunks),['0,0'],'no neighboring terrain is added');
   assert.equal(boundaryView.generators,undefined);
-  assert.deepEqual((await tableWorld('0,0;1,0;0,0')).objects.map(p=>p.id),['boundary-west','boundary-east']);
+  assert.deepEqual((await tableWorld('0,0;1,0;0,0')).objects.map(p=>p.id),boundaryIds);
+  assert.deepEqual((await tableWorld('1,0')).objects.map(p=>p.id),['boundary-east','boundary-crown','boundary-roof'],
+    'a crown and roof are selected even when their occupied cells end in the neighboring chunk');
   const emptyBoundaryView=await fetch(worldBase+'/table'+worldGame).then(r=>r.json());
   assert.deepEqual(emptyBoundaryView.objects,[]);
   assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:true})).status,200);

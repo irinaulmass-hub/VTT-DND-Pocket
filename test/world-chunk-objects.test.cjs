@@ -12,12 +12,12 @@ test('chunk object selection includes intersecting footprints across positive/ne
   for(const [object,key,expected] of [
     [prop('west','tavern',32,2),'0,0',true],
     [prop('east','tavern',30,2),'1,0',true],
-    [prop('outside','tavern',29,2),'1,0',false],
+    [prop('outside','tavern',28,2),'1,0',false],
     [prop('turned','tavern',32,2,1),'0,0',true],
     [prop('negative','tavern',-1,-1),'0,0',true],
     [prop('negative-turned','barn',-32,-32,3),'-2,-2',true],
     [prop('wall-east','wall',31,2,0),'1,0',true],
-    [prop('wall-west','wall',31,2,2),'1,0',false],
+    [prop('wall-west','wall',30,2,2),'1,0',false],
     [prop('wall-south','wall',2,31,1),'0,1',true],
   ]) assert.deepEqual(ids(project(data([object]),new Set([key]),state())),expected?[object.id]:[],object.id);
   const objects=[prop('crossing'),prop('far','barn',400,400)];

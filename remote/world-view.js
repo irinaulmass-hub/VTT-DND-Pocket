@@ -53,7 +53,7 @@
           ? { ...object, ...gesture.destination } : object);
         const structures = window.WorldMap.structures(objects);
         for (const prop of objects) {
-          if (prop.x < area.left - 5 || prop.x > area.right + 5 || prop.y < area.top - 5 || prop.y > area.bottom + 5) continue;
+          if (!window.WorldMap.boundsIntersect(window.WorldMap.visualBounds(prop), area)) continue;
           paintProp(ctx, prop, options.selected?.() === prop.id, structures);
         }
         if (options.player && data.fog) {

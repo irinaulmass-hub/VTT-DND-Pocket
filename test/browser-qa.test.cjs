@@ -55,6 +55,12 @@ test('the browser fixture isolates data, uses real master login, proxies WS, and
   const border=await fetch(base+'/api/worlds/'+borderMap.id).then(r=>r.json());
   assert.equal(border.objects.find(p=>p.id==='border-tavern').x,-1);
   assert.equal(border.objects.find(p=>p.id==='border-secret').hidden,true);
+  const visualMap=list.worlds.find(item=>item.name==='Граница чанков · Выступы крыш и крон');
+  assert.ok(visualMap);
+  const visual=await fetch(base+'/api/worlds/'+visualMap.id).then(r=>r.json());
+  const roof=visual.objects.find(p=>p.id==='visual-roof'),model=require('../remote/world-model');
+  assert.equal(model.cellBounds(roof).right,-1);
+  assert.ok(model.visualBounds(roof).right>0,'visual fixture contains an overhang beyond its occupied chunk');
   assert.equal((await fetch('http://127.0.0.1:' + upstreamPort + '/api/worlds', { redirect: 'manual' })).status, 302,
     'the underlying application still requires authentication');
   const ws = new WebSocket(base.replace('http:', 'ws:') + '/ws');

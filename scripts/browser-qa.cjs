@@ -92,6 +92,18 @@ if (!qaStore.readDraft(borderId, [])) {
   }
   qaStore.writeDraft(border);
 }
+const visualId = '40000000-0000-0000-0000-000000000002';
+if (!qaStore.readDraft(visualId, [])) {
+  const { set } = require('../remote/world-model');
+  const visual = { ...qaStore.readDraft(borderId), id:visualId, name:'Граница чанков · Выступы крыш и крон' };
+  visual.objects.push(
+    {id:'visual-crown',kind:'tree',x:-1,y:-1,turn:0},
+    {id:'visual-roof',kind:'house',x:-2,y:9,turn:0},
+    {id:'visual-shadow',kind:'bridge',x:-3,y:-9,turn:0},
+  );
+  for(let y=-10;y<=-8;y++)for(let x=-5;x<=1;x++)set(visual.chunks,x,y,'water');
+  qaStore.writeDraft(visual);
+}
 const password = randomBytes(32).toString('hex');
 const upstream = spawn(process.execPath, ['server.js'], {
   cwd: root, env: { ...process.env, PORT: String(upstreamPort), DATA_DIR: dataDir, DM_PASSWORD: password },

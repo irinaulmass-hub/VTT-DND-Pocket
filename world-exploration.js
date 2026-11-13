@@ -1,6 +1,6 @@
 'use strict';
 
-const { address, get, set, cellBounds, size, props } = require('./remote/world-model');
+const { address, get, set, visualBounds, size, props } = require('./remote/world-model');
 
 function mask(cells) {
   const result = {};
@@ -25,9 +25,9 @@ function intersects(prop, keys) {
   if (!keys.size) return false;
   if (keys.has(address(prop.x, prop.y)[0])) return true;
   if (!Object.hasOwn(props, prop.kind)) return false;
-  const { left, right, top, bottom } = cellBounds(prop);
-  for (let y = Math.floor(top / size); y <= Math.floor(bottom / size); y++) {
-    for (let x = Math.floor(left / size); x <= Math.floor(right / size); x++) {
+  const { left, right, top, bottom } = visualBounds(prop);
+  for (let y = Math.floor(top / size); y < Math.ceil(bottom / size); y++) {
+    for (let x = Math.floor(left / size); x < Math.ceil(right / size); x++) {
       if (keys.has(x + ',' + y)) return true;
     }
   }

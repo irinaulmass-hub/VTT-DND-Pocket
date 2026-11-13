@@ -63,6 +63,36 @@
       bottom: Math.ceil(y + height / 2 - .5) - 1,
     };
   }
+  // Render metadata only: never use these envelopes for movement, sight or exploration.
+  function crownFrame(prop) {
+    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107) ^ (prop.turn << 3)) >>> 0) % 32;
+    return { variant, left: -1.2 + ((variant % 7) - 3) * .038,
+      top: -1.1 + ((variant % 5) - 2) * .045, width: 2.4, height: 2.4 };
+  }
+  function visualBounds(prop) {
+    const center = footprint(prop);
+    if (prop.kind === 'tree' || prop.kind === 'bush') {
+      const frame = crownFrame(prop);
+      return { left: center.x + frame.left, right: center.x + frame.left + frame.width,
+        top: center.y + frame.top, bottom: center.y + frame.top + frame.height };
+    }
+    let halfWidth, halfHeight;
+    if (prop.kind === 'wall') {
+      // Connected wall fills reach .501 from each occupied cell's center.
+      halfWidth = center.width / 2 + .002; halfHeight = center.height / 2 + .002;
+    } else if (buildingKinds.has(prop.kind) || prop.kind === 'bridge') {
+      // Roof canvas adds .3 per side; fixed southeast shadows extend at most .29.
+      halfWidth = center.width / 2 + .3; halfHeight = center.height / 2 + .3;
+    } else {
+      // Normalized decor includes round caps and the tilted broken wagon. Also cover
+      // the fallback shadow (.10/.16), sprites and the selected outline (.06).
+      halfWidth = Math.max(center.width * .6, center.width / 2 + .2);
+      halfHeight = Math.max(center.height * .6, center.height / 2 + .2);
+    }
+    return { left: center.x - halfWidth, right: center.x + halfWidth,
+      top: center.y - halfHeight, bottom: center.y + halfHeight };
+  }
+  const boundsIntersect = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   function structures(objects) {
     const walls = new Set();
     const doors = new Map();
@@ -137,7 +167,7 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds };
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);
