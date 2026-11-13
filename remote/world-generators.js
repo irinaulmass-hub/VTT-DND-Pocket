@@ -10,6 +10,7 @@
   const maxPathSteps = 65536;
   const maxForestPoints = 64;
   const maxForestArea = 4096;
+  const maxDistrictBuildings = 24;
   const forestGround = new Set([undefined, 'grass', 'forest', 'denseForest', 'woodland']);
 
   function hasFields(value, fields) {
@@ -133,6 +134,20 @@
     return !!roomShape(params);
   }
 
+  function validDistrictParams(params) {
+    if (!hasFields(params, ['count', 'points']) || !Number.isInteger(params.count) ||
+        params.count < 1 || params.count > maxDistrictBuildings ||
+        !validForestParams({ density: 10, points: params.points }) || params.points.length !== 4) return false;
+    const { left, right, top, bottom } = forestBounds(params.points);
+    if (right - left < 10 || bottom - top < 10) return false;
+    // The first district slice deliberately accepts only a rectangle, in either winding.
+    return params.points.every((point, index) => {
+      const next = params.points[(index + 1) % 4];
+      return (point.x === left || point.x === right) && (point.y === top || point.y === bottom) &&
+        (point.x === next.x || point.y === next.y);
+    });
+  }
+
   const cellKey = ({ x, y }) => x + ',' + y;
   const sameObject = (a, b) => !!a && !!b &&
     ['id', 'kind', 'x', 'y', 'turn'].every(key => a[key] === b[key]) && !!a.hidden === !!b.hidden;
@@ -149,16 +164,17 @@
       const seen = new Set();
       for (const cell of cells) {
         if (!hasFields(cell, fields) || !valid(cell.x) || !valid(cell.y) || seen.has(cellKey(cell))) return false;
-        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : kind === 'room' ? roomFloors.has(cell.after) : ['path', 'water'].includes(cell.after);
+        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : kind === 'room' ? roomFloors.has(cell.after) :
+          kind === 'district' ? ['path', 'dirt'].includes(cell.after) : ['path', 'water'].includes(cell.after);
         if (fields.length === 4 && (!terrainValue(cell.before) || !allowedAfter)) return false;
         seen.add(cellKey(cell));
       }
     }
     const ids = new Set();
     for (const prop of state.objects) {
-      if (!['forest', 'room'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
+      if (!['forest', 'room', 'district'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
           typeof prop.id !== 'string' || !prop.id.length || prop.id.length > 64 || ids.has(prop.id) ||
-          !(kind === 'room' ? ['wall', 'door'] : ['tree', 'bush']).includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
+          !(kind === 'room' ? ['wall', 'door'] : kind === 'district' ? ['house'] : ['tree', 'bush']).includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
           ![0, 1, 2, 3].includes(prop.turn) || typeof prop.hidden !== 'boolean' ||
           (prop.kind === 'wall' && !wallCells(prop).every(cell => cell.every(valid)))) return false;
       ids.add(prop.id);
@@ -177,7 +193,8 @@
       recipe.version === 1 && validSeed(recipe.seed) &&
       ((recipe.kind === 'path' && validPathParams(recipe.params)) ||
        (recipe.kind === 'forest' && validForestParams(recipe.params)) ||
-       (recipe.kind === 'room' && validRoomParams(recipe.params)));
+       (recipe.kind === 'room' && validRoomParams(recipe.params)) ||
+       (recipe.kind === 'district' && validDistrictParams(recipe.params)));
   }
 
   function validTemplate(template) {
@@ -349,6 +366,78 @@
     return { chunks, count, plants };
   }
 
+  function generateDistrict(recipe, draft, excludedCells = new Set(), excludedIds = new Set()) {
+    if (recipe?.kind !== 'district' || !validRecipe(recipe)) {
+      throw new RangeError('Район: задай прямоугольник от 11×11 до 4096 клеток и от 1 до 24 домов.');
+    }
+    const { left, right, top, bottom } = forestBounds(recipe.params.points);
+    const cx = Math.floor((left + right) / 2), cy = Math.floor((top + bottom) / 2);
+    const occupied = new Set(), obstacles = new Set(), ids = new Set(draft.objects.map(prop => prop.id));
+    const inside = (x, y) => x >= left && x <= right && y >= top && y <= bottom;
+    const eachCell = (bounds, visit, margin = 0) => {
+      for (let y = Math.max(top, bounds.top - margin); y <= Math.min(bottom, bounds.bottom + margin); y++) {
+        for (let x = Math.max(left, bounds.left - margin); x <= Math.min(right, bounds.right + margin); x++) visit(x, y);
+      }
+    };
+    for (const prop of draft.objects) {
+      eachCell(cellBounds(prop), (x, y) => occupied.add(x + ',' + y), 1);
+      eachCell(cellBounds(prop), (x, y) => obstacles.add(x + ',' + y));
+    }
+    const road = new Set(), chunks = {}, objects = [];
+    const ground = new Set([undefined, 'grass', 'dirt', 'path']);
+    for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+      if (Math.abs(x - cx) > 1 && Math.abs(y - cy) > 1) continue;
+      const key = x + ',' + y, type = get(draft.chunks, x, y);
+      // Do not cut through existing props, water, floors or a foreign generator.
+      // A manually repainted owned road cell stays intact if it is dry.
+      if (obstacles.has(key) || type === 'water' || (!excludedCells.has(key) && !ground.has(type))) {
+        throw new RangeError('Улица района пересекает объект, воду или неподходящее покрытие. Выбери свободный участок.');
+      }
+      road.add(key);
+      if (!excludedCells.has(key)) set(chunks, x, y, 'path');
+    }
+    const hash = Array.from(recipe.id).reduce((value, letter) =>
+      Math.imul(value ^ letter.charCodeAt(0), 16777619), 2166136261) >>> 0;
+    const candidates = new Map();
+    const candidate = (x, y, turn) => {
+      const key = x + ',' + y;
+      if (!candidates.has(key)) candidates.set(key, { id: 'district-' + hash.toString(36) + '-' + x + '_' + y,
+        kind: 'house', x, y, turn, hidden: false });
+    };
+    for (let x = left + 2; x <= right - 2; x += 5) {
+      candidate(x, cy - 3, 0); candidate(x, cy + 3, 2);
+    }
+    for (let y = top + 2; y <= bottom - 2; y += 5) {
+      candidate(cx - 3, y, 3); candidate(cx + 3, y, 1);
+    }
+    const random = createRandomV1(recipe.seed), slots = [...candidates.values()];
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    for (const prop of slots) {
+      if (objects.length === recipe.params.count) break;
+      if (ids.has(prop.id) || excludedIds.has(prop.id)) continue;
+      const bounds = cellBounds(prop);
+      if (!inside(bounds.left, bounds.top) || !inside(bounds.right, bounds.bottom)) continue;
+      let blocked = false;
+      eachCell(bounds, (x, y) => {
+        const key = x + ',' + y;
+        if (occupied.has(key) || road.has(key) || excludedCells.has(key) ||
+            ![undefined, 'grass', 'dirt'].includes(get(draft.chunks, x, y))) blocked = true;
+      });
+      if (blocked) continue;
+      objects.push(prop);
+      eachCell(bounds, (x, y) => set(chunks, x, y, 'dirt'));
+      eachCell(bounds, (x, y) => occupied.add(x + ',' + y), 1);
+    }
+    if (objects.length !== recipe.params.count) {
+      throw new RangeError('В районе недостаточно свободных мест для указанного числа домов. Уменьши число или увеличь участок.');
+    }
+    if (draft.objects.length + objects.length > objectLimit) throw new RangeError('Район превысит лимит объектов');
+    return { chunks, count: Object.values(chunks).reduce((sum, chunk) => sum + Object.keys(chunk).length, 0), objects };
+  }
+
   function generateRoom(recipe, draft, excludedCells = new Set(), excludedIds = new Set()) {
     if (recipe?.kind !== 'room' || !validRecipe(recipe)) {
       throw new RangeError('Комната: задай простой контур по линиям сетки, пол и вход на прямой стене. Внутренние клетки должны соединяться.');
@@ -456,8 +545,18 @@
       }
     }
     const base = { chunks: working.chunks, objects: remaining };
+    if (recipe.kind === 'district') {
+      const { left, right, top, bottom } = forestBounds(recipe.params.points);
+      const cx = Math.floor((left + right) / 2), cy = Math.floor((top + bottom) / 2);
+      for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+        if ((Math.abs(x - cx) <= 1 || Math.abs(y - cy) <= 1) && foreignCells.has(x + ',' + y)) {
+          throw new RangeError('Улица района пересекает другой процедурный участок. Выбери свободный контур.');
+        }
+      }
+    }
     const output = recipe.kind === 'forest' ? generateForest(recipe, base, excluded, protectedObjects) :
-      recipe.kind === 'room' ? generateRoom(recipe, base, excluded, protectedObjects) : generatePath(recipe);
+      recipe.kind === 'room' ? generateRoom(recipe, base, excluded, protectedObjects) :
+      recipe.kind === 'district' ? generateDistrict(recipe, base, excluded, protectedObjects) : generatePath(recipe);
     const tiles = [];
     for (const cell of cells(output.chunks)) {
       if (excluded.has(cellKey(cell))) continue;
@@ -502,8 +601,8 @@
     return same(generators, after) ? change : { ...change, generators: { before: generators, after } };
   }
 
-  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generateRoom, generationChange, protectManualChanges,
-    maxPathPoints, maxForestPoints };
+  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
+    maxPathPoints, maxForestPoints, maxDistrictBuildings };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;
 })(globalThis);

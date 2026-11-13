@@ -864,6 +864,19 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal(roomSaveResponse.status,200);
   const roomSaved=await roomSaveResponse.json();
   const roomDoor=roomSaved.objects.find(prop=>prop.kind==='door');
+  const districtWorld=await (await worldWrite('','POST',{name:'Район · Ядро генератора'})).json();
+  const districtRecipe={id:'district-core',kind:'district',version:1,seed:47,params:{count:8,
+    points:[{x:-16,y:-12},{x:16,y:-12},{x:16,y:12},{x:-16,y:12}]}};
+  const districtChange=generators.generationChange(districtRecipe,districtWorld);
+  const districtDraft={...districtWorld,chunks:districtChange.chunks,objects:districtChange.objects.after,
+    generators:districtChange.generators.after};
+  const districtSave=await worldWrite('/'+districtWorld.id,'PUT',districtDraft);
+  assert.equal(districtSave.status,200);
+  const districtSaved=await districtSave.json();
+  assert.equal(districtSaved.objects.length,8);
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',{...districtSaved,
+    generators:[{...districtRecipe,params:{...districtRecipe.params,count:25}}]})).status,400,
+    'invalid District settings cannot replace a saved draft');
   const buildingOutside=await (await worldWrite('','POST',{name:'Дом с интерьером'})).json();
   buildingOutside.objects=[{id:'home-main',kind:'house',x:0,y:0,turn:0},{id:'home-floor',kind:'house',x:10,y:0,turn:0}];
   for (let x=-1;x<=11;x++) tiles.set(buildingOutside.chunks,x,2,'grass');
@@ -1146,6 +1159,16 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   async function publishBindingMap(layout) {
     assert.equal((await resumedWorldWrite('/'+layout.id+'/publish',{revision:layout.revision,fog:true})).status,200);
   }
+  const districtReopened=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:resumedHeaders})).json();
+  assert.deepEqual(districtReopened,districtSaved,'District source state and house IDs survive restart');
+  const districtPublication=await resumedWorldWrite('/'+districtWorld.id+'/publish',{revision:districtSaved.revision,fog:false});
+  assert.equal(districtPublication.status,200);
+  const publishedDistrict=await tableWorld('-1,-1;0,-1;-1,0;0,0');
+  assert.equal(publishedDistrict.generators,undefined,'District seed, contour and source state remain private');
+  assert.deepEqual(publishedDistrict.objects.map(prop=>prop.id).sort(),districtSaved.objects.map(prop=>prop.id).sort());
+  assert.equal(tiles.get(publishedDistrict.chunks,0,0),'path');
+  assert.equal((await resumedWorldWrite('/'+districtWorld.id+'/publish',{revision:0,fog:false})).status,409,
+    'District publication uses the existing revision guard');
   await publishBindingMap(buildingOutsideSaved);
   const exteriorPosition={worldId:buildingOutside.id,sceneId:'overworld',floorId:'ground',x:-1,y:2};
   const exteriorPlaced=await (await setPosition(otherChar.id,exteriorPosition,resumedHeaders)).json();
