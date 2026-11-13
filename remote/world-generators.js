@@ -1,7 +1,7 @@
 'use strict';
 
 ((root) => {
-  const { size, limit, tileLimit, terrain, objectLimit, valid, get, set, cellBounds } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
+  const { size, limit, tileLimit, terrain, objectLimit, valid, get, set, cellBounds, wallCells } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
 
   const seedMax = 0xffffffff;
   const maxRecipes = 128;
@@ -78,6 +78,61 @@
     return true;
   }
 
+  const roomFloors = new Set(['wood', 'stone', 'caveFloor']);
+  const neighbors = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+
+  function roomShape(params) {
+    const { points, entrance } = params;
+    const bounds = forestBounds(points);
+    const area = new Map();
+    for (let y = bounds.top; y <= bounds.bottom; y++) for (let x = bounds.left; x <= bounds.right; x++) {
+      if (contains(points, x, y)) area.set(x + ',' + y, { x, y });
+    }
+    const boundary = new Map(), interior = new Map();
+    for (const [key, cell] of area) {
+      const edge = neighbors.some(([dx, dy]) => !area.has((cell.x + dx) + ',' + (cell.y + dy)));
+      (edge ? boundary : interior).set(key, cell);
+    }
+    if (!interior.size || !boundary.has(entrance.x + ',' + entrance.y)) return null;
+    const connected = new Set(), queue = [interior.values().next().value];
+    for (let i = 0; i < queue.length; i++) {
+      const cell = queue[i], key = cell.x + ',' + cell.y;
+      if (connected.has(key)) continue;
+      connected.add(key);
+      for (const [dx, dy] of neighbors) {
+        const next = interior.get((cell.x + dx) + ',' + (cell.y + dy));
+        if (next && !connected.has(next.x + ',' + next.y)) queue.push(next);
+      }
+    }
+    if (connected.size !== interior.size) return null;
+    const { x, y } = entrance;
+    const at = (cells, dx, dy) => cells.has((x + dx) + ',' + (y + dy));
+    const horizontal = at(boundary, -1, 0) && at(boundary, 1, 0) &&
+      ((at(interior, 0, 1) && !at(area, 0, -1) && valid(y - 1)) ||
+       (at(interior, 0, -1) && !at(area, 0, 1) && valid(y + 1)));
+    const vertical = at(boundary, 0, -1) && at(boundary, 0, 1) &&
+      ((at(interior, 1, 0) && !at(area, -1, 0) && valid(x - 1)) ||
+       (at(interior, -1, 0) && !at(area, 1, 0) && valid(x + 1)));
+    if (!horizontal && !vertical) return null;
+    boundary.delete(x + ',' + y);
+    // Every solid boundary cell needs a neighboring cell for the existing two-cell wall object.
+    for (const cell of boundary.values()) {
+      if (!neighbors.some(([dx, dy]) => boundary.has((cell.x + dx) + ',' + (cell.y + dy)))) return null;
+    }
+    return { area, boundary, doorTurn: horizontal ? 0 : 1 };
+  }
+
+  function validRoomParams(params) {
+    if (!hasFields(params, ['floor', 'points', 'entrance']) || !roomFloors.has(params.floor) ||
+        !hasFields(params.entrance, ['x', 'y']) || !valid(params.entrance.x) || !valid(params.entrance.y) ||
+        !validForestParams({ density: 10, points: params.points })) return false;
+    if (!params.points.every((point, index) => {
+      const next = params.points[(index + 1) % params.points.length];
+      return point.x === next.x || point.y === next.y;
+    })) return false;
+    return !!roomShape(params);
+  }
+
   const cellKey = ({ x, y }) => x + ',' + y;
   const sameObject = (a, b) => !!a && !!b &&
     ['id', 'kind', 'x', 'y', 'turn'].every(key => a[key] === b[key]) && !!a.hidden === !!b.hidden;
@@ -86,7 +141,7 @@
 
   function validState(state, kind) {
     if (!hasFields(state, ['version', 'tiles', 'objects', 'protectedTiles', 'protectedObjects']) || state.version !== 1 ||
-        !Array.isArray(state.tiles) || state.tiles.length > (kind === 'forest' ? maxForestArea : maxPathCells) ||
+        !Array.isArray(state.tiles) || state.tiles.length > (kind === 'path' ? maxPathCells : maxForestArea) ||
         !Array.isArray(state.objects) || state.objects.length > objectLimit ||
         !Array.isArray(state.protectedTiles) || state.protectedTiles.length > tileLimit ||
         !Array.isArray(state.protectedObjects) || state.protectedObjects.length > objectLimit) return false;
@@ -94,17 +149,18 @@
       const seen = new Set();
       for (const cell of cells) {
         if (!hasFields(cell, fields) || !valid(cell.x) || !valid(cell.y) || seen.has(cellKey(cell))) return false;
-        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : ['path', 'water'].includes(cell.after);
+        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : kind === 'room' ? roomFloors.has(cell.after) : ['path', 'water'].includes(cell.after);
         if (fields.length === 4 && (!terrainValue(cell.before) || !allowedAfter)) return false;
         seen.add(cellKey(cell));
       }
     }
     const ids = new Set();
     for (const prop of state.objects) {
-      if (kind !== 'forest' || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
+      if (!['forest', 'room'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
           typeof prop.id !== 'string' || !prop.id.length || prop.id.length > 64 || ids.has(prop.id) ||
-          !['tree', 'bush'].includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
-          ![0, 1, 2, 3].includes(prop.turn) || typeof prop.hidden !== 'boolean') return false;
+          !(kind === 'room' ? ['wall', 'door'] : ['tree', 'bush']).includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
+          ![0, 1, 2, 3].includes(prop.turn) || typeof prop.hidden !== 'boolean' ||
+          (prop.kind === 'wall' && !wallCells(prop).every(cell => cell.every(valid)))) return false;
       ids.add(prop.id);
     }
     const protectedIds = state.protectedObjects;
@@ -120,7 +176,8 @@
       typeof recipe.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(recipe.id) &&
       recipe.version === 1 && validSeed(recipe.seed) &&
       ((recipe.kind === 'path' && validPathParams(recipe.params)) ||
-       (recipe.kind === 'forest' && validForestParams(recipe.params)));
+       (recipe.kind === 'forest' && validForestParams(recipe.params)) ||
+       (recipe.kind === 'room' && validRoomParams(recipe.params)));
   }
 
   function validTemplate(template) {
@@ -292,6 +349,50 @@
     return { chunks, count, plants };
   }
 
+  function generateRoom(recipe, draft, excludedCells = new Set(), excludedIds = new Set()) {
+    if (recipe?.kind !== 'room' || !validRecipe(recipe)) {
+      throw new RangeError('Комната: задай простой контур по линиям сетки, пол и вход на прямой стене. Внутренние клетки должны соединяться.');
+    }
+    const { area, boundary, doorTurn } = roomShape(recipe.params);
+    const { floor, entrance } = recipe.params;
+    const hash = Array.from(recipe.id).reduce((value, letter) =>
+      Math.imul(value ^ letter.charCodeAt(0), 16777619), 2166136261) >>> 0;
+    const prefix = 'room-' + hash.toString(36) + '-';
+    const objects = [], covered = new Set(), chunks = {};
+    for (const cell of boundary.values()) {
+      if (covered.has(cellKey(cell))) continue;
+      const choices = neighbors.map(([dx, dy], turn) => ({ x: cell.x + dx, y: cell.y + dy, turn }))
+        .filter(next => boundary.has(cellKey(next)))
+        .sort((a, b) => Number(covered.has(cellKey(a))) - Number(covered.has(cellKey(b))));
+      const next = choices[0];
+      const prop = { id: prefix + cell.x + '_' + cell.y + '_' + next.turn,
+        kind: 'wall', x: cell.x, y: cell.y, turn: next.turn, hidden: false };
+      objects.push(prop);
+      covered.add(cellKey(cell)); covered.add(cellKey(next));
+    }
+    objects.push({ id: prefix + 'door-' + entrance.x + '_' + entrance.y,
+      kind: 'door', ...entrance, turn: doorTurn, hidden: false });
+    const generated = objects.filter(prop => !excludedIds.has(prop.id));
+    const occupied = new Set();
+    for (const prop of draft.objects) {
+      // Wall sections may share an endpoint; a manually hidden owned wall on this boundary is safe.
+      if (prop.kind === 'wall' && excludedIds.has(prop.id) &&
+          wallCells(prop).every(([x, y]) => boundary.has(x + ',' + y))) continue;
+      const bounds = cellBounds(prop);
+      for (let y = bounds.top; y <= bounds.bottom; y++) for (let x = bounds.left; x <= bounds.right; x++) occupied.add(x + ',' + y);
+    }
+    const ids = new Set(draft.objects.map(prop => prop.id));
+    for (const prop of generated) {
+      const cells = prop.kind === 'wall' ? wallCells(prop) : [[prop.x, prop.y]];
+      if (ids.has(prop.id) || cells.some(([x, y]) => occupied.has(x + ',' + y))) {
+        throw new RangeError('Стена или вход комнаты пересекает существующий объект. Измени контур или перемести объект.');
+      }
+    }
+    if (draft.objects.length + generated.length > objectLimit) throw new RangeError('Комната превысит лимит объектов');
+    for (const cell of area.values()) if (!excludedCells.has(cellKey(cell))) set(chunks, cell.x, cell.y, floor);
+    return { chunks, count: area.size, objects: generated };
+  }
+
   function cells(chunks) {
     const result = [];
     for (const [key, values] of Object.entries(chunks)) {
@@ -348,16 +449,24 @@
     for (const cell of old?.tiles || []) {
       if (!excluded.has(cellKey(cell))) write(cell.x, cell.y, cell.before);
     }
-    const output = recipe.kind === 'forest' ?
-      generateForest(recipe, { chunks: working.chunks, objects: remaining }, excluded, protectedObjects) : generatePath(recipe);
+    if (recipe.kind === 'room') {
+      const shape = roomShape(recipe.params);
+      if ([...shape.area.keys()].some(key => foreignCells.has(key))) {
+        throw new RangeError('Комната пересекает другой процедурный участок. Выбери свободный контур.');
+      }
+    }
+    const base = { chunks: working.chunks, objects: remaining };
+    const output = recipe.kind === 'forest' ? generateForest(recipe, base, excluded, protectedObjects) :
+      recipe.kind === 'room' ? generateRoom(recipe, base, excluded, protectedObjects) : generatePath(recipe);
     const tiles = [];
     for (const cell of cells(output.chunks)) {
       if (excluded.has(cellKey(cell))) continue;
       tiles.push({ ...cell, before: get(working.chunks, cell.x, cell.y) ?? null });
       write(cell.x, cell.y, cell.after);
     }
-    const afterObjects = [...remaining, ...(output.plants || [])];
-    const nextRecipe = { ...recipe, state: { version: 1, tiles, objects: output.plants || [],
+    const generatedObjects = output.objects || output.plants || [];
+    const afterObjects = [...remaining, ...generatedObjects];
+    const nextRecipe = { ...recipe, state: { version: 1, tiles, objects: generatedObjects,
       protectedTiles: [...protectedTiles.values()], protectedObjects: [...protectedObjects] } };
     const nextGenerators = previous ? generators.map(item => item.id === recipe.id ? nextRecipe : item) : [...generators, nextRecipe];
     if (!validGenerators(nextGenerators)) throw new RangeError('Превышен лимит рецептов или сохранённых ручных правок');
@@ -393,7 +502,7 @@
     return same(generators, after) ? change : { ...change, generators: { before: generators, after } };
   }
 
-  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generationChange, protectManualChanges,
+  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generateRoom, generationChange, protectManualChanges,
     maxPathPoints, maxForestPoints };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;

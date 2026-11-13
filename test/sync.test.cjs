@@ -844,6 +844,18 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
   assert.deepEqual(editedWorld.generators,world.generators,'an older editor may omit generator metadata');
   assert.equal(editedWorld.revision,savedWorld.revision+2);
+  const roomWorld=await (await worldWrite('','POST',{name:'Комната приёмки'})).json();
+  const roomRecipe={id:'room-recipe',kind:'room',version:1,seed:7,params:{floor:'wood',
+    points:[{x:0,y:0},{x:6,y:0},{x:6,y:6},{x:0,y:6}],entrance:{x:3,y:0}}};
+  const roomChange=generators.generationChange(roomRecipe,roomWorld);
+  const roomDraft={...roomWorld,chunks:roomChange.chunks,objects:roomChange.objects.after,generators:roomChange.generators.after};
+  tiles.set(roomDraft.chunks,3,-1,'grass');
+  const invalidRoom={...roomDraft,generators:[{...roomRecipe,params:{...roomRecipe.params,entrance:{x:0,y:0}}}]};
+  assert.equal((await worldWrite('/'+roomWorld.id,'PUT',invalidRoom)).status,400);
+  const roomSaveResponse=await worldWrite('/'+roomWorld.id,'PUT',roomDraft);
+  assert.equal(roomSaveResponse.status,200);
+  const roomSaved=await roomSaveResponse.json();
+  const roomDoor=roomSaved.objects.find(prop=>prop.kind==='door');
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');
@@ -902,6 +914,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
   const reopenDraft=id=>fetch(worldBase+'/'+id+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
   assert.deepEqual((await reopenDraft(legacyId)).generators,[roadRecipe],'import preserves the legacy draft recipe');
+  assert.deepEqual(await reopenDraft(roomWorld.id),roomSaved,'Room floor, walls, door and source metadata survive server restart');
   const reopenedWorld=await reopenDraft(world.id);
   assert.deepEqual(reopenedWorld.generators,world.generators,'both recipes survive server restart');
   assert.equal(tiles.get(reopenedWorld.chunks,-76,-55),'woodland');
@@ -1043,6 +1056,24 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await blackout()).status,200);
   assert.equal((await tableStatus()).blackout,false);
 
+  const roomPublication=await resumedWorldWrite('/'+roomWorld.id+'/publish',{revision:roomSaved.revision,fog:true});
+  assert.equal(roomPublication.status,200);
+  assert.equal((await roomPublication.json()).map.generators,undefined,'Room recipes remain private');
+  const roomPosition={worldId:roomWorld.id,sceneId:'overworld',floorId:'ground',x:2,y:1};
+  const roomPlaced=await (await setPosition(otherChar.id,roomPosition,resumedHeaders)).json();
+  const roomStep=await (await movePosition({direction:'east',revision:roomPlaced.position.revision})).json();
+  assert.equal(roomStep.position.x,3);
+  const roomView=await tableWorld('0,0;0,-1');
+  assert.equal(tiles.get(roomView.chunks,3,-1),undefined,'a generated closed entrance blocks sight');
+  assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,409,
+    'a generated closed entrance blocks movement');
+  assert.equal((await fetch(worldBase+'/live/doors/'+roomDoor.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify({id:roomWorld.id,open:true}),
+  })).status,200);
+  const roomOpenView=await tableWorld('0,0;0,-1');
+  assert.equal(tiles.get(roomOpenView.chunks,3,-1),'grass','opening a generated door reveals the exterior');
+  assert.equal(roomOpenView.objects.find(prop=>prop.id===roomDoor.id).open,true);
+  assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,200);
   const revokedDiscovery=message(positionAfterRestart,msg=>msg.type==='ACCESS_REVOKED');
   const replacementInvite=await fetch(base+'/api/player-access'+worldGame,{
     method:'POST',headers:resumedHeaders,body:JSON.stringify({characterId:otherChar.id}),

@@ -43,6 +43,7 @@
           <button class="book-button" data-tool="pan">Рука</button>
           <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
           <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
+          <button class="book-button" data-tool="generate-room">Room · Комната</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
           <button class="book-button" data-tool="select">Двигать объекты</button>
           <button class="book-button" data-tool="delete-object">Удалять объекты</button>
@@ -60,9 +61,14 @@
               ${[1, 3, 5, 7, 9, 11, 13, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
             </select></label>
             <label data-world-forest-density-label hidden>Плотность <input class="book-select" type="number" min="10" max="100" step="1" value="65" data-world-forest-density> %</label>
+            <label data-world-room-floor-label hidden>Пол <select class="book-select" data-world-room-floor>
+              <option value="wood">Доски</option><option value="stone">Камень</option><option value="caveFloor">Пещерный пол</option>
+            </select></label>
+            <button class="book-button" data-world-room-entrance hidden>Выбрать вход</button>
+            <small data-world-room-entry-info hidden></small>
             <label>Seed <input class="book-select" type="number" min="0" max="4294967295" step="1" value="0" data-world-path-seed></label>
           </div>
-          <div class="book-toolbar">
+          <div class="book-toolbar" data-world-templates>
             <select class="book-select" data-world-template-select aria-label="Шаблон настроек"></select>
             <button class="book-button" data-world-template-load disabled>Загрузить настройки</button>
             <input class="book-select" data-world-template-name maxlength="80" placeholder="Название шаблона" aria-label="Название шаблона">
@@ -122,27 +128,32 @@
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   const undo = [], redo = [];
   let availableMaps = [];
-  let generatorPoints = [], generatorPreview = null;
+  let generatorPoints = [], generatorPreview = null, roomEntrance = null, pickingEntrance = false;
   let templates = { revision: 0, templates: [] }, templatesReady = false, templateGeneration = 0;
   const templateUrl = '/api/world-generator-templates';
-  const generatorKind = () => tool === 'generate-forest' ? 'forest' : 'path';
+  const generatorKind = () => tool === 'generate-room' ? 'room' : tool === 'generate-forest' ? 'forest' : 'path';
+  const generatorTool = () => ['generate-path', 'generate-forest', 'generate-room'].includes(tool);
 
   function paintGeneratorControls() {
-    e('path').hidden = tool !== 'generate-path' && tool !== 'generate-forest';
+    e('path').hidden = !generatorTool();
     if (e('path').hidden) return;
     const kind = generatorKind();
     paintTemplates();
-    e('path-terrain-label').hidden = e('path-width-label').hidden = kind === 'forest';
+    e('path-terrain-label').hidden = e('path-width-label').hidden = kind !== 'path';
+    e('room-floor-label').hidden = e('room-entrance').hidden = e('room-entry-info').hidden = kind !== 'room';
+    e('templates').hidden = kind === 'room';
+    e('room-entrance').textContent = pickingEntrance ? 'Нажми на клетку входа…' : 'Выбрать вход';
+    e('room-entry-info').textContent = roomEntrance ? 'Вход: ' + roomEntrance.x + ', ' + roomEntrance.y : 'Вход не выбран';
     e('forest-density-label').hidden = kind !== 'forest';
     const saved = e('path-saved');
     const selectedId = saved.value;
     const recipes = (draft.generators || []).filter(recipe => recipe.kind === kind && recipe.version === 1);
-    saved.replaceChildren(new Option(kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
-      new Option((kind === 'forest' ? 'Лес' : recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
+    saved.replaceChildren(new Option(kind === 'room' ? 'Новая комната' : kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
+      new Option((kind === 'room' ? 'Комната' : kind === 'forest' ? 'Лес' : recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
         ' · seed ' + recipe.seed, recipe.id)));
     if (recipes.some(recipe => recipe.id === selectedId)) saved.value = selectedId;
     e('path-count').textContent = 'Опорных точек: ' + generatorPoints.length;
-    e('path-preview').disabled = generatorPoints.length < (kind === 'forest' ? 3 : 2);
+    e('path-preview').disabled = generatorPoints.length < (kind === 'room' ? 4 : kind === 'path' ? 2 : 3) || (kind === 'room' && !roomEntrance);
     e('path-apply').disabled = !generatorPreview;
     e('path-apply').textContent = saved.value ? 'Применить регенерацию' : 'Применить к черновику';
   }
@@ -162,7 +173,7 @@
       ...items.map(item => new Option(item.name, item.id)));
     if (items.some(item => item.id === value)) select.value = value;
     e('template-load').disabled = !select.value || busy;
-    e('template-save').disabled = !templatesReady || busy;
+    e('template-save').disabled = generatorKind() === 'room' || !templatesReady || busy;
   }
 
   async function readTemplates() {
@@ -195,7 +206,7 @@
       const recipe = {
         id: savedId || crypto.randomUUID?.() || 'path-' + Date.now() + '-' + Math.random().toString(36).slice(2),
         kind, version: 1, seed: e('path-seed').valueAsNumber,
-        params: forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
+        params: kind === 'room' ? { floor: e('room-floor').value, points: generatorPoints, entrance: roomEntrance } : forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
           { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: generatorPoints },
       };
       generatorPreview = generationChange(recipe, draft);
@@ -345,8 +356,12 @@
 
   function click(x, y, point) {
     if (!draft || busy) return;
-    if (tool === 'generate-path' || tool === 'generate-forest') {
-      const forest = generatorKind() === 'forest';
+    if (generatorTool()) {
+      const forest = generatorKind() !== 'path';
+      if (generatorKind() === 'room' && pickingEntrance) {
+        roomEntrance = { x, y }; pickingEntrance = false; clearGeneratorPreview();
+        status('Вход выбран. Проверь предпросмотр комнаты.'); paint(); return;
+      }
       const maxPoints = forest ? maxForestPoints : maxPathPoints;
       const usedPoints = forest ? generatorPoints : generatorPoints.slice(-1);
       if (usedPoints.some(point => point.x === x && point.y === y)) return;
@@ -414,8 +429,8 @@
   }
   const editorView = createWorldView(e('canvas'), {
     grid: true, click, pan: () => tool === 'pan', selected: () => selected,
-    marks: () => tool === 'generate-path' || tool === 'generate-forest' ? generatorPoints : first ? [first] : [],
-    outline: () => tool === 'generate-forest' ? generatorPoints : null,
+    marks: () => generatorTool() ? [...generatorPoints, ...(tool === 'generate-room' && roomEntrance ? [roomEntrance] : [])] : first ? [first] : [],
+    outline: () => tool === 'generate-forest' || tool === 'generate-room' ? generatorPoints : null,
     pickProp(x, y) {
       if (!draft || busy || tool !== 'select') return;
       const item = objectAt(x, y);
@@ -440,6 +455,7 @@
     dirty = false;
     first = selected = undefined;
     generatorPoints = [];
+    roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
     undo.length = redo.length = 0;
     e('editor').hidden = false;
@@ -508,9 +524,11 @@
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     if (tool !== button.dataset.tool) {
       generatorPoints = [];
+      roomEntrance = null; pickingEntrance = false;
       clearGeneratorPreview(true);
     }
     tool = button.dataset.tool;
+    if (tool === 'generate-room') status('Отметь углы комнаты по порядку, затем выбери вход на прямой стене. Стороны идут по линиям сетки.');
     if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
     if (tool === 'generate-path') status('Укажи опорные точки на карте и нажми «Предпросмотр».');
     if (tool === 'generate-path' || tool === 'generate-forest') readTemplates();
@@ -527,6 +545,7 @@
     const template = templates.templates.find(item => item.id === e('template-select').value && item.kind === generatorKind());
     if (!template) return;
     generatorPoints = [];
+    roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
     e('path-seed').value = String(template.seed);
     if (template.kind === 'forest') e('forest-density').value = String(template.settings.density);
@@ -567,9 +586,11 @@
     if (!draft || busy) return;
     const recipe = (draft.generators || []).find(item => item.id === e('path-saved').value);
     generatorPoints = recipe?.params.points || [];
+    roomEntrance = recipe?.kind === 'room' ? recipe.params.entrance : null; pickingEntrance = false;
     generatorPreview = null;
     if (recipe) {
-      if (recipe.kind === 'forest') e('forest-density').value = String(recipe.params.density);
+      if (recipe.kind === 'room') e('room-floor').value = recipe.params.floor;
+      else if (recipe.kind === 'forest') e('forest-density').value = String(recipe.params.density);
       else {
         e('path-terrain').value = recipe.params.terrain;
         e('path-width').value = String(recipe.params.width);
@@ -581,7 +602,7 @@
     }
     paint();
   };
-  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density']) {
+  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density', 'room-floor']) {
     e(field).oninput = () => {
       clearGeneratorPreview();
       if (generatorPoints.length >= 2) status('Нажми «Предпросмотр» для обновлённого участка.');
@@ -591,6 +612,7 @@
   e('path-clear-points').onclick = () => {
     if (!draft || busy) return;
     generatorPoints = [];
+    roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview();
     status('Укажи новый контур или линию. Сохранённый участок будет перестроен после применения.');
     paint();
@@ -598,9 +620,15 @@
   e('path-reset').onclick = () => {
     if (!draft || busy) return;
     generatorPoints = [];
+    roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
     status('Укажи новые опорные точки на карте.');
     paint();
+  };
+  e('room-entrance').onclick = () => {
+    if (!draft || busy || generatorKind() !== 'room') return;
+    pickingEntrance = true; clearGeneratorPreview();
+    status('Нажми на клетку входа на прямой стороне контура.'); paint();
   };
   e('path-preview').onclick = previewGenerator;
   e('path-apply').onclick = () => {

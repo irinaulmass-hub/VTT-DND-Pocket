@@ -6,8 +6,9 @@ const vm = require('node:vm');
 const world = require('../remote/world-model');
 const { generatePath } = require('../remote/world-generators');
 
-test('the master can preview, apply, undo, save, and reopen Path and Forest Plot recipes', async () => {
+test('the master can preview, apply, undo, save, and reopen Path, Forest Plot and Room recipes', async () => {
   const tool = { dataset: { tool: 'generate-path' }, setAttribute() {} };
+  const roomTool = { dataset: { tool: 'generate-room' }, setAttribute() {} };
   const forestTool = { dataset: { tool: 'generate-forest' }, setAttribute() {} };
   const manualTools = ['stone', 'erase', 'select', 'delete-object'].map(name => ({ dataset: { tool: name }, setAttribute() {} }));
   let nextId = 0;
@@ -20,7 +21,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
       if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
       return this.nodes.get(selector);
     }
-    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool, forestTool, ...manualTools] : []; }
+    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool, forestTool, roomTool, ...manualTools] : []; }
     replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
     setAttribute() {}
     toggleAttribute() {}
@@ -305,5 +306,45 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   assert.equal(control('template-select').options.length, 3);
 
 
+
+  roomTool.onclick();
+  assert.equal(control('templates').hidden, true);
+  control('room-floor').value = 'wood';
+  control('path-seed').value = '7';
+  for (const [x, y] of [[60, 0], [66, 0], [66, 6], [60, 6]]) canvas.click(x, y);
+  assert.equal(control('path-preview').disabled, true, 'a room requires an explicit entrance');
+  control('room-entrance').onclick();
+  canvas.click(63, 0);
+  assert.equal(canvas.outline().length, 4, 'the entrance is not another contour point');
+  const beforeRoom = structuredClone(saved);
+  control('path-preview').onclick();
+  assert.equal(world.get(rendered.chunks, 63, 3), 'wood');
+  assert.equal(saved.generators.length, beforeRoom.generators.length, 'preview does not save a recipe');
+  control('path-apply').onclick();
+  await control('save').onclick();
+  const savedRoom = saved.generators.at(-1);
+  assert.equal(savedRoom.kind, 'room');
+  assert.deepEqual(savedRoom.params.entrance, { x: 63, y: 0 });
+  assert.ok(saved.objects.some(prop => prop.kind === 'door' && prop.x === 63 && prop.y === 0));
+  control('undo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.generators, beforeRoom.generators);
+  assert.deepEqual(saved.objects, beforeRoom.objects);
+  control('redo').onclick();
+  await control('save').onclick();
+  await reopen();
+  control('path-saved').value = savedRoom.id;
+  control('path-saved').onchange();
+  assert.equal(control('room-floor').value, 'wood');
+  assert.equal(control('path-preview').disabled, false);
+  control('room-floor').value = 'stone';
+  control('room-floor').oninput();
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(saved.generators.at(-1).id, savedRoom.id);
+  assert.equal(world.get(saved.chunks, 63, 3), 'stone');
+  control('path-clear-points').onclick();
+  assert.equal(control('room-entry-info').textContent, 'Вход не выбран');
 
 });
