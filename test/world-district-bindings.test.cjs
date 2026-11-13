@@ -224,3 +224,62 @@ test('compact District apply rejects malformed bodies, history guards and stale 
   assert.throws(()=>districts.prepareApply(source,{districtGuard:fresh}),{status:409});
   assert.deepEqual(store.readDraft(source.id),source,'all invalid requests preserve the draft');
 });
+
+function compactHistory(from,to,tiles,id,historyProof,linksRevision) {
+  return JSON.parse(JSON.stringify({districtGuard:{revision:from.revision,linksRevision,historyProof},
+    change:g.compactGenerationChange({id,count:tiles.length,tiles,objects:{before:from.objects,after:to.objects},
+      generators:{before:from.generators||[],after:to.generators||[]}})}));
+}
+
+test('compact history restores signed bound snapshots with exact order and a small acknowledgement', t => {
+  const f=fixture(t), {source,recipe,districts,movement,store}=f;
+  map.set(source.chunks,100,100,'stone');store.writeDraft(source);
+  const preview=districts.preview(source,{revision:1,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
+  const after=districts.prepareApply(source,{districtGuard:preview.guard}).next;
+  const reverse=preview.change.tiles.map(c=>({x:c.x,y:c.y,before:c.after,after:c.before}));
+  const links=movement.linksRevision(), before=structuredClone(after);
+  const undo=districts.prepareHistory(after,compactHistory(after,source,reverse,recipe.id,preview.history.before,links));
+  assert.deepEqual(after,before);assert.deepEqual(undo.next.chunks,source.chunks);
+  assert.deepEqual(undo.next.generators,source.generators);
+  assert.deepEqual(undo.next.objects,source.objects.map(p=>({...p,hidden:p.hidden===true})));
+  assert.deepEqual(undo.response,{id:source.id,baseRevision:2,revision:3});
+  store.writeDraft(undo.next);
+  const redo=districts.prepareHistory(undo.next,compactHistory(undo.next,after,preview.change.tiles,recipe.id,preview.history.after,links));
+  assert.deepEqual(redo.next.objects,after.objects);assert.deepEqual(redo.next.chunks,after.chunks);
+  store.writeDraft(redo.next);assert.deepEqual(store.readDraft(source.id),redo.next);
+  assert.equal(movement.linksRevision(),links);
+  districts.verifySave(redo.next,{...source,revision:5},{revision:4,linksRevision:links,historyProof:preview.history.before});
+});
+
+test('compact history rejects malformed deltas, tampering, stale revisions, other scopes and restarted keys', t => {
+  const f=fixture(t), {source,recipe,movement,store}=f;let scope='a';
+  const server=require('../world-districts')(movement,()=>scope);
+  const preview=server.preview(source,{revision:1,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
+  const after=server.prepareApply(source,{districtGuard:preview.guard}).next;
+  const reverse=preview.change.tiles.map(c=>({x:c.x,y:c.y,before:c.after,after:c.before}));
+  const body=compactHistory(after,source,reverse,recipe.id,preview.history.before,movement.linksRevision());
+  const malformed=[{}, {...body,extra:true},{...body,districtGuard:preview.guard}];
+  const change=patch=>({...body,change:{...body.change,...patch}});
+  malformed.push(change({format:'full'}),change({chunks:{}}),change({count:-1}),change({tiles:[...body.change.tiles,body.change.tiles[0]],count:body.change.count+1}),
+    change({generators:{remove:[],insert:[{index:0,value:{...source.generators[0],id:'foreign'}}]}}),
+    change({objects:{remove:[],insert:[{index:0,value:null}]}}));
+  for(const value of malformed)assert.throws(()=>server.prepareHistory(after,value),{status:400});
+  assert.throws(()=>server.prepareHistory(after,{...body,districtGuard:{...body.districtGuard,revision:1}}),{status:409});
+  const altered=structuredClone(body);altered.change.objects.insert[0].value.x++;
+  assert.throws(()=>server.prepareHistory(after,altered),{status:409});
+  assert.throws(()=>server.prepareHistory(after,change({objects:{remove:[9999],insert:[]}})),{status:409});
+  const wrongCell=structuredClone(body);wrongCell.change.tiles[0].before='water';
+  assert.throws(()=>server.prepareHistory(after,wrongCell),{status:409});
+  scope='b';assert.throws(()=>server.prepareHistory(after,body),{status:409});scope='a';
+  const restarted=require('../world-districts')(movement,()=>scope);
+  assert.throws(()=>restarted.prepareHistory(after,body),{status:409});
+  assert.deepEqual(store.readDraft(source.id),source,'rejections never write');
+  store.writeDraft(after);
+  const added=after.objects.find(item=>!source.objects.some(old=>old.id===item.id));assert.ok(added);
+  movement.saveBuildingLink(after,f.target,{buildingId:added.id,sourceRevision:after.revision,targetRevision:1,
+    linksRevision:movement.linksRevision(),...f.entrance(added),toX:4,toY:1});
+  assert.throws(()=>server.prepareHistory(after,body),{status:409},'a changed link hash rejects old history');
+  assert.throws(()=>server.prepareHistory(after,{...body,districtGuard:{...body.districtGuard,linksRevision:movement.linksRevision()}}),
+    {status:409},'refreshing the hash cannot remove a newly bound house');
+  assert.deepEqual(store.readDraft(source.id),after);
+});

@@ -40,18 +40,20 @@ test('world benchmark measures real HTTP operations in isolated data and never o
   const duplicate = run();
   assert.notEqual(duplicate.status,0);assert.match(duplicate.stderr,/EEXIST/);
   assert.deepEqual(fs.readFileSync(output),bytes,'an existing baseline is preserved');
-  const compact=spawnSync(process.execPath,[script,'--profile','small','--samples','1','--save-mode','district-apply'],
+  const compact=spawnSync(process.execPath,[script,'--profile','small','--samples','1','--save-mode','district-apply','--history-mode','delta-v1'],
     {cwd:root,encoding:'utf8',timeout:20000,env:{...process.env,DATA_DIR:dir}});
   assert.equal(compact.status,0,compact.stderr);
   const measuredApply=JSON.parse(compact.stdout);
   assert.equal(measuredApply.method.saveMode,'district-apply');
   assert.equal(measuredApply.results[0].status,'verified');
   assert.ok(measuredApply.results[0].summary.district_apply.requestBytes.max<1024);
+  assert.ok(measuredApply.results[0].summary.history_undo.responseBytes.max<200);
+  assert.equal(measuredApply.results[0].summary.history_redo.samples,1);
   assert.deepEqual(fs.readdirSync(dir).sort(),['campaign.json','report.json']);
 });
 
 test('world benchmark rejects unknown profiles and invalid sample counts before running', () => {
-  for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],['--unknown','x'],['--preview-format','missing'],['--save-mode','missing']]) {
+  for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],['--unknown','x'],['--preview-format','missing'],['--save-mode','missing'],['--history-mode','missing']]) {
     const result=spawnSync(process.execPath,[script,...args],{cwd:root,encoding:'utf8',timeout:5000});
     assert.notEqual(result.status,0);
     assert.doesNotMatch(result.stderr,/Measuring/);

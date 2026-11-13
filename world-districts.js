@@ -2,8 +2,8 @@
 
 const { isDeepStrictEqual } = require('node:util');
 const { createHmac, randomBytes } = require('node:crypto');
-const { get } = require('./remote/world-model');
-const { validGenerators, generationChange, compactGenerationChange } = require('./remote/world-generators');
+const { get, valid, terrain, objectLimit } = require('./remote/world-model');
+const { validGenerators, generationChange, compactGenerationChange, expandGenerationChange } = require('./remote/world-generators');
 
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
 const fields = (value, names) => value && typeof value === 'object' && !Array.isArray(value) &&
@@ -47,6 +47,19 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
     if (guard.linksRevision !== context.linksRevision) fail(409, 'Переходы изменились. Повтори предпросмотр района.');
     return { context, restoring };
   }
+  function verifyHistory(source, next, guard, context) {
+    if (proof(source, next) !== guard.historyProof) fail(409, 'История района устарела или изменена. Открой карту заново.');
+    movement.districtContext(next);
+    if (context.reservedCells.some(cell => get(source.chunks, cell.x, cell.y) !== get(next.chunks, cell.x, cell.y))) {
+      fail(409, 'Отмена изменит клетку связанного перехода. Сначала проверь его связь.');
+    }
+  }
+  function validPatch(patch, limit) {
+    return fields(patch, ['remove', 'insert']) && Array.isArray(patch.remove) && patch.remove.length <= limit &&
+      Array.isArray(patch.insert) && patch.insert.length <= limit &&
+      patch.remove.every(Number.isSafeInteger) && patch.insert.every(entry => fields(entry, ['index', 'value']) &&
+        Number.isSafeInteger(entry.index) && entry.value && typeof entry.value === 'object' && !Array.isArray(entry.value));
+  }
 
   return {
     preview(source, body) {
@@ -74,6 +87,40 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       return { next, response: { id: source.id, baseRevision: source.revision, revision: next.revision,
         change: compactGenerationChange(normalized), history: { before: proof(source, source), after: proof(source, next) } } };
     },
+    prepareHistory(source, body) {
+      if (!fields(body, ['districtGuard', 'change'])) fail(400, 'Передай подпись и изменение истории района.');
+      if (!fields(body.districtGuard, ['historyProof', 'revision', 'linksRevision'])) fail(400, 'Для истории нужна подпись снимка.');
+      const { context, restoring } = checkedGuard(source, body.districtGuard);
+      if (!restoring) fail(400, 'Для истории нужна подпись снимка.');
+      if (source.revision >= Number.MAX_SAFE_INTEGER) fail(409, 'Исчерпана ревизия карты.');
+      const delta = body.change;
+      if (!fields(delta, ['format', 'id', 'count', 'tiles', 'objects', 'generators']) || delta.format !== 'delta-v1' ||
+          typeof delta.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(delta.id) ||
+          !Array.isArray(delta.tiles) || delta.tiles.length > 8192 || delta.count !== delta.tiles.length ||
+          (delta.objects !== null && !validPatch(delta.objects, objectLimit)) || !validPatch(delta.generators, 1)) {
+        fail(400, 'Некорректное изменение истории района.');
+      }
+      const seen = new Set();
+      for (const cell of delta.tiles) {
+        if (!cell || typeof cell !== 'object' || !valid(cell.x) || !valid(cell.y) ||
+            Object.keys(cell).some(key => !['x','y','before','after'].includes(key)) ||
+            ['before','after'].some(key => cell[key] !== undefined && !Object.hasOwn(terrain, cell[key])) ||
+            seen.has(cell.x + ',' + cell.y)) fail(400, 'Некорректные клетки истории района.');
+        seen.add(cell.x + ',' + cell.y);
+      }
+      const recipes = source.generators || [];
+      if (delta.generators.remove.some(index => recipes[index]?.id !== delta.id || recipes[index]?.kind !== 'district') ||
+          delta.generators.insert.some(({value}) => value.id !== delta.id || value.kind !== 'district' || !validGenerators([value]))) {
+        fail(400, 'История изменяет другой рецепт.');
+      }
+      let change;
+      try { change = expandGenerationChange(delta, source); }
+      catch (error) { if (!(error instanceof RangeError)) throw error; fail(409, error.message); }
+      const next = { ...source, revision: source.revision + 1, chunks: change.chunks,
+        objects: normalizeObjects(change.objects?.after || source.objects), generators: change.generators.after };
+      verifyHistory(source, next, body.districtGuard, context);
+      return { next, response: { id: source.id, baseRevision: source.revision, revision: next.revision } };
+    },
     verifySave(source, next, guard) {
       const changed = !isDeepStrictEqual(definitions(source), definitions(next));
       if (guard === undefined) {
@@ -85,11 +132,7 @@ module.exports = function createWorldDistricts(movement, scope = () => '') {
       }
       const { context, restoring } = checkedGuard(source, guard);
       if (restoring) {
-        if (proof(source, next) !== guard.historyProof) fail(409, 'История района устарела или изменена. Открой карту заново.');
-        movement.districtContext(next);
-        if (context.reservedCells.some(cell => get(source.chunks, cell.x, cell.y) !== get(next.chunks, cell.x, cell.y))) {
-          fail(409, 'Отмена изменит клетку связанного перехода. Сначала проверь его связь.');
-        }
+        verifyHistory(source, next, guard, context);
         return;
       }
       const change = generate(guard.recipe, source, context);

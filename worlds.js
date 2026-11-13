@@ -190,6 +190,16 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     store.writeDraft(next);
     res.json(response);
   }));
+  app.post('/api/worlds/:id/district-history', requireDm, json, route((req, res) => {
+    const data = store.readDraft(req.params.id);
+    if (!data) return res.status(404).json({ error: 'Карта не найдена в этой кампании.' });
+    const { next, response } = districts.prepareHistory(data, req.body);
+    if (!validMap(next) || !validGenerators(next.generators)) {
+      return res.status(400).json({ error: 'Проверьте слои карты и параметры генераторов' });
+    }
+    store.writeDraft(next);
+    res.json(response);
+  }));
   app.post('/api/worlds/:id/building-links', requireDm, json, route((req, res) => {
     const body = req.body || {};
     const fields = ['buildingId', 'sourceRevision', 'targetRevision', 'linksRevision', 'x', 'y', 'toMapId', 'toX', 'toY'];

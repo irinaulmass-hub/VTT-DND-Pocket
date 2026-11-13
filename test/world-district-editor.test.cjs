@@ -52,6 +52,14 @@ function editorFixture() {
         if(loseWrite==='apply'){loseWrite=undefined;throw new TypeError('lost apply response');}
         return copy(corruptReply?{...prepared.response,id:'wrong-map'}:prepared.response);
       }
+      if(url.endsWith('/district-history')){
+        assert.equal(options.method,'POST');assert.deepEqual(Object.keys(body).sort(),['change','districtGuard']);
+        assert.equal(body.change.chunks,undefined);
+        if(failWrite)throw new Error('Переходы изменились. Повтори предпросмотр района.');
+        const prepared=server.prepareHistory(saved,body);saved=prepared.next;
+        if(loseWrite==='history'){loseWrite=undefined;throw new TypeError('lost history response');}
+        return copy(prepared.response);
+      }
       assert.equal(url,'/api/worlds/district-map');
       if(options?.method==='PUT'){
         if(failWrite)throw new Error('Переходы изменились. Повтори предпросмотр района.');
@@ -99,6 +107,7 @@ test('District editor saves manual work before preview, applies with guard and p
   assert.equal(world.get(f.saved.chunks,30,30),'stone');
   await c('redo').onclick();
   assert.deepEqual(f.saved.chunks,first.chunks);assert.deepEqual(f.saved.objects,first.objects);
+  assert.equal(f.requests.filter(r=>r.url.endsWith('/district-history')).length,2);
   assert.deepEqual(f.saved.generators,first.generators);
   c('district-count').value='4';c('district-count').oninput();c('path-seed').value='0';c('path-seed').oninput();
   await c('path-preview').onclick();await c('path-apply').onclick();

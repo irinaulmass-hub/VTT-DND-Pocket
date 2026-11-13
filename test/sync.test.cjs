@@ -1031,6 +1031,39 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     'applying a district does not rewrite its entry/return pair');
   assert.equal((await worldWrite(districtApplyPath,'POST',applyBody)).status,409,'a duplicate cannot apply twice');
   const applyAfter=structuredClone(districtSaved);
+  const compactHistoryPath='/'+districtWorld.id+'/district-history';
+  const makeHistoryBody=(to,backwards,historyProof)=>({districtGuard:{revision:districtSaved.revision,
+    linksRevision:applyPreview.guard.linksRevision,historyProof},change:require('../remote/world-generators').compactGenerationChange({
+      id:districtRecipe.id,count:applied.change.tiles.length,
+      tiles:applied.change.tiles.map(c=>backwards?{x:c.x,y:c.y,before:c.after,after:c.before}:c),
+      objects:{before:districtSaved.objects,after:to.objects},generators:{before:districtSaved.generators,after:to.generators}})});
+  const compactUndoBody=makeHistoryBody(applyBefore,true,applied.history.before);
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+compactHistoryPath+worldGame+query,{method:'POST',redirect:'manual',headers,
+      body:JSON.stringify(compactUndoBody)})).status,302,'compact history is master-only');
+  }
+  assert.equal((await fetch(worldBase+compactHistoryPath+'?game='+packedCampaign.id,{method:'POST',headers:noteHeaders,
+    body:JSON.stringify(compactUndoBody)})).status,404);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,chunks:{}})).status,400);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,districtGuard:{...compactUndoBody.districtGuard,revision:0}})).status,409);
+  const tamperedUndo=structuredClone(compactUndoBody);tamperedUndo.change.generators.insert[0].value.seed++;
+  assert.equal((await worldWrite(compactHistoryPath,'POST',tamperedUndo)).status,409);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,padding:'x'.repeat(8*1024*1024)})).status,413);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json(),districtSaved);
+  const compactUndoResponse=await worldWrite(compactHistoryPath,'POST',compactUndoBody);
+  assert.equal(compactUndoResponse.status,200);
+  const compactAck=await compactUndoResponse.json();
+  assert.deepEqual(compactAck,{id:districtWorld.id,baseRevision:districtSaved.revision,revision:districtSaved.revision+1});
+  assert.ok(Buffer.byteLength(JSON.stringify(compactAck))<200);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.deepEqual(districtSaved.objects,applyBefore.objects);assert.deepEqual(districtSaved.generators,applyBefore.generators);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',compactUndoBody)).status,409,'history cannot commit twice');
+  assert.equal((await worldWrite(compactHistoryPath,'POST',makeHistoryBody(applyAfter,false,applied.history.after))).status,200);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.deepEqual(districtSaved.objects,applyAfter.objects);assert.deepEqual(districtSaved.chunks,applyAfter.chunks);
+  assert.deepEqual(await tableWorld(),tableBeforeApply);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json(),linksBeforeApply);
   const applyUndo=await historyRestore(applyBefore,applied.history.before);
   assert.equal(applyUndo.status,200);districtSaved=await applyUndo.json();
   const applyRedo=await historyRestore(applyAfter,applied.history.after);

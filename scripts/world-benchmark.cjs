@@ -17,10 +17,10 @@ const profiles = {
 };
 
 function argumentsFor(args) {
-  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1', 'save-mode':'full' };
+  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1', 'save-mode':'full', 'history-mode':'none' };
   for (let i=0;i<args.length;i+=2) {
     const name=args[i], value=args[i+1];
-    if (!['--samples','--profile','--output','--ref','--worker','--preview-format','--save-mode'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
+    if (!['--samples','--profile','--output','--ref','--worker','--preview-format','--save-mode','--history-mode'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
     options[name.slice(2)] = value;
   }
   options.samples=Number(options.samples);
@@ -29,6 +29,7 @@ function argumentsFor(args) {
   if (options.ref && !/^[a-f0-9]{40}$/.test(options.ref)) throw Error('--ref must be the application commit SHA');
   if (!['full','delta-v1'].includes(options['preview-format'])) throw Error('Unknown preview format');
   if (!['full','district-apply'].includes(options['save-mode'])) throw Error('Unknown save mode');
+  if (!['none','full','delta-v1'].includes(options['history-mode'])) throw Error('Unknown history mode');
   return options;
 }
 
@@ -81,7 +82,7 @@ function aggregate(rows) {
   }));
 }
 
-async function runProfile(name,samples,previewFormat,saveMode) {
+async function runProfile(name,samples,previewFormat,saveMode,historyMode) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vtt-world-benchmark-'));
   let child;
   try {
@@ -122,7 +123,7 @@ async function runProfile(name,samples,previewFormat,saveMode) {
       const serializeStart=performance.now(), payload=body===undefined?undefined:JSON.stringify(body);
       const serializeMs=performance.now()-serializeStart, probeId='request-'+(++sequence);
       const start=performance.now();
-      const response=await fetch(base+endpoint,{method:body===undefined?'GET':/\/(district-preview|district-apply|publish)$/.test(endpoint)?'POST':'PUT',
+      const response=await fetch(base+endpoint,{method:body===undefined?'GET':/\/(district-preview|district-apply|district-history|publish)$/.test(endpoint)?'POST':'PUT',
         headers:{Cookie:cookie,'Content-Type':'application/json','x-vtt-benchmark-id':probeId},body:payload,signal:AbortSignal.timeout(30000)});
       const text=await response.text();
       let value;try{value=JSON.parse(text);}catch{value={error:text.slice(0,200)};}
@@ -136,6 +137,7 @@ async function runProfile(name,samples,previewFormat,saveMode) {
     for(let sample=-1;sample<samples;sample++) {
       const label=name=>sample<0?undefined:name;
       saved=(await call('/api/worlds/'+id,undefined,label('full_load'))).value;
+      const beforeSave=saved;
       assert.equal(saved.objects.length,dimensions.objects);
       const recipe={...built.first,seed:sample%2===0?0:47};
       const preview=(await call('/api/worlds/'+id+'/district-preview',{revision:saved.revision,recipe,
@@ -159,6 +161,27 @@ async function runProfile(name,samples,previewFormat,saveMode) {
       }else saved=result.value;
       assert.equal(saved.objects.length,dimensions.objects);
       assert.deepEqual(saved.objects.find(prop=>prop.id===built.house.id),built.house,'bound house geometry stays intact');
+      if(historyMode!=='none') {
+        const afterSave=saved;
+        for(const backwards of [true,false]) {
+          const target=backwards?beforeSave:afterSave;
+          const districtGuard={revision:saved.revision,linksRevision:preview.guard.linksRevision,
+            historyProof:preview.history[backwards?'before':'after']};
+          const delta=generators.compactGenerationChange({id:recipe.id,count:preview.change.tiles.length,
+            tiles:preview.change.tiles.map(c=>backwards?{x:c.x,y:c.y,before:c.after,after:c.before}:c),
+            objects:{before:saved.objects,after:target.objects},generators:{before:saved.generators,after:target.generators}});
+          const compactHistory=historyMode==='delta-v1';
+          const response=await call('/api/worlds/'+id+(compactHistory?'/district-history':''),
+            compactHistory?{districtGuard,change:delta}:{...target,revision:saved.revision,districtGuard},
+            label(backwards?'history_undo':'history_redo'));
+          assert.equal(response.status,200);
+          assert.equal(response.value.id,id);assert.equal(response.value.revision,saved.revision+1);
+          if(compactHistory)assert.equal(response.value.baseRevision,saved.revision);
+          saved=(await call('/api/worlds/'+id)).value;
+          assert.deepEqual(saved.chunks,target.chunks);assert.deepEqual(saved.generators,target.generators);
+          assert.deepEqual(saved.objects,target.objects);
+        }
+      }
       const viewport=(await call('/api/worlds/table?chunks=0,0;1,0;0,1;1,1',undefined,label('viewport_read'))).value;
       assert.equal(viewport.generators,undefined);assert.ok(Object.keys(viewport.chunks).length<=4);
     }
@@ -175,12 +198,12 @@ async function runProfile(name,samples,previewFormat,saveMode) {
 
 async function main() {
   const options=argumentsFor(process.argv.slice(2));
-  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'],options['save-mode'])));return;}
+  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'],options['save-mode'],options['history-mode'])));return;}
   const results=[];
   for(const name of options.profile==='all'?Object.keys(profiles):[options.profile]) {
     console.error('Measuring '+name+' ('+options.samples+' samples after one warm-up)');
     const child=spawnSync(process.execPath,['--expose-gc',__filename,'--worker',name,'--samples',String(options.samples),
-      '--preview-format',options['preview-format'],'--save-mode',options['save-mode']],{
+      '--preview-format',options['preview-format'],'--save-mode',options['save-mode'],'--history-mode',options['history-mode']],{
       cwd:root,encoding:'utf8',maxBuffer:10*1024*1024,timeout:180000});
     if(child.status!==0)throw Error(child.stderr||child.error?.message||'Benchmark worker failed');
     results.push(JSON.parse(child.stdout));
@@ -192,7 +215,8 @@ async function main() {
     environment:{node:process.version,platform:process.platform,arch:process.arch,osRelease:os.release(),
       cpu:os.cpus()[0]?.model,availableParallelism:os.availableParallelism(),osReportedMemoryBytes:os.totalmem()},
     method:{transport:'loopback HTTP; response download and JSON parse included',requests:'sequential',
-      previewFormat:options['preview-format'],saveMode:options['save-mode'],expansion:'client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured',
+      previewFormat:options['preview-format'],saveMode:options['save-mode'],historyMode:options['history-mode'],
+      history:'optional undo/redo followed by unmeasured verification reads',expansion:'client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured',
       cache:'warm filesystem/OS cache; one unrecorded warm-up; no forced server GC',
       memory:'server heap after each request; RSS and lifetime process peak; fixture built outside the server',
       viewport:'four published chunks; object metadata is not spatially filtered by the current store',

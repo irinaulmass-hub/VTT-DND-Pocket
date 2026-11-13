@@ -801,13 +801,25 @@
     if (!change.districtHistory) { from.pop(); to.push(change); return apply(change, backwards); }
     return run(async () => {
       await save();
-      const target = JSON.parse(JSON.stringify(draft));
-      for (const tile of change.tiles || []) set(target.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
-      if (change.objects) target.objects = backwards ? change.objects.before : change.objects.after;
-      target.generators = backwards ? change.generators.before : change.generators.after;
-      target.districtGuard = { revision: draft.revision, linksRevision: change.linksRevision,
+      const desiredObjects = (change.objects ? (backwards ? change.objects.before : change.objects.after) : draft.objects)
+        .map(item => ({ ...item, hidden: item.hidden === true }));
+      const delta = window.WorldGenerators.compactGenerationChange({ id: change.districtId,
+        count: (change.tiles || []).length,
+        tiles: (change.tiles || []).map(tile => backwards ? { x: tile.x, y: tile.y, before: tile.after, after: tile.before } : tile),
+        objects: { before: draft.objects, after: desiredObjects },
+        generators: { before: draft.generators || [], after: backwards ? change.generators.before : change.generators.after } });
+      const restored = window.WorldGenerators.expandGenerationChange(delta, draft);
+      const target = { ...draft, chunks: restored.chunks, objects: restored.objects?.after || draft.objects, generators: restored.generators.after };
+      const districtGuard = { revision: draft.revision, linksRevision: change.linksRevision,
         historyProof: change.districtHistory[backwards ? 'before' : 'after'] };
-      const next = await districtWrite(draft, target, '/api/worlds/' + draft.id, json('PUT', target), response => response);
+      const source = draft;
+      const next = await districtWrite(source, target, '/api/worlds/' + source.id + '/district-history',
+        json('POST', { districtGuard, change: delta }), response => {
+          if (response.id !== source.id || response.baseRevision !== source.revision || response.revision !== source.revision + 1) {
+            throw new Error('Некорректный ответ истории района.');
+          }
+          return { ...target, revision: response.revision };
+        });
       from.pop(); to.push(change); draft = next; dirty = false; generatorPreview = null;
       if (tool === 'generate-district') {
         const recipe = (draft.generators || []).find(item => item.id === change.districtId);

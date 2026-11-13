@@ -276,3 +276,23 @@ npm run benchmark:world -- --profile limit --samples 5 --save-mode district-appl
 ```
 
 Запускать последовательно; исходные файлы не перезаписываются. По умолчанию сохранён save-mode full для воспроизводимости прежних команд. Перед изменением этого значения явно обновить описание стенда. Изменённые `dm/world.js`, `scripts/world-benchmark.cjs` и тесты прошли проверку синтаксиса.
+
+## Компактная история района B5b2b
+
+Полный `npm test`: **78/78**, без пропусков, Node.js 24.22.1. Два новых теста в `world-district-bindings.test.cjs` проверяют точный Undo/Redo связанного района, неизменность исходного снимка, чужие объекты, совместимость PUT, неверный формат/guard/индексы/значения/чужой рецепт, другую кампанию/ключ, старые версии и попытку удалить новый связанный дом даже с обновлённым linksRevision.
+
+HTTP в `test/sync.test.cjs` проверяет новый маршрут настоящего сервера: роли, кампании, лишние поля, старую ревизию, изменённую дельту, тело >8 MiB, повтор, точное восстановление и маленький ACK, неизменность публикации/переходов. Старые полные PUT Undo/Redo затем также проходят. VM настоящего редактора теперь выполняет POST истории и проверяет lost reply до/после записи, однократный GET, отсутствие дублей и сохранность стека при неопределённости.
+
+Стенд поддерживает `--history-mode none|full|delta-v1` (default none). Smoke проверяет новый режим и ACK; неверный режим отклоняется. Браузерная приёмка создания/регенерации/истории и конфликта вкладок — [протокол](qa/B5B2B_HISTORY_ACCEPTANCE.md). Потери ответов проверены в VM, связи — HTTP/модульно; это не проверки на физических телефонах или Windows.
+
+```bash
+npm test
+node --check worlds.js
+node --check world-districts.js
+node --check dm/world.js
+node --check scripts/world-benchmark.cjs
+npm run benchmark:world -- --profile limit --samples 5 --save-mode district-apply --history-mode full --output /tmp/b5b2b-full-new.json
+npm run benchmark:world -- --profile limit --samples 5 --save-mode district-apply --history-mode delta-v1 --output /tmp/b5b2b-delta-new.json
+```
+
+Два замера запускать последовательно с новыми именами файлов. После каждого Undo/Redo стенд отдельным неизмеряемым GET сверяет карту. [Сравнение и исходные выборки](benchmarks/B5B2B_HISTORY.md).
