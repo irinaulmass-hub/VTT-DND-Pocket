@@ -17,10 +17,10 @@ const profiles = {
 };
 
 function argumentsFor(args) {
-  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1', 'save-mode':'full', 'history-mode':'none' };
+  const options = { samples:5, profile:'all', output:null, ref:null, worker:null, 'preview-format':'delta-v1', 'save-mode':'full', 'history-mode':'none', stages:'off' };
   for (let i=0;i<args.length;i+=2) {
     const name=args[i], value=args[i+1];
-    if (!['--samples','--profile','--output','--ref','--worker','--preview-format','--save-mode','--history-mode'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
+    if (!['--samples','--profile','--output','--ref','--worker','--preview-format','--save-mode','--history-mode','--stages'].includes(name) || !value) throw Error('Unknown or missing benchmark argument: '+name);
     options[name.slice(2)] = value;
   }
   options.samples=Number(options.samples);
@@ -30,6 +30,7 @@ function argumentsFor(args) {
   if (!['full','delta-v1'].includes(options['preview-format'])) throw Error('Unknown preview format');
   if (!['full','district-apply'].includes(options['save-mode'])) throw Error('Unknown save mode');
   if (!['none','full','delta-v1'].includes(options['history-mode'])) throw Error('Unknown history mode');
+  if (!['off','on'].includes(options.stages)) throw Error('Unknown stages mode');
   return options;
 }
 
@@ -78,11 +79,15 @@ function aggregate(rows) {
   return Object.fromEntries([...new Set(rows.map(row=>row.operation))].map(operation=>{
     const selected=rows.filter(row=>row.operation===operation);
     const fields=['wallMs','serverMs','cpuMs','responseBytes','requestBytes','serializeMs','reads','readBytes','writes','writeBytes','heapAfterBytes','rssBytes'];
-    return [operation,{samples:selected.length,...Object.fromEntries(fields.map(key=>[key,summary(selected.map(row=>row[key]))]))}];
+    const stageNames=[...new Set(selected.flatMap(row=>Object.keys(row.stages||{})))];
+    const stageSummary=stageNames.length?{stages:Object.fromEntries(stageNames.map(name=>[name,
+      Object.fromEntries(['calls','totalMs','selfMs'].map(key=>[key,summary(selected.map(row=>row.stages?.[name]?.[key]||0))]))])),
+      unmeasuredMs:summary(selected.map(row=>row.unmeasuredMs))}:{};
+    return [operation,{samples:selected.length,...Object.fromEntries(fields.map(key=>[key,summary(selected.map(row=>row[key]))])),...stageSummary}];
   }));
 }
 
-async function runProfile(name,samples,previewFormat,saveMode,historyMode) {
+async function runProfile(name,samples,previewFormat,saveMode,historyMode,stages) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vtt-world-benchmark-'));
   let child;
   try {
@@ -94,7 +99,7 @@ async function runProfile(name,samples,previewFormat,saveMode,historyMode) {
     // No fixture objects remain live in the measurement server: it starts in a new process.
     const port=await freePort(), base='http://127.0.0.1:'+port, password=randomBytes(24).toString('hex');
     child=spawn(process.execPath,['--require',path.join(__dirname,'world-benchmark-probe.cjs'),'server.js'],{
-      cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:dir,DM_PASSWORD:password,VTT_WORLD_BENCHMARK:'1'},
+      cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:dir,DM_PASSWORD:password,VTT_WORLD_BENCHMARK:'1',VTT_WORLD_BENCHMARK_STAGES:stages},
       stdio:['ignore','ignore','pipe','ipc']});
     let serverError='';child.stderr.on('data',chunk=>{serverError=(serverError+chunk).slice(-4000);});
     const metrics=new Map(), pending=new Map();
@@ -189,7 +194,9 @@ async function runProfile(name,samples,previewFormat,saveMode,historyMode) {
     assert.equal(verification.revision,saved.revision);assert.deepEqual(verification.generators,saved.generators);
     const movement=require('../world-movement')(require('../world-store')(file=>path.join(dir,file)),file=>path.join(dir,file));
     assert.equal(movement.linksRevision(),built.links,'measurement never changes the binding file');
-    return {name,dimensions,status:'verified',maxSaveBytes,rows,summary:aggregate(rows)};
+    const verificationSha256=createHash('sha256').update(JSON.stringify({revision:verification.revision,
+      chunks:verification.chunks,objects:verification.objects,generators:verification.generators})).digest('hex');
+    return {name,dimensions,status:'verified',verificationSha256,maxSaveBytes,rows,summary:aggregate(rows)};
   } finally {
     if(child&&child.exitCode===null&&child.signalCode===null){const exited=new Promise(resolve=>child.once('exit',resolve));child.kill();await exited;}
     fs.rmSync(dir,{recursive:true,force:true});
@@ -198,24 +205,27 @@ async function runProfile(name,samples,previewFormat,saveMode,historyMode) {
 
 async function main() {
   const options=argumentsFor(process.argv.slice(2));
-  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'],options['save-mode'],options['history-mode'])));return;}
+  if(options.worker){console.log(JSON.stringify(await runProfile(options.worker,options.samples,options['preview-format'],options['save-mode'],options['history-mode'],options.stages)));return;}
   const results=[];
   for(const name of options.profile==='all'?Object.keys(profiles):[options.profile]) {
     console.error('Measuring '+name+' ('+options.samples+' samples after one warm-up)');
     const child=spawnSync(process.execPath,['--expose-gc',__filename,'--worker',name,'--samples',String(options.samples),
-      '--preview-format',options['preview-format'],'--save-mode',options['save-mode'],'--history-mode',options['history-mode']],{
+      '--preview-format',options['preview-format'],'--save-mode',options['save-mode'],'--history-mode',options['history-mode'],'--stages',options.stages],{
       cwd:root,encoding:'utf8',maxBuffer:10*1024*1024,timeout:180000});
     if(child.status!==0)throw Error(child.stderr||child.error?.message||'Benchmark worker failed');
     results.push(JSON.parse(child.stdout));
   }
   const report={schemaVersion:1,applicationRef:options.ref,createdAt:new Date().toISOString(),samples:options.samples,
     sourceSha256:Object.fromEntries(['worlds.js','world-districts.js','remote/world-generators.js','dm/world.js',
-      'scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs'].map(file=>
+      'world-store.js','world-movement.js','scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs','scripts/world-benchmark-stages.cjs'].map(file=>
       [file,createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')])),
     environment:{node:process.version,platform:process.platform,arch:process.arch,osRelease:os.release(),
       cpu:os.cpus()[0]?.model,availableParallelism:os.availableParallelism(),osReportedMemoryBytes:os.totalmem()},
     method:{transport:'loopback HTTP; response download and JSON parse included',requests:'sequential',
-      previewFormat:options['preview-format'],saveMode:options['save-mode'],historyMode:options['history-mode'],
+      previewFormat:options['preview-format'],saveMode:options['save-mode'],historyMode:options['history-mode'],stages:options.stages,
+      stageTiming:'optional benchmark-only synchronous wrappers; inclusive totalMs and exclusive selfMs; do not sum inclusive times',
+      signatureInput:'createHmac-to-first-update interval in District proof: normalization, canonicalization and JSON serialization combined; crypto calls timed separately',
+      stageRemainder:'server time outside exclusive stage spans, including route validation, response serialization and HTTP; District selfMs includes its remaining validation and delta work',
       history:'optional undo/redo followed by unmeasured verification reads',expansion:'client delta reconstruction measured separately in preview/apply rows as expandMs; browser reconciliation is not measured',
       cache:'warm filesystem/OS cache; one unrecorded warm-up; no forced server GC',
       memory:'server heap after each request; RSS and lifetime process peak; fixture built outside the server',

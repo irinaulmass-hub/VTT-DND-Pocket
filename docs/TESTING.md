@@ -296,3 +296,27 @@ npm run benchmark:world -- --profile limit --samples 5 --save-mode district-appl
 ```
 
 Два замера запускать последовательно с новыми именами файлов. После каждого Undo/Redo стенд отдельным неизмеряемым GET сверяет карту. [Сравнение и исходные выборки](benchmarks/B5B2B_HISTORY.md).
+
+## Профиль стадий District B5b3a
+
+Полный `npm test`: **80/80**, Node.js 24.22.1, пропусков нет. `test/world-benchmark.test.cjs` проверяет:
+
+- opt-in --stages on/off и отказ неизвестного значения до запуска;
+- реальные HTTP/сохранения: одинаковые verificationSha256 (карта/объекты/рецепты/ревизия) и размеры транспорта у контрольного/профилированного сервера;
+- число вызовов (две подписи применения, одна для истории), отсутствие генерации при истории, неотрицательные totalMs/selfMs и разбиение serverMs по exclusive-интервалам/остатку;
+- учёт вложенных интервалов без удвоения, восстановление стека после исключения и прежние возвращаемые значения;
+- известный HMAC-SHA256 вектор, цепочку update/digest, отсутствие перехвата crypto у остальных модулей.
+
+Существующие HTTP/VM проверки ролей, карт, связей и истории проходят. Синтаксис трёх скриптов и теста проверен. Новая браузерная проверка не нужна для preload стенда; новая графика, FPS, физические устройства и Windows не проверялись.
+
+```bash
+npm test
+node --check scripts/world-benchmark.cjs
+node --check scripts/world-benchmark-probe.cjs
+node --check scripts/world-benchmark-stages.cjs
+node --check test/world-benchmark.test.cjs
+npm run benchmark:world -- --profile limit --samples 5 --save-mode district-apply --history-mode delta-v1 --stages off --output /tmp/b5b3a-control-new.json
+npm run benchmark:world -- --profile limit --samples 5 --save-mode district-apply --history-mode delta-v1 --stages on --output /tmp/b5b3a-stages-new.json
+```
+
+Команды измерений выполнять последовательно, после тестов, с новыми выходными путями. Оба финальных прогона verified и имеют одинаковые отпечатки/хеши исходников. [Отчёт и выборки](benchmarks/B5B3A_STAGES.md). Базовые измерения I1a/B5a/B5b2 исторические и напрямую с новой средой не сравниваются. Не суммировать inclusive totalMs или медианы разных стадий. Подготовка signature.input включает нормализацию/канонизацию/JSON.stringify вместе и немного работы обёртки; это не чистая канонизация или чистый HMAC.

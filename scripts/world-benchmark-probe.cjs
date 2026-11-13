@@ -12,6 +12,10 @@ if (process.env.VTT_WORLD_BENCHMARK !== '1' || path.dirname(dataDir) !== os.tmpd
   throw Error('Benchmark probe requires an isolated temporary campaign and an IPC parent');
 }
 let active;
+const stageTiming = process.env.VTT_WORLD_BENCHMARK_STAGES === 'on';
+if (stageTiming) {
+  require('./world-benchmark-stages.cjs').install(() => active, path.resolve(__dirname, '..'));
+}
 const inside = file => typeof file === 'string' && path.resolve(file).startsWith(dataDir + path.sep);
 const bytes = value => typeof value === 'string' ? Buffer.byteLength(value) : value?.byteLength || 0;
 const read = fs.readFileSync, write = fs.writeFileSync;
@@ -32,15 +36,18 @@ http.Server.prototype.emit = function(event, ...args) {
     if (typeof id === 'string' && /^[a-z0-9-]{1,80}$/.test(id)) {
       if (active) throw Error('Benchmark requests must run sequentially');
       const item = { id, start: performance.now(), cpu: process.cpuUsage(), memory: process.memoryUsage(),
-        reads: 0, readBytes: 0, writes: 0, writeBytes: 0, files: new Set() };
+        reads: 0, readBytes: 0, writes: 0, writeBytes: 0, files: new Set(), ...(stageTiming ? { stages:{} } : {}) };
       active = item;
       res.once('finish', () => {
         const cpu = process.cpuUsage(item.cpu), memory = process.memoryUsage();
+        const serverMs = performance.now()-item.start;
         if (active === item) active = undefined;
         process.send({ type:'world-benchmark', id, status:res.statusCode,
-          serverMs:performance.now()-item.start, cpuMs:(cpu.user+cpu.system)/1000,
+          serverMs, cpuMs:(cpu.user+cpu.system)/1000,
           reads:item.reads, uniqueReadFiles:item.files.size, readBytes:item.readBytes,
           writes:item.writes, writeBytes:item.writeBytes,
+          ...(item.stages ? { stages:item.stages,
+            unmeasuredMs:Math.max(0, serverMs-Object.values(item.stages).reduce((sum, row) => sum+row.selfMs, 0)) } : {}),
           heapBeforeBytes:item.memory.heapUsed, heapAfterBytes:memory.heapUsed, rssBytes:memory.rss,
           processPeakRssBytes:process.resourceUsage().maxRSS*1024 });
       });
