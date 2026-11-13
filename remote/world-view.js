@@ -88,6 +88,12 @@
       return { x: camera.x + (e.clientX - rect.left - width / 2) / camera.scale,
         y: camera.y + (e.clientY - rect.top - height / 2) / camera.scale };
     }
+    // Selecting may open an inspector and move the canvas under the pointer.
+    // Only pointer travel, at the gesture's original scale, moves an object.
+    function propDestination(start, event) {
+      return { x: start.prop.x + Math.round((event.clientX - start.x) / start.camera.scale),
+        y: start.prop.y + Math.round((event.clientY - start.y) / start.camera.scale) };
+    }
     new ResizeObserver(() => {
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
@@ -119,9 +125,7 @@
     canvas.addEventListener('pointermove', event => {
       if (gesture?.id !== event.pointerId || gesture.token) return;
       if (gesture.prop) {
-        const p = point(event);
-        const x = gesture.prop.x + Math.round(p.x - gesture.point.x);
-        const y = gesture.prop.y + Math.round(p.y - gesture.point.y);
+        const { x, y } = propDestination(gesture, event);
         if (window.WorldMap.valid(x) && window.WorldMap.valid(y)) gesture.destination = { x, y };
         draw();
         return;
@@ -140,8 +144,7 @@
       if (start.prop) {
         draw();
         const prop = start.prop;
-        const x = prop.x + Math.round(p.x - start.point.x);
-        const y = prop.y + Math.round(p.y - start.point.y);
+        const { x, y } = propDestination(start, event);
         if (window.WorldMap.valid(x) && window.WorldMap.valid(y) && (x !== prop.x || y !== prop.y)) {
           options.moveProp(prop, x, y);
         }
