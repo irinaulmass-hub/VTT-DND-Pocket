@@ -1396,6 +1396,27 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(pairDeleteUrl,{method:'DELETE',headers:resumedHeaders})).status,409);
   assert.equal((await fetch(pairDeleteUrl+'&linksRevision='+floorLinks.revision,{method:'DELETE',headers:resumedHeaders})).status,200);
   assert.equal((await readBindingList(resumedHeaders)).links.length,1,'deleting the return removes its entire pair');
+  const boundaryWorld=await resumedWorldWrite('',{name:'Граница чанков · HTTP'}).then(r=>r.json());
+  for(let y=0;y<23;y++)for(let x=-4;x<37;x++)tiles.set(boundaryWorld.chunks,x,y,'grass');
+  boundaryWorld.objects=[
+    {id:'boundary-west',kind:'tavern',x:-1,y:2,turn:0},
+    {id:'boundary-east',kind:'tavern',x:32,y:8,turn:1},
+    {id:'boundary-secret',kind:'barn',x:31,y:17,turn:0,hidden:true},
+    {id:'boundary-far',kind:'barn',x:200,y:2,turn:0},
+  ];
+  const boundarySave=await fetch(worldBase+'/'+boundaryWorld.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify(boundaryWorld)}).then(r=>r.json());
+  assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:false})).status,200);
+  const boundaryView=await tableWorld('0,0');
+  assert.deepEqual(boundaryView.objects.map(p=>p.id),['boundary-west','boundary-east'],
+    'real chunk response includes overlapping buildings anchored outside the requested chunk');
+  assert.deepEqual(Object.keys(boundaryView.chunks),['0,0'],'no neighboring terrain is added');
+  assert.equal(boundaryView.generators,undefined);
+  assert.deepEqual((await tableWorld('0,0;1,0;0,0')).objects.map(p=>p.id),['boundary-west','boundary-east']);
+  const emptyBoundaryView=await fetch(worldBase+'/table'+worldGame).then(r=>r.json());
+  assert.deepEqual(emptyBoundaryView.objects,[]);
+  assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:true})).status,200);
+  assert.deepEqual((await tableWorld('0,0')).objects,[],'overlap does not reveal unexplored buildings under fog');
   const revokedDiscovery=message(positionAfterRestart,msg=>msg.type==='ACCESS_REVOKED');
   const replacementInvite=await fetch(base+'/api/player-access'+worldGame,{
     method:'POST',headers:resumedHeaders,body:JSON.stringify({characterId:otherChar.id}),

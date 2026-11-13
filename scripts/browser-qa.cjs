@@ -72,6 +72,26 @@ if (!qaStore.readDraft(interiorId, [])) {
   qaStore.writeDraft({ ...room, chunks: change.chunks, objects: [...change.objects.after,...furniture],
     generators: change.generators.after });
 }
+// Border scene for validating chunk selection and the real master/TV rendering.
+const borderId = '40000000-0000-0000-0000-000000000001';
+if (!qaStore.readDraft(borderId, [])) {
+  const { set } = require('../remote/world-model');
+  const border = { id:borderId, name:'Граница чанков · Таверна и амбар', revision:0, chunks:{}, objects:[
+    {id:'border-tavern',kind:'tavern',x:-1,y:2,turn:0},
+    {id:'border-barn',kind:'barn',x:1,y:-5,turn:1},
+    {id:'border-house',kind:'house',x:-10,y:-5,turn:0},
+    {id:'border-bridge',kind:'bridge',x:-10,y:5,turn:0},
+    {id:'border-wall',kind:'wall',x:-1,y:7,turn:0},
+    {id:'border-tree',kind:'tree',x:-7,y:-1,turn:0},
+    {id:'border-barrel',kind:'barrel',x:3,y:3,turn:0},
+    {id:'border-secret',kind:'chest',x:9,y:5,turn:0,hidden:true},
+  ] };
+  for(let y=-10;y<=11;y++)for(let x=-17;x<=16;x++) {
+    set(border.chunks,x,y,Math.abs(x+10)<=3&&y>=3&&y<=7?'water':
+      (y===7||x===6)?'path':'grass');
+  }
+  qaStore.writeDraft(border);
+}
 const password = randomBytes(32).toString('hex');
 const upstream = spawn(process.execPath, ['server.js'], {
   cwd: root, env: { ...process.env, PORT: String(upstreamPort), DATA_DIR: dataDir, DM_PASSWORD: password },

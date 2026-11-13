@@ -50,6 +50,11 @@ test('the browser fixture isolates data, uses real master login, proxies WS, and
   assert.equal(list.worlds[0].name, 'Старый рецепт · F1–F3');
   const legacy = await fetch(base + '/api/worlds/' + list.worlds[0].id).then(r => r.json());
   assert.equal(legacy.generators[0].state, undefined);
+  const borderMap=list.worlds.find(item=>item.name==='Граница чанков · Таверна и амбар');
+  assert.ok(borderMap,'a disposable border regression scene is available');
+  const border=await fetch(base+'/api/worlds/'+borderMap.id).then(r=>r.json());
+  assert.equal(border.objects.find(p=>p.id==='border-tavern').x,-1);
+  assert.equal(border.objects.find(p=>p.id==='border-secret').hidden,true);
   assert.equal((await fetch('http://127.0.0.1:' + upstreamPort + '/api/worlds', { redirect: 'manual' })).status, 302,
     'the underlying application still requires authentication');
   const ws = new WebSocket(base.replace('http:', 'ws:') + '/ws');
