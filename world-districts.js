@@ -1,6 +1,8 @@
 'use strict';
 
 const { isDeepStrictEqual } = require('node:util');
+const { createHmac, randomBytes } = require('node:crypto');
+const { get } = require('./remote/world-model');
 const { validGenerators, generationChange } = require('./remote/world-generators');
 
 const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
@@ -16,7 +18,15 @@ const definitions = map => (map.generators || []).filter(recipe => recipe.kind =
   tiles: recipe.state?.tiles, objects: recipe.state?.objects,
 })).sort((a, b) => a.id.localeCompare(b.id));
 
-module.exports = function createWorldDistricts(movement) {
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ?
+  Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+
+module.exports = function createWorldDistricts(movement, scope = () => '') {
+  // Browser history is session-local. No extra save file or persistent signing key is needed.
+  const historyKey = randomBytes(32);
+  const proof = (source, snapshot) => createHmac('sha256', historyKey).update(JSON.stringify([
+    scope(), source.id, canonical({ chunks: snapshot.chunks, objects: normalizeObjects(snapshot.objects), generators: snapshot.generators || [] }),
+  ])).digest('hex');
   function generate(recipe, source, context) {
     try { return generationChange(recipe, source, context); }
     catch (error) {
@@ -31,7 +41,9 @@ module.exports = function createWorldDistricts(movement) {
           !validRecipe(body.recipe)) fail(400, 'Проверь ревизию и параметры района.');
       if (source.revision !== body.revision) fail(409, 'Черновик изменён. Открой актуальную карту перед предпросмотром.');
       const context = movement.districtContext(source);
-      return { change: generate(body.recipe, source, context),
+      const change = generate(body.recipe, source, context);
+      const after = { chunks: change.chunks, objects: change.objects?.after || source.objects, generators: change.generators.after };
+      return { change, history: { before: proof(source, source), after: proof(source, after) },
         guard: { recipe: body.recipe, revision: source.revision, linksRevision: context.linksRevision } };
     },
     verifySave(source, next, guard) {
@@ -43,7 +55,9 @@ module.exports = function createWorldDistricts(movement) {
         }
         return;
       }
-      if (!fields(guard, ['recipe', 'revision', 'linksRevision']) || !validRecipe(guard.recipe) ||
+      const restoring = fields(guard, ['historyProof', 'revision', 'linksRevision']);
+      if ((!restoring && (!fields(guard, ['recipe', 'revision', 'linksRevision']) || !validRecipe(guard.recipe))) ||
+          (restoring && (typeof guard.historyProof !== 'string' || !/^[a-f0-9]{64}$/.test(guard.historyProof))) ||
           !Number.isSafeInteger(guard.revision) || guard.revision < 0 ||
           typeof guard.linksRevision !== 'string' || !/^[a-f0-9]{64}$/.test(guard.linksRevision)) {
         fail(400, 'Некорректная версия предпросмотра района.');
@@ -51,6 +65,14 @@ module.exports = function createWorldDistricts(movement) {
       if (guard.revision !== source.revision) fail(409, 'Карта изменилась после предпросмотра. Повтори генерацию.');
       const context = movement.districtContext(source);
       if (guard.linksRevision !== context.linksRevision) fail(409, 'Переходы изменились. Повтори предпросмотр района.');
+      if (restoring) {
+        if (proof(source, next) !== guard.historyProof) fail(409, 'История района устарела или изменена. Открой карту заново.');
+        movement.districtContext(next);
+        if (context.reservedCells.some(cell => get(source.chunks, cell.x, cell.y) !== get(next.chunks, cell.x, cell.y))) {
+          fail(409, 'Отмена изменит клетку связанного перехода. Сначала проверь его связь.');
+        }
+        return;
+      }
       const change = generate(guard.recipe, source, context);
       if (!isDeepStrictEqual(next.chunks, change.chunks) ||
           !isDeepStrictEqual(normalizeObjects(next.objects), normalizeObjects(change.objects?.after || source.objects)) ||

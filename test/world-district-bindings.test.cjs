@@ -131,3 +131,24 @@ test('preview rejects malformed requests, stale geometry and broken pairs and re
   fs.writeFileSync(f.file('world-transitions.json'),JSON.stringify([f.pair[0]]));
   assert.throws(()=>districts.preview(source,{revision:1,recipe}),{status:409});
 });
+
+test('server-approved history restores exact snapshots and rejects altered data, other scopes and restarted sessions', t => {
+  const f=fixture(t), {source,recipe,movement}=f;
+  let scope='campaign-a';
+  const server=require('../world-districts')(movement,()=>scope);
+  const preview=server.preview(source,{revision:1,recipe:{...recipe,seed:0,params:{...recipe.params,count:3}}});
+  const after=f.next(preview);
+  const undo={...source,revision:after.revision+1};
+  const guard={revision:after.revision,linksRevision:preview.guard.linksRevision,historyProof:preview.history.before};
+  server.verifySave(after,undo,guard);
+  server.verifySave(undo,after,{...guard,revision:undo.revision,historyProof:preview.history.after});
+  const altered=structuredClone(undo);map.set(altered.chunks,100,100,'water');
+  assert.throws(()=>server.verifySave(after,altered,guard),{status:409});
+  assert.throws(()=>server.verifySave(after,undo,{...guard,historyProof:'0'.repeat(64)}),{status:409});
+  scope='campaign-b';assert.throws(()=>server.verifySave(after,undo,guard),{status:409});scope='campaign-a';
+  const restarted=require('../world-districts')(movement,()=>scope);
+  assert.throws(()=>restarted.verifySave(after,undo,guard),{status:409},'old browser history fails closed after a server restart');
+  // Even an otherwise approved snapshot cannot remove a newly bound house after a caller refreshes the link hash.
+  f.link(source.objects[1],4);
+  assert.throws(()=>server.verifySave(source,after,{revision:1,linksRevision:movement.linksRevision(),historyProof:preview.history.after}),{status:409});
+});

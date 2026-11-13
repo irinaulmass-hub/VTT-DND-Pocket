@@ -960,6 +960,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   changedDistrictBody.objects[0].x++;
   assert.equal((await worldWrite('/'+districtWorld.id,'PUT',changedDistrictBody)).status,409,
     'the server recomputes the protected preview instead of trusting changed objects');
+  const districtBeforeGuarded=structuredClone(districtSaved);
   const districtCommit=await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict));
   assert.equal(districtCommit.status,200);
   districtSaved=await districtCommit.json();
@@ -968,6 +969,20 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual(districtSaved.objects.find(prop=>prop.id===districtHouse.id),districtHouse);
   assert.equal((await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict))).status,409,
     'a preview cannot be replayed on a newer map revision');
+  const districtAfterGuarded=structuredClone(districtSaved);
+  const historyRestore=async (snapshot,historyProof)=>worldWrite('/'+districtWorld.id,'PUT',{
+    ...snapshot,revision:districtSaved.revision,districtGuard:{revision:districtSaved.revision,
+      linksRevision:guardedDistrict.guard.linksRevision,historyProof},
+  });
+  const changedHistory=structuredClone(districtBeforeGuarded);tiles.set(changedHistory.chunks,100,100,'water');
+  assert.equal((await historyRestore(changedHistory,guardedDistrict.history.before)).status,409,
+    'history cannot restore a modified snapshot');
+  const districtUndo=await historyRestore(districtBeforeGuarded,guardedDistrict.history.before);
+  assert.equal(districtUndo.status,200);districtSaved=await districtUndo.json();
+  assert.deepEqual(districtSaved.objects,districtBeforeGuarded.objects);
+  const districtRedo=await historyRestore(districtAfterGuarded,guardedDistrict.history.after);
+  assert.equal(districtRedo.status,200);districtSaved=await districtRedo.json();
+  assert.deepEqual(districtSaved.objects,districtAfterGuarded.objects);
   const legacyId='10000000-0000-0000-0000-000000000000';
   const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
   const legacyFile=path.join(worldDir,legacyId+'.json');

@@ -44,6 +44,7 @@
           <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
           <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
           <button class="book-button" data-tool="generate-room">Room · Комната</button>
+          <button class="book-button" data-tool="generate-district">District Plot · Район</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
           <button class="book-button" data-tool="select">Двигать объекты</button>
           <button class="book-button" data-tool="delete-object">Удалять объекты</button>
@@ -61,6 +62,7 @@
               ${[1, 3, 5, 7, 9, 11, 13, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
             </select></label>
             <label data-world-forest-density-label hidden>Плотность <input class="book-select" type="number" min="10" max="100" step="1" value="65" data-world-forest-density> %</label>
+            <label data-world-district-count-label hidden>Домов <input class="book-select" type="number" min="1" max="24" step="1" value="8" data-world-district-count></label>
             <label data-world-room-floor-label hidden>Пол <select class="book-select" data-world-room-floor>
               <option value="wood">Доски</option><option value="stone">Камень</option><option value="caveFloor">Пещерный пол</option>
             </select></label>
@@ -133,8 +135,8 @@
   let generatorPoints = [], generatorPreview = null, roomEntrance = null, pickingEntrance = false;
   let templates = { revision: 0, templates: [] }, templatesReady = false, templateGeneration = 0;
   const templateUrl = '/api/world-generator-templates';
-  const generatorKind = () => tool === 'generate-room' ? 'room' : tool === 'generate-forest' ? 'forest' : 'path';
-  const generatorTool = () => ['generate-path', 'generate-forest', 'generate-room'].includes(tool);
+  const generatorKind = () => tool === 'generate-district' ? 'district' : tool === 'generate-room' ? 'room' : tool === 'generate-forest' ? 'forest' : 'path';
+  const generatorTool = () => ['generate-path', 'generate-forest', 'generate-room', 'generate-district'].includes(tool);
 
   function paintGeneratorControls() {
     e('path').hidden = !generatorTool();
@@ -143,21 +145,22 @@
     paintTemplates();
     e('path-terrain-label').hidden = e('path-width-label').hidden = kind !== 'path';
     e('room-floor-label').hidden = e('room-entrance').hidden = e('room-entry-info').hidden = kind !== 'room';
-    e('templates').hidden = kind === 'room';
+    e('templates').hidden = kind === 'room' || kind === 'district';
+    e('district-count-label').hidden = kind !== 'district';
     e('room-entrance').textContent = pickingEntrance ? 'Нажми на клетку входа…' : 'Выбрать вход';
     e('room-entry-info').textContent = roomEntrance ? 'Вход: ' + roomEntrance.x + ', ' + roomEntrance.y : 'Вход не выбран';
     e('forest-density-label').hidden = kind !== 'forest';
     const saved = e('path-saved');
     const selectedId = saved.value;
     const recipes = (draft.generators || []).filter(recipe => recipe.kind === kind && recipe.version === 1);
-    saved.replaceChildren(new Option(kind === 'room' ? 'Новая комната' : kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
-      new Option((kind === 'room' ? 'Комната' : kind === 'forest' ? 'Лес' : recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
+    saved.replaceChildren(new Option(kind === 'district' ? 'Новый район' : kind === 'room' ? 'Новая комната' : kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
+      new Option((kind === 'district' ? 'Район' : kind === 'room' ? 'Комната' : kind === 'forest' ? 'Лес' : recipe.params.terrain === 'path' ? 'Дорога' : 'Река') + ' · ' + (index + 1) +
         ' · seed ' + recipe.seed, recipe.id)));
     if (recipes.some(recipe => recipe.id === selectedId)) saved.value = selectedId;
-    e('path-count').textContent = 'Опорных точек: ' + generatorPoints.length;
-    e('path-preview').disabled = generatorPoints.length < (kind === 'room' ? 4 : kind === 'path' ? 2 : 3) || (kind === 'room' && !roomEntrance);
-    e('path-apply').disabled = !generatorPreview;
-    e('path-apply').textContent = saved.value ? 'Применить регенерацию' : 'Применить к черновику';
+    e('path-count').textContent = kind === 'district' ? 'Углы района: ' + (generatorPoints.length === 4 ? 2 : generatorPoints.length) + ' / 2' : 'Опорных точек: ' + generatorPoints.length;
+    e('path-preview').disabled = busy || generatorPoints.length < (kind === 'room' || kind === 'district' ? 4 : kind === 'path' ? 2 : 3) || (kind === 'room' && !roomEntrance);
+    e('path-apply').disabled = busy || !generatorPreview;
+    e('path-apply').textContent = kind === 'district' ? 'Применить и сохранить район' : saved.value ? 'Применить регенерацию' : 'Применить к черновику';
   }
 
   function generatorSettings() {
@@ -175,7 +178,7 @@
       ...items.map(item => new Option(item.name, item.id)));
     if (items.some(item => item.id === value)) select.value = value;
     e('template-load').disabled = !select.value || busy;
-    e('template-save').disabled = generatorKind() === 'room' || !templatesReady || busy;
+    e('template-save').disabled = !['path', 'forest'].includes(generatorKind()) || !templatesReady || busy;
   }
 
   async function readTemplates() {
@@ -208,9 +211,20 @@
       const recipe = {
         id: savedId || crypto.randomUUID?.() || 'path-' + Date.now() + '-' + Math.random().toString(36).slice(2),
         kind, version: 1, seed: e('path-seed').valueAsNumber,
-        params: kind === 'room' ? { floor: e('room-floor').value, points: generatorPoints, entrance: roomEntrance } : forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
+        params: kind === 'district' ? { count: e('district-count').valueAsNumber, points: generatorPoints } : kind === 'room' ? { floor: e('room-floor').value, points: generatorPoints, entrance: roomEntrance } : forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
           { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: generatorPoints },
       };
+      if (kind === 'district') return run(async () => {
+        await save();
+        const result = await request('/api/worlds/' + draft.id + '/district-preview', json('POST', { revision: draft.revision, recipe }));
+        generatorPreview = { ...result.change, districtGuard: result.guard, districtHistory: result.history };
+        const xs = generatorPoints.map(point => point.x), ys = generatorPoints.map(point => point.y);
+        const width = Math.max(...xs) - Math.min(...xs) + 1, height = Math.max(...ys) - Math.min(...ys) + 1;
+        editorView.setCamera({ x: (Math.min(...xs) + Math.max(...xs) + 1) / 2,
+          y: (Math.min(...ys) + Math.max(...ys) + 1) / 2,
+          scale: Math.min(24, ((e('canvas').clientHeight || 480) - 36) / (height + 2), ((e('canvas').clientWidth || 1000) - 36) / (width + 2)) });
+        status('Предпросмотр района · ' + recipe.params.count + ' домов. Связанные дома сохраняются. Применение сохранит район.');
+      });
       generatorPreview = generationChange(recipe, draft);
       if (!generatorPreview.count && !savedId) throw new RangeError('В участке нет свободных клеток для генератора');
       status((savedId ? 'Регенерация' : 'Предпросмотр') + ' · ' + generatorPreview.count +
@@ -237,9 +251,14 @@
       e('size').textContent = props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
     }
     e('secret').checked = !!object?.hidden;
-    e('undo').disabled = !undo.length;
-    e('redo').disabled = !redo.length;
-    editor.querySelectorAll('[data-tool]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.tool === tool)));
+    e('undo').disabled = busy || !undo.length;
+    e('redo').disabled = busy || !redo.length;
+    for (const name of ['path-saved','path-terrain','path-width','forest-density','district-count','room-floor','path-seed',
+      'path-clear-points','path-reset','room-entrance','save','publish','select']) e(name).disabled = busy;
+    editor.querySelectorAll('[data-tool]').forEach(button => {
+      button.disabled = busy;
+      button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
+    });
   }
   function apply(change, backwards = false) {
     if (change.objects) draft.objects = backwards ? change.objects.before : change.objects.after;
@@ -409,6 +428,18 @@
   function click(x, y, point) {
     if (!draft || busy) return;
     if (generatorTool()) {
+      if (generatorKind() === 'district') {
+        if (generatorPoints.length !== 1) {
+          generatorPoints = [{ x, y }];
+          status('Укажи противоположный угол прямоугольного района.');
+        } else {
+          const first = generatorPoints[0];
+          if (first.x === x || first.y === y) return status('Углы должны задавать прямоугольник с шириной и высотой.');
+          generatorPoints = [first, { x, y: first.y }, { x, y }, { x: first.x, y }];
+          status('Контур района выбран. Задай число домов и seed, затем нажми «Предпросмотр».');
+        }
+        clearGeneratorPreview(); paint(); return;
+      }
       const forest = generatorKind() !== 'path';
       if (generatorKind() === 'room' && pickingEntrance) {
         roomEntrance = { x, y }; pickingEntrance = false; clearGeneratorPreview();
@@ -482,7 +513,7 @@
   const editorView = createWorldView(e('canvas'), {
     grid: true, click, pan: () => tool === 'pan', selected: () => selected,
     marks: () => generatorTool() ? [...generatorPoints, ...(tool === 'generate-room' && roomEntrance ? [roomEntrance] : [])] : first ? [first] : [],
-    outline: () => tool === 'generate-forest' || tool === 'generate-room' ? generatorPoints : null,
+    outline: () => ['generate-forest','generate-room','generate-district'].includes(tool) ? generatorPoints : null,
     pickProp(x, y) {
       if (!draft || busy || tool !== 'select') return;
       const item = objectAt(x, y);
@@ -541,9 +572,10 @@
   async function run(task) {
     if (busy) return;
     busy = true;
+    paint();
     try { await task(); }
     catch (error) { status(error.message); }
-    finally { busy = false; paintTemplates(); }
+    finally { busy = false; paint(); paintTemplates(); }
   }
   function updateElevation() {
     const form = e('create').elements;
@@ -570,12 +602,14 @@
     });
   };
   e('select').onchange = () => {
+    if (busy) { e('select').value = draft?.id || ''; return; }
     const id = e('select').value;
     if (!id) return;
     if (dirty && !confirm('Открыть другую карту без сохранения текущих правок?')) { e('select').value = draft.id; return; }
     run(async () => open(await request('/api/worlds/' + encodeURIComponent(id))));
   };
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
+    if (busy) return;
     if (tool !== button.dataset.tool) {
       generatorPoints = [];
       roomEntrance = null; pickingEntrance = false;
@@ -583,6 +617,7 @@
     }
     tool = button.dataset.tool;
     if (tool === 'generate-room') status('Отметь углы комнаты по порядку, затем выбери вход на прямой стене. Стороны идут по линиям сетки.');
+    if (tool === 'generate-district') status('Укажи два противоположных угла района: от 11×11 до 4096 клеток. Затем выбери число домов и seed.');
     if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
     if (tool === 'generate-path') status('Укажи опорные точки на карте и нажми «Предпросмотр».');
     if (tool === 'generate-path' || tool === 'generate-forest') readTemplates();
@@ -644,20 +679,23 @@
     generatorPreview = null;
     if (recipe) {
       if (recipe.kind === 'room') e('room-floor').value = recipe.params.floor;
+      else if (recipe.kind === 'district') e('district-count').value = String(recipe.params.count);
       else if (recipe.kind === 'forest') e('forest-density').value = String(recipe.params.density);
       else {
         e('path-terrain').value = recipe.params.terrain;
         e('path-width').value = String(recipe.params.width);
       }
       e('path-seed').value = String(recipe.seed);
-      const [{ x, y }] = generatorPoints;
+      const x = recipe.kind === 'district' ? (Math.min(...generatorPoints.map(p => p.x)) + Math.max(...generatorPoints.map(p => p.x))) / 2 : generatorPoints[0].x;
+      const y = recipe.kind === 'district' ? (Math.min(...generatorPoints.map(p => p.y)) + Math.max(...generatorPoints.map(p => p.y))) / 2 : generatorPoints[0].y;
       editorView.setCamera({ ...editorView.camera(), x: x + .5, y: y + .5 });
       status('Рецепт загружен. Нажми «Предпросмотр».');
     }
     paint();
   };
-  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density', 'room-floor']) {
+  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density', 'room-floor', 'district-count']) {
     e(field).oninput = () => {
+      if (busy) return;
       clearGeneratorPreview();
       if (generatorPoints.length >= 2) status('Нажми «Предпросмотр» для обновлённого участка.');
       paint();
@@ -687,6 +725,23 @@
   e('path-preview').onclick = previewGenerator;
   e('path-apply').onclick = () => {
     if (!draft || busy || !generatorPreview) return;
+    if (generatorPreview.districtGuard) {
+      const preview = generatorPreview;
+      return run(async () => {
+        try {
+          const next = await request('/api/worlds/' + draft.id, json('PUT', { ...draft, chunks: preview.chunks,
+            objects: preview.objects?.after || draft.objects, generators: preview.generators.after, districtGuard: preview.districtGuard }));
+          undo.push({ tiles: preview.tiles, objects: preview.objects, generators: preview.generators,
+            districtId: preview.id, districtHistory: preview.districtHistory, linksRevision: preview.districtGuard.linksRevision });
+          if (undo.length > 50) undo.shift();
+          redo.length = 0;
+          draft = next; dirty = false; generatorPreview = null;
+          paint();
+          e('path-saved').value = preview.id;
+          status('Район сохранён. Отмена и повтор доступны; для ТВ нажми «Показать игрокам».');
+        } catch (error) { generatorPreview = null; throw error; }
+      });
+    }
     const { id, tiles, objects, generators } = generatorPreview;
     if (!tiles.length && !objects && generators.before === generators.after) {
       generatorPreview = null;
@@ -698,8 +753,34 @@
     paint();
   };
   e('rect').onchange = () => { first = undefined; paint(); };
-  e('undo').onclick = () => { if (!busy && undo.length) { const change = undo.pop(); redo.push(change); apply(change, true); } };
-  e('redo').onclick = () => { if (!busy && redo.length) { const change = redo.pop(); undo.push(change); apply(change); } };
+  function history(backwards) {
+    const from = backwards ? undo : redo, to = backwards ? redo : undo;
+    if (busy || !from.length) return;
+    const change = from.at(-1);
+    if (!change.districtHistory) { from.pop(); to.push(change); return apply(change, backwards); }
+    return run(async () => {
+      await save();
+      const target = JSON.parse(JSON.stringify(draft));
+      for (const tile of change.tiles || []) set(target.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
+      if (change.objects) target.objects = backwards ? change.objects.before : change.objects.after;
+      target.generators = backwards ? change.generators.before : change.generators.after;
+      target.districtGuard = { revision: draft.revision, linksRevision: change.linksRevision,
+        historyProof: change.districtHistory[backwards ? 'before' : 'after'] };
+      const next = await request('/api/worlds/' + draft.id, json('PUT', target));
+      from.pop(); to.push(change); draft = next; dirty = false; generatorPreview = null;
+      if (tool === 'generate-district') {
+        const recipe = (draft.generators || []).find(item => item.id === change.districtId);
+        if (recipe) {
+          generatorPoints = recipe.params.points;
+          e('district-count').value = String(recipe.params.count); e('path-seed').value = String(recipe.seed);
+        }
+        paint(); e('path-saved').value = recipe?.id || '';
+      }
+      status(backwards ? 'Отмена района сохранена.' : 'Повтор района сохранён.');
+    });
+  }
+  e('undo').onclick = () => history(true);
+  e('redo').onclick = () => history(false);
   e('turn').onclick = () => { const item = draft.objects.find(prop => prop.id === selected); if (item) updateSelected({ turn: (item.turn + 1) % 4 }); };
   e('delete').onclick = () => removeObject(selected);
   e('secret').onchange = () => updateSelected({ hidden: e('secret').checked });

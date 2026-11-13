@@ -19,7 +19,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
 
   registerWorldTemplates(app, { express, requireDm, gameFile });
   const movement = createWorldMovement(store, gameFile);
-  const districts = createWorldDistricts(movement);
+  const districts = createWorldDistricts(movement, () => gameFile('world-transitions.json'));
   const discoveries = createWorldDiscoveries(gameFile);
 
   const {
