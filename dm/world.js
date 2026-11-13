@@ -1,8 +1,8 @@
 'use strict';
 
 (() => {
-  const { size, tileLimit, terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
-  const { generatePath, generateForest, maxPathPoints, maxForestPoints, validGenerators } = window.WorldGenerators;
+  const { terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
+  const { generationChange, protectManualChanges, maxPathPoints, maxForestPoints } = window.WorldGenerators;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
   editor.className = 'book-widget book-world-editor';
@@ -66,7 +66,8 @@
             <small data-world-path-count></small>
             <button class="book-button" data-world-path-preview>Предпросмотр</button>
             <button class="book-button primary" data-world-path-apply>Применить к черновику</button>
-            <button class="book-button" data-world-path-reset>Сбросить точки</button>
+            <button class="book-button" data-world-path-clear-points>Изменить точки</button>
+            <button class="book-button" data-world-path-reset>Новый участок</button>
           </div>
         </section>
         <div class="book-toolbar" data-world-object hidden>
@@ -134,11 +135,12 @@
     e('path-count').textContent = 'Опорных точек: ' + generatorPoints.length;
     e('path-preview').disabled = generatorPoints.length < (kind === 'forest' ? 3 : 2);
     e('path-apply').disabled = !generatorPreview;
+    e('path-apply').textContent = saved.value ? 'Применить регенерацию' : 'Применить к черновику';
   }
 
-  function clearGeneratorPreview() {
+  function clearGeneratorPreview(resetRecipe = false) {
     generatorPreview = null;
-    e('path-saved').value = '';
+    if (resetRecipe) e('path-saved').value = '';
   }
 
   function previewGenerator() {
@@ -154,32 +156,12 @@
         params: forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
           { terrain: e('path-terrain').value, width: Number(e('path-width').value), points: generatorPoints },
       };
-      const { chunks, count, plants = [] } = forest ? generateForest(recipe, draft) : generatePath(recipe);
-      if (!count && !savedId) throw new RangeError('В контуре нет свободной земли для леса');
-      const generators = draft.generators || [];
-      const nextGenerators = savedId ? generators : [...generators, recipe];
-      if (!validGenerators(nextGenerators)) throw new RangeError('В черновике уже 128 рецептов');
-      const tiles = [];
-      let added = 0;
-      for (const [key, cells] of Object.entries(chunks)) {
-        const [cx, cy] = key.split(',').map(Number);
-        for (const [offset, after] of Object.entries(cells)) {
-          const before = draft.chunks[key]?.[offset];
-          if (before === after) continue;
-          if (before === undefined) added++;
-          tiles.push({
-            x: cx * size + Number(offset) % size, y: cy * size + Math.floor(Number(offset) / size),
-            before, after,
-          });
-        }
-      }
-      const total = Object.values(draft.chunks).reduce((sum, cells) => sum + Object.keys(cells).length, 0);
-      if (total + added > tileLimit) throw new RangeError('Превышен лимит тайлов на карте');
-      const objects = plants.length ? { before: draft.objects, after: [...draft.objects, ...plants] } : null;
-      generatorPreview = { id: recipe.id, chunks, tiles, objects, generators: { before: generators, after: nextGenerators } };
-      status('Предпросмотр · ' + count + ' кл.' + (forest ? ' · растений ' + plants.length : '') +
-        '. Примени его, чтобы добавить результат в черновик.');
+      generatorPreview = generationChange(recipe, draft);
+      if (!generatorPreview.count && !savedId) throw new RangeError('В участке нет свободных клеток для генератора');
+      status((savedId ? 'Регенерация' : 'Предпросмотр') + ' · ' + generatorPreview.count +
+        ' кл. Ручные правки сохраняются. Примени результат к черновику.');
     } catch (error) {
+      generatorPreview = null;
       status(error.message);
     }
     paint();
@@ -188,9 +170,7 @@
   function paint() {
     if (!draft) return;
     if (generatorPreview) {
-      const chunks = { ...draft.chunks };
-      for (const [key, cells] of Object.entries(generatorPreview.chunks)) chunks[key] = { ...chunks[key], ...cells };
-      editorView.data({ ...draft, chunks, objects: generatorPreview.objects?.after || draft.objects });
+      editorView.data({ ...draft, chunks: generatorPreview.chunks, objects: generatorPreview.objects?.after || draft.objects });
     } else editorView.data(draft);
     paintGeneratorControls();
     const object = draft.objects.find(item => item.id === selected);
@@ -214,6 +194,8 @@
     paint();
   }
   function edit(change) {
+    try { if (!change.generators) change = protectManualChanges(draft, change); }
+    catch (error) { status(error.message); return; }
     undo.push(change);
     if (undo.length > 50) undo.shift();
     redo.length = 0;
@@ -416,7 +398,7 @@
     dirty = false;
     first = selected = undefined;
     generatorPoints = [];
-    clearGeneratorPreview();
+    clearGeneratorPreview(true);
     undo.length = redo.length = 0;
     e('editor').hidden = false;
     transitionForm.reset();
@@ -484,7 +466,7 @@
   editor.querySelectorAll('[data-tool]').forEach(button => button.onclick = () => {
     if (tool !== button.dataset.tool) {
       generatorPoints = [];
-      clearGeneratorPreview();
+      clearGeneratorPreview(true);
     }
     tool = button.dataset.tool;
     if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
@@ -521,10 +503,17 @@
       paint();
     };
   }
-  e('path-reset').onclick = () => {
+  e('path-clear-points').onclick = () => {
     if (!draft || busy) return;
     generatorPoints = [];
     clearGeneratorPreview();
+    status('Укажи новый контур или линию. Сохранённый участок будет перестроен после применения.');
+    paint();
+  };
+  e('path-reset').onclick = () => {
+    if (!draft || busy) return;
+    generatorPoints = [];
+    clearGeneratorPreview(true);
     status('Укажи новые опорные точки на карте.');
     paint();
   };
@@ -539,6 +528,7 @@
     }
     edit({ tiles, objects, generators });
     e('path-saved').value = id;
+    paint();
   };
   e('rect').onchange = () => { first = undefined; paint(); };
   e('undo').onclick = () => { if (!busy && undo.length) { const change = undo.pop(); redo.push(change); apply(change, true); } };

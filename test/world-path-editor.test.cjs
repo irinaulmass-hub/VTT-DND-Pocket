@@ -9,6 +9,7 @@ const { generatePath } = require('../remote/world-generators');
 test('the master can preview, apply, undo, save, and reopen Path and Forest Plot recipes', async () => {
   const tool = { dataset: { tool: 'generate-path' }, setAttribute() {} };
   const forestTool = { dataset: { tool: 'generate-forest' }, setAttribute() {} };
+  const manualTools = ['stone', 'erase', 'select', 'delete-object'].map(name => ({ dataset: { tool: name }, setAttribute() {} }));
   let nextId = 0;
   class Element {
     nodes = new Map();
@@ -19,7 +20,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
       if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
       return this.nodes.get(selector);
     }
-    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool, forestTool] : []; }
+    querySelectorAll(selector) { return selector === '[data-tool]' ? [tool, forestTool, ...manualTools] : []; }
     replaceChildren(...options) { this.options = options; this.value = options[0]?.value || ''; }
     setAttribute() {}
     toggleAttribute() {}
@@ -157,4 +158,81 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   control('path-apply').onclick();
   await control('save').onclick();
   assert.equal(writes.length, 6, 'a saved forest does not generate a second set of plants');
+
+  // A loaded recipe is edited in place; manual changes survive save/reopen and history.
+  tool.onclick();
+  manualTools[0].onclick();
+  canvas.click(-1, 0);
+  await control('save').onclick();
+  assert.equal(world.get(saved.chunks, -1, 0), 'stone');
+  await reopen();
+  tool.onclick();
+  control('path-saved').value = recipe.id;
+  control('path-saved').onchange();
+  control('path-width').value = '1';
+  control('path-width').oninput();
+  assert.equal(control('path-saved').value, recipe.id, 'parameter edits retain recipe ownership');
+  control('path-preview').onclick();
+  assert.equal(world.get(rendered.chunks, -1, 0), 'stone');
+  const beforeRegeneration = structuredClone(saved);
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(saved.generators.length, 2);
+  assert.equal(saved.generators[0].params.width, 1);
+  assert.equal(world.get(saved.chunks, -1, 0), 'stone');
+  const regenerated = structuredClone(saved);
+  control('undo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.chunks, beforeRegeneration.chunks);
+  assert.deepEqual(saved.generators, beforeRegeneration.generators);
+  control('redo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.chunks, regenerated.chunks);
+  assert.deepEqual(saved.generators, regenerated.generators);
+
+  // Deleting an automatic tree and changing the forest seed cannot resurrect it.
+  forestTool.onclick();
+  const removed = saved.objects[0];
+  manualTools[3].onclick();
+  canvas.click(removed.x, removed.y, { x: removed.x + .5, y: removed.y + .5 });
+  await control('save').onclick();
+  assert.ok(!saved.objects.some(prop => prop.id === removed.id));
+  await reopen();
+  forestTool.onclick();
+  const forestId = saved.generators[1].id;
+  control('path-saved').value = forestId;
+  control('path-saved').onchange();
+  control('path-seed').value = '100';
+  control('path-seed').oninput();
+  const beforeForestRegeneration = structuredClone(saved);
+  control('path-preview').onclick();
+  assert.ok(!rendered.objects.some(prop => prop.id === removed.id));
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(saved.generators.length, 2);
+  assert.equal(saved.generators[1].id, forestId);
+  assert.equal(saved.generators[1].seed, 100);
+  assert.ok(!saved.objects.some(prop => prop.id === removed.id));
+  const regeneratedForest = structuredClone(saved);
+  control('undo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.objects, beforeForestRegeneration.objects);
+  assert.deepEqual(saved.generators, beforeForestRegeneration.generators);
+  control('redo').onclick();
+  await control('save').onclick();
+  assert.deepEqual(saved.objects, regeneratedForest.objects);
+  assert.deepEqual(saved.generators, regeneratedForest.generators);
+
+  // Replacing all points retains the identity and previews removals before applying.
+  control('path-clear-points').onclick();
+  assert.equal(control('path-saved').value, forestId);
+  for (const [x, y] of [[20, 20], [25, 20], [25, 25], [20, 25]]) canvas.click(x, y);
+  control('path-preview').onclick();
+  assert.equal(world.get(rendered.chunks, 8, 6), undefined, 'old footprint disappears in preview');
+  assert.equal(world.get(saved.chunks, 8, 6), 'woodland', 'preview does not save removals');
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(world.get(saved.chunks, 8, 6), undefined);
+  assert.equal(saved.generators[1].params.points[0].x, 20);
+
 });

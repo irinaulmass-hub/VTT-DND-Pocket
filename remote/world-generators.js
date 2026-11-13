@@ -1,7 +1,7 @@
 'use strict';
 
 ((root) => {
-  const { limit, objectLimit, valid, get, set, cellBounds } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
+  const { size, limit, tileLimit, terrain, objectLimit, valid, get, set, cellBounds } = typeof module === 'object' ? require('./world-model') : root.WorldMap;
 
   const seedMax = 0xffffffff;
   const maxRecipes = 128;
@@ -78,8 +78,45 @@
     return true;
   }
 
+  const cellKey = ({ x, y }) => x + ',' + y;
+  const sameObject = (a, b) => !!a && !!b &&
+    ['id', 'kind', 'x', 'y', 'turn'].every(key => a[key] === b[key]) && !!a.hidden === !!b.hidden;
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const terrainValue = value => value === null || typeof value === 'string' && Object.hasOwn(terrain, value);
+
+  function validState(state, kind) {
+    if (!hasFields(state, ['version', 'tiles', 'objects', 'protectedTiles', 'protectedObjects']) || state.version !== 1 ||
+        !Array.isArray(state.tiles) || state.tiles.length > (kind === 'forest' ? maxForestArea : maxPathCells) ||
+        !Array.isArray(state.objects) || state.objects.length > objectLimit ||
+        !Array.isArray(state.protectedTiles) || state.protectedTiles.length > tileLimit ||
+        !Array.isArray(state.protectedObjects) || state.protectedObjects.length > objectLimit) return false;
+    for (const [cells, fields] of [[state.tiles, ['x', 'y', 'before', 'after']], [state.protectedTiles, ['x', 'y']]]) {
+      const seen = new Set();
+      for (const cell of cells) {
+        if (!hasFields(cell, fields) || !valid(cell.x) || !valid(cell.y) || seen.has(cellKey(cell))) return false;
+        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : ['path', 'water'].includes(cell.after);
+        if (fields.length === 4 && (!terrainValue(cell.before) || !allowedAfter)) return false;
+        seen.add(cellKey(cell));
+      }
+    }
+    const ids = new Set();
+    for (const prop of state.objects) {
+      if (kind !== 'forest' || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
+          typeof prop.id !== 'string' || !prop.id.length || prop.id.length > 64 || ids.has(prop.id) ||
+          !['tree', 'bush'].includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
+          ![0, 1, 2, 3].includes(prop.turn) || typeof prop.hidden !== 'boolean') return false;
+      ids.add(prop.id);
+    }
+    const protectedIds = state.protectedObjects;
+    return protectedIds.every(id => typeof id === 'string' && id.length > 0 && id.length <= 64) &&
+      new Set(protectedIds).size === protectedIds.length;
+  }
+
   function validRecipe(recipe) {
-    return hasFields(recipe, ['id', 'kind', 'version', 'seed', 'params']) &&
+    const fields = ['id', 'kind', 'version', 'seed', 'params'];
+    if (recipe && Object.hasOwn(recipe, 'state')) fields.push('state');
+    return hasFields(recipe, fields) &&
+      (!Object.hasOwn(recipe, 'state') || validState(recipe.state, recipe.kind)) &&
       typeof recipe.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(recipe.id) &&
       recipe.version === 1 && validSeed(recipe.seed) &&
       ((recipe.kind === 'path' && validPathParams(recipe.params)) ||
@@ -190,7 +227,7 @@
     return inside;
   }
 
-  function generateForest(recipe, draft) {
+  function generateForest(recipe, draft, excludedCells = new Set(), excludedIds = new Set()) {
     if (recipe?.kind !== 'forest' || !validRecipe(recipe)) {
       throw new RangeError('Проверь seed, плотность и контур. Участок должен занимать до 4096 клеток по габаритам.');
     }
@@ -218,7 +255,8 @@
     let count = 0;
     for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
       const roll = random(), turn = Math.floor(random() * 4);
-      if (!contains(points, x, y) || !forestGround.has(get(draft.chunks, x, y)) || get(occupied, x, y)) continue;
+      if (excludedCells.has(x + ',' + y) || !contains(points, x, y) ||
+          !forestGround.has(get(draft.chunks, x, y)) || get(occupied, x, y)) continue;
       set(chunks, x, y, 'woodland');
       count++;
       const cx = Math.floor(x / 7), cy = Math.floor(y / 7);
@@ -231,7 +269,7 @@
       const nearTree = get(occupied, x - 1, y) === 'tree' || get(occupied, x, y - 1) === 'tree';
       const kind = roll < chance * .77 && !nearTree ? 'tree' : 'bush';
       const id = 'forest-' + prefix.toString(36) + '-' + x + '_' + y;
-      if (objectIds.has(id)) continue;
+      if (objectIds.has(id) || excludedIds.has(id)) continue;
       if (draft.objects.length + plants.length >= objectLimit) {
         throw new RangeError('Лес превысит лимит объектов. Уменьши плотность или размер участка.');
       }
@@ -241,7 +279,109 @@
     return { chunks, count, plants };
   }
 
-  const api = { validGenerators, createRandomV1, generatePath, generateForest, maxPathPoints, maxForestPoints };
+  function cells(chunks) {
+    const result = [];
+    for (const [key, values] of Object.entries(chunks)) {
+      const [cx, cy] = key.split(',').map(Number);
+      for (const [offset, after] of Object.entries(values)) result.push({
+        x: cx * size + Number(offset) % size, y: cy * size + Math.floor(Number(offset) / size), after,
+      });
+    }
+    return result;
+  }
+
+  // Copy only changed chunks; previews must never mutate the open draft or history.
+  function copyChunks(chunks) {
+    const copy = { ...chunks }, copied = new Set();
+    return { chunks: copy, write(x, y, value) {
+      const key = Math.floor(x / size) + ',' + Math.floor(y / size);
+      if (!copied.has(key)) { if (copy[key]) copy[key] = { ...copy[key] }; copied.add(key); }
+      set(copy, x, y, value);
+    } };
+  }
+
+  function generationChange(recipe, draft) {
+    const parameters = ({ id, kind, version, seed, params }) => ({ id, kind, version, seed, params });
+    recipe = parameters(recipe);
+    if (!validRecipe(recipe)) throw new RangeError('Проверь параметры генератора');
+    const generators = draft.generators || [];
+    const previous = generators.find(item => item.id === recipe.id);
+    if (previous && previous.kind !== recipe.kind) throw new RangeError('Тип сохранённого рецепта изменять нельзя');
+    if (previous && !previous.state) {
+      if (!same(parameters(previous), recipe)) {
+        throw new RangeError('У старого рецепта нет исходного покрытия. Выбери «Новый участок», чтобы сохранить прежнюю карту.');
+      }
+      return { id: recipe.id, chunks: draft.chunks, tiles: [], objects: null, generators: { before: generators, after: generators }, count: 0 };
+    }
+    const old = previous?.state;
+    const protectedTiles = new Map((old?.protectedTiles || []).map(cell => [cellKey(cell), cell]));
+    const protectedObjects = new Set(old?.protectedObjects || []);
+    const currentObjects = new Map(draft.objects.map(prop => [prop.id, prop]));
+    for (const cell of old?.tiles || []) {
+      if ((get(draft.chunks, cell.x, cell.y) ?? null) !== cell.after) protectedTiles.set(cellKey(cell), { x: cell.x, y: cell.y });
+    }
+    for (const prop of old?.objects || []) {
+      if (!sameObject(prop, currentObjects.get(prop.id))) protectedObjects.add(prop.id);
+    }
+    // Never reclaim cells recorded by another generator, even when their values match.
+    const foreignCells = new Set(generators.filter(item => item.id !== recipe.id)
+      .flatMap(item => [...(item.state?.tiles || []), ...(item.state?.protectedTiles || [])].map(cellKey)));
+    const excluded = new Set([...foreignCells, ...protectedTiles.keys()]);
+    const ownedIds = new Set((old?.objects || []).filter(prop => !protectedObjects.has(prop.id)).map(prop => prop.id));
+    const remaining = draft.objects.filter(prop => !ownedIds.has(prop.id));
+    const working = copyChunks(draft.chunks);
+    const affected = new Map();
+    const write = (x, y, after) => { affected.set(x + ',' + y, { x, y }); working.write(x, y, after); };
+    for (const cell of old?.tiles || []) {
+      if (!excluded.has(cellKey(cell))) write(cell.x, cell.y, cell.before);
+    }
+    const output = recipe.kind === 'forest' ?
+      generateForest(recipe, { chunks: working.chunks, objects: remaining }, excluded, protectedObjects) : generatePath(recipe);
+    const tiles = [];
+    for (const cell of cells(output.chunks)) {
+      if (excluded.has(cellKey(cell))) continue;
+      tiles.push({ ...cell, before: get(working.chunks, cell.x, cell.y) ?? null });
+      write(cell.x, cell.y, cell.after);
+    }
+    const afterObjects = [...remaining, ...(output.plants || [])];
+    const nextRecipe = { ...recipe, state: { version: 1, tiles, objects: output.plants || [],
+      protectedTiles: [...protectedTiles.values()], protectedObjects: [...protectedObjects] } };
+    const nextGenerators = previous ? generators.map(item => item.id === recipe.id ? nextRecipe : item) : [...generators, nextRecipe];
+    if (!validGenerators(nextGenerators)) throw new RangeError('Превышен лимит рецептов или сохранённых ручных правок');
+    const total = Object.values(working.chunks).reduce((sum, chunk) => sum + Object.keys(chunk).length, 0);
+    if (total > tileLimit) throw new RangeError('Превышен лимит тайлов на карте');
+    const changes = [...affected.values()].map(({ x, y }) => ({ x, y,
+      before: get(draft.chunks, x, y), after: get(working.chunks, x, y),
+    })).filter(cell => cell.before !== cell.after);
+    return { id: recipe.id, chunks: working.chunks, tiles: changes, count: tiles.length,
+      objects: same(draft.objects, afterObjects) ? null : { before: draft.objects, after: afterObjects },
+      generators: { before: generators, after: same(generators, nextGenerators) ? generators : nextGenerators } };
+  }
+
+  // Manual edits and their ownership markers belong to the same Undo/Redo entry.
+  function protectManualChanges(draft, change) {
+    const generators = draft.generators || [];
+    const changedTiles = new Set((change.tiles || []).map(cellKey));
+    const afterObjects = change.objects && new Map(change.objects.after.map(prop => [prop.id, prop]));
+    const after = generators.map(recipe => {
+      if (!recipe.state) return recipe;
+      const state = recipe.state;
+      const protectedTiles = new Map(state.protectedTiles.map(cell => [cellKey(cell), cell]));
+      const protectedObjects = new Set(state.protectedObjects);
+      for (const cell of state.tiles) {
+        if (changedTiles.has(cellKey(cell))) protectedTiles.set(cellKey(cell), { x: cell.x, y: cell.y });
+      }
+      if (afterObjects) for (const prop of state.objects) {
+        if (!sameObject(prop, afterObjects.get(prop.id))) protectedObjects.add(prop.id);
+      }
+      return { ...recipe, state: { ...state, protectedTiles: [...protectedTiles.values()], protectedObjects: [...protectedObjects] } };
+    });
+    if (!validGenerators(after)) throw new RangeError('Превышен лимит сохранённых ручных правок');
+    return same(generators, after) ? change : { ...change, generators: { before: generators, after } };
+  }
+
+  const api = { validGenerators, createRandomV1, generatePath, generateForest, generationChange, protectManualChanges,
+    maxPathPoints, maxForestPoints };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;
 })(globalThis);

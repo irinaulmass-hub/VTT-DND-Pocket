@@ -462,10 +462,15 @@ test('master authority, live updates, reconnect and persistence',async()=>{
     id:'forest-north',kind:'forest',version:1,seed:39,
     params:{density:78,points:[{x:-76,y:-55},{x:-65,y:-55},{x:-65,y:-45},{x:-76,y:-45}]},
   };
-  const forestPlot=require('../remote/world-generators').generateForest(forestRecipe,world);
-  for (const [key,cells] of Object.entries(forestPlot.chunks)) world.chunks[key]={...world.chunks[key],...cells};
-  world.objects.push(...forestPlot.plants);
-  world.generators=[roadRecipe,forestRecipe];
+  const generators=require('../remote/world-generators');
+  const forestPlot=generators.generateForest(forestRecipe,world);
+  world.generators=[roadRecipe];
+  const forestChange=generators.generationChange(forestRecipe,world);
+  for (const cell of forestChange.tiles) tiles.set(world.chunks,cell.x,cell.y,cell.after);
+  world.objects=forestChange.objects.after;
+  world.generators=forestChange.generators.after;
+  const invalidState={...world.generators[1],state:{...world.generators[1].state,version:2}};
+  assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidState]})).status,400);
   const invalidRecipe={...roadRecipe,version:2};
   assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidRecipe]})).status,400);
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
@@ -848,6 +853,11 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const reopenedWorld=await reopenDraft(world.id);
   assert.deepEqual(reopenedWorld.generators,world.generators,'both recipes survive server restart');
   assert.equal(tiles.get(reopenedWorld.chunks,-76,-55),'woodland');
+  const forestBefore=structuredClone(reopenedWorld);
+  const forestNext=generators.generationChange({...forestRecipe,seed:40},reopenedWorld);
+  assert.deepEqual(reopenedWorld,forestBefore,'regeneration after a server restart leaves the persisted source untouched');
+  assert.equal(forestNext.generators.after[1].state.version,1);
+  assert.equal(forestNext.generators.after[1].seed,40);
   assert.deepEqual(reopenedWorld.objects.filter(prop=>prop.id.startsWith('forest-')),forestPlot.plants);
   const resumedWorld=await tableWorld();
   assert.deepEqual(await tableStatus(),savedWorldStatus,'the projection version persists across server restart');
