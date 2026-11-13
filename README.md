@@ -4,7 +4,7 @@
 
 ## Актуальная версия разработки
 
-Код F4 и шаблонов F5a находится в ветке `codex/audit-and-stabilization` и [PR #1](https://github.com/irinaulmass-hub/VTT-DND-Pocket/pull/1). Для проверки используйте [ZIP этой ветки](https://github.com/irinaulmass-hub/VTT-DND-Pocket/archive/refs/heads/codex/audit-and-stabilization.zip). Path и Forest Plot поддерживают регенерацию с сохранением ручных правок. Добавлены шаблоны настроек дорог и леса для кампании. Следующий шаг — браузерная приёмка F4/F5a, затем комнаты и районы.
+Код F4 и шаблонов F5a находится в ветке `codex/audit-and-stabilization` и [PR #1](https://github.com/irinaulmass-hub/VTT-DND-Pocket/pull/1). Для проверки используйте [ZIP этой ветки](https://github.com/irinaulmass-hub/VTT-DND-Pocket/archive/refs/heads/codex/audit-and-stabilization.zip). Path и Forest Plot поддерживают регенерацию с сохранением ручных правок. Добавлены шаблоны настроек дорог и леса для кампании. Браузерная приёмка F4/F5a пройдена. Следующий шаг — генератор комнаты, затем внутренние сцены и районы.
 
 ## Запуск на Windows
 

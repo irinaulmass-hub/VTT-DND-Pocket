@@ -473,7 +473,7 @@
     busy = true;
     try { await task(); }
     catch (error) { status(error.message); }
-    finally { busy = false; }
+    finally { busy = false; paintTemplates(); }
   }
   function updateElevation() {
     const form = e('create').elements;

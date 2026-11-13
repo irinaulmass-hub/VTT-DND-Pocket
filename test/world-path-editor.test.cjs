@@ -118,6 +118,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   control('path-preview').onclick();
   control('path-apply').onclick();
   await control('save').onclick();
+  assert.equal(control('template-save').disabled, false, 'saving changed terrain re-enables template controls');
   const [recipe] = saved.generators;
   assert.equal(recipe.seed, 43);
   const actual = generatePath(recipe);
@@ -143,6 +144,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   await control('save').onclick();
   assert.equal(writes.length, 3, 'reapplying the same saved line creates no duplicate or write');
   await new Promise(setImmediate);
+  assert.equal(control('template-save').disabled, false, 'saving a draft re-enables template controls');
   control('template-name').value = 'Река у деревни';
   await control('template-save').onclick();
   assert.deepEqual(templates.templates[0], { id: 'template-1', name: 'Река у деревни',
@@ -156,6 +158,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   control('path-preview').onclick();
   control('path-apply').onclick();
   await control('save').onclick();
+  assert.equal(control('template-load').disabled, false, 'saving a draft re-enables the selected template');
   const created = saved.generators[1];
   assert.notEqual(created.id, recipe.id);
   assert.equal(created.seed, recipe.seed);
