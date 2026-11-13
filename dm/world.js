@@ -2,7 +2,7 @@
 
 (() => {
   const { terrain, props, get, set, sceneScope, locationMapId } = window.WorldMap;
-  const { generationChange, protectManualChanges, maxPathPoints, maxForestPoints } = window.WorldGenerators;
+  const { generationChange, protectManualChanges, maxPathPoints, maxForestPoints, validTemplate } = window.WorldGenerators;
   const { request } = window.LootUI;
   const editor = document.createElement('section');
   editor.className = 'book-widget book-world-editor';
@@ -63,6 +63,12 @@
             <label>Seed <input class="book-select" type="number" min="0" max="4294967295" step="1" value="0" data-world-path-seed></label>
           </div>
           <div class="book-toolbar">
+            <select class="book-select" data-world-template-select aria-label="Шаблон настроек"></select>
+            <button class="book-button" data-world-template-load disabled>Загрузить настройки</button>
+            <input class="book-select" data-world-template-name maxlength="80" placeholder="Название шаблона" aria-label="Название шаблона">
+            <button class="book-button" data-world-template-save>Сохранить настройки</button>
+          </div>
+          <div class="book-toolbar">
             <small data-world-path-count></small>
             <button class="book-button" data-world-path-preview>Предпросмотр</button>
             <button class="book-button primary" data-world-path-apply>Применить к черновику</button>
@@ -117,12 +123,15 @@
   const undo = [], redo = [];
   let availableMaps = [];
   let generatorPoints = [], generatorPreview = null;
+  let templates = { revision: 0, templates: [] }, templatesReady = false, templateGeneration = 0;
+  const templateUrl = '/api/world-generator-templates';
   const generatorKind = () => tool === 'generate-forest' ? 'forest' : 'path';
 
   function paintGeneratorControls() {
     e('path').hidden = tool !== 'generate-path' && tool !== 'generate-forest';
     if (e('path').hidden) return;
     const kind = generatorKind();
+    paintTemplates();
     e('path-terrain-label').hidden = e('path-width-label').hidden = kind === 'forest';
     e('forest-density-label').hidden = kind !== 'forest';
     const saved = e('path-saved');
@@ -136,6 +145,39 @@
     e('path-preview').disabled = generatorPoints.length < (kind === 'forest' ? 3 : 2);
     e('path-apply').disabled = !generatorPreview;
     e('path-apply').textContent = saved.value ? 'Применить регенерацию' : 'Применить к черновику';
+  }
+
+  function generatorSettings() {
+    const kind = generatorKind();
+    return { kind, version: 1, seed: e('path-seed').valueAsNumber, settings: kind === 'forest' ?
+      { density: e('forest-density').valueAsNumber } :
+      { terrain: e('path-terrain').value, width: Number(e('path-width').value) } };
+  }
+
+  function paintTemplates() {
+    const select = e('template-select');
+    const value = select.value;
+    const items = templates.templates.filter(item => item.kind === generatorKind());
+    select.replaceChildren(new Option(templatesReady ? 'Выбрать шаблон настроек' : 'Получаем шаблоны…', ''),
+      ...items.map(item => new Option(item.name, item.id)));
+    if (items.some(item => item.id === value)) select.value = value;
+    e('template-load').disabled = !select.value || busy;
+    e('template-save').disabled = !templatesReady || busy;
+  }
+
+  async function readTemplates() {
+    const generation = ++templateGeneration;
+    try {
+      const next = await request(templateUrl);
+      if (generation !== templateGeneration) return;
+      templates = next;
+      templatesReady = true;
+    } catch (error) {
+      if (generation !== templateGeneration) return;
+      templatesReady = false;
+      status(error.message);
+    }
+    paintTemplates();
   }
 
   function clearGeneratorPreview(resetRecipe = false) {
@@ -471,6 +513,7 @@
     tool = button.dataset.tool;
     if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
     if (tool === 'generate-path') status('Укажи опорные точки на карте и нажми «Предпросмотр».');
+    if (tool === 'generate-path' || tool === 'generate-forest') readTemplates();
     if (tool === 'transition') status('Нажми на исходную клетку перехода');
     if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
     first = undefined;
@@ -478,6 +521,48 @@
     if (tool === 'select') status('Перетащи объект мышью. Щёлкни по нему, чтобы выделить.');
     if (tool === 'delete-object') status('Щёлкни по объекту, который хочешь убрать.');
   });
+  e('template-select').onchange = paintTemplates;
+  e('template-load').onclick = () => {
+    if (!draft || busy) return;
+    const template = templates.templates.find(item => item.id === e('template-select').value && item.kind === generatorKind());
+    if (!template) return;
+    generatorPoints = [];
+    clearGeneratorPreview(true);
+    e('path-seed').value = String(template.seed);
+    if (template.kind === 'forest') e('forest-density').value = String(template.settings.density);
+    else {
+      e('path-terrain').value = template.settings.terrain;
+      e('path-width').value = String(template.settings.width);
+    }
+    status('Настройки «' + template.name + '» загружены. Укажи точки нового участка.');
+    paint();
+  };
+  e('template-save').onclick = async () => {
+    if (!draft || busy || !templatesReady) return;
+    const name = e('template-name').value.trim();
+    const settings = generatorSettings();
+    if (!validTemplate({ id: 'new-template', name, ...settings })) {
+      return status('Укажи название, seed и корректные настройки генератора.');
+    }
+    busy = true;
+    ++templateGeneration;
+    paintTemplates();
+    try {
+      const next = await request(templateUrl, json('POST', { revision: templates.revision, name, ...settings }));
+      ++templateGeneration;
+      templates = next;
+      paintTemplates();
+      const saved = templates.templates.find(item => item.kind === settings.kind && item.name === name);
+      if (generatorKind() === settings.kind && saved) e('template-select').value = saved.id;
+      status('Настройки «' + name + '» сохранены в шаблон.');
+    } catch (error) {
+      await readTemplates();
+      status(error.message);
+    } finally {
+      busy = false;
+      paintTemplates();
+    }
+  };
   e('path-saved').onchange = () => {
     if (!draft || busy) return;
     const recipe = (draft.generators || []).find(item => item.id === e('path-saved').value);

@@ -38,6 +38,8 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   world.set(original.chunks, 4, 4, 'stone');
   let saved = structuredClone(original), rendered, camera, canvas;
   const writes = [];
+  let templates = { revision: 0, templates: [] };
+  let holdTemplateRead = false, releaseTemplateRead;
   const context = vm.createContext({
     WorldMap: world, location: { hash: '' },
     document: {
@@ -61,6 +63,19 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
     },
     addEventListener() {},
     LootUI: { async request(url, options) {
+      if (url === '/api/world-generator-templates') {
+        if (holdTemplateRead && !options) {
+          holdTemplateRead = false;
+          const stale = structuredClone(templates);
+          return new Promise(resolve => { releaseTemplateRead = () => resolve(stale); });
+        }
+        if (options?.method === 'POST') {
+          const { revision, ...settings } = JSON.parse(options.body);
+          assert.equal(revision, templates.revision);
+          templates = { revision: revision + 1, templates: [...templates.templates, { id: 'template-' + (revision + 1), ...settings }] };
+        }
+        return structuredClone(templates);
+      }
       if (url.startsWith('/api/worlds/live')) return null;
       assert.equal(url, '/api/worlds/world-id');
       if (options?.method === 'PUT') {
@@ -127,6 +142,26 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   control('path-apply').onclick();
   await control('save').onclick();
   assert.equal(writes.length, 3, 'reapplying the same saved line creates no duplicate or write');
+  await new Promise(setImmediate);
+  control('template-name').value = 'Река у деревни';
+  await control('template-save').onclick();
+  assert.deepEqual(templates.templates[0], { id: 'template-1', name: 'Река у деревни',
+    kind: 'path', version: 1, seed: 43, settings: { terrain: 'water', width: 3 } });
+  assert.deepEqual(saved.generators, [recipe], 'saving settings leaves the source recipe alone');
+  control('template-load').onclick();
+  assert.equal(control('path-saved').value, '');
+  assert.equal(control('path-preview').disabled, true, 'a template starts without the previous contour');
+  canvas.click(15, 10);
+  canvas.click(18, 10);
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  const created = saved.generators[1];
+  assert.notEqual(created.id, recipe.id);
+  assert.equal(created.seed, recipe.seed);
+  assert.notDeepEqual(created.state.tiles, recipe.state.tiles, 'the new section captures its own source terrain');
+  assert.deepEqual(saved.generators[0], recipe);
+
 
   const beforeForest = structuredClone(saved);
   forestTool.onclick();
@@ -140,7 +175,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
 
   control('path-apply').onclick();
   await control('save').onclick();
-  assert.equal(saved.generators[1].kind, 'forest');
+  assert.equal(saved.generators[2].kind, 'forest');
   assert.ok(saved.objects.length > 0);
   const savedForest = structuredClone(saved);
   control('undo').onclick();
@@ -152,12 +187,12 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   await control('save').onclick();
   assert.deepEqual(saved.objects, savedForest.objects);
   await reopen();
-  control('path-saved').value = savedForest.generators[1].id;
+  control('path-saved').value = savedForest.generators[2].id;
   control('path-saved').onchange();
   control('path-preview').onclick();
   control('path-apply').onclick();
   await control('save').onclick();
-  assert.equal(writes.length, 6, 'a saved forest does not generate a second set of plants');
+  assert.equal(writes.length, 7, 'a saved forest does not generate a second set of plants');
 
   // A loaded recipe is edited in place; manual changes survive save/reopen and history.
   tool.onclick();
@@ -177,7 +212,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   const beforeRegeneration = structuredClone(saved);
   control('path-apply').onclick();
   await control('save').onclick();
-  assert.equal(saved.generators.length, 2);
+  assert.equal(saved.generators.length, 3);
   assert.equal(saved.generators[0].params.width, 1);
   assert.equal(world.get(saved.chunks, -1, 0), 'stone');
   const regenerated = structuredClone(saved);
@@ -199,7 +234,7 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   assert.ok(!saved.objects.some(prop => prop.id === removed.id));
   await reopen();
   forestTool.onclick();
-  const forestId = saved.generators[1].id;
+  const forestId = saved.generators[2].id;
   control('path-saved').value = forestId;
   control('path-saved').onchange();
   control('path-seed').value = '100';
@@ -209,9 +244,9 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   assert.ok(!rendered.objects.some(prop => prop.id === removed.id));
   control('path-apply').onclick();
   await control('save').onclick();
-  assert.equal(saved.generators.length, 2);
-  assert.equal(saved.generators[1].id, forestId);
-  assert.equal(saved.generators[1].seed, 100);
+  assert.equal(saved.generators.length, 3);
+  assert.equal(saved.generators[2].id, forestId);
+  assert.equal(saved.generators[2].seed, 100);
   assert.ok(!saved.objects.some(prop => prop.id === removed.id));
   const regeneratedForest = structuredClone(saved);
   control('undo').onclick();
@@ -233,6 +268,39 @@ test('the master can preview, apply, undo, save, and reopen Path and Forest Plot
   control('path-apply').onclick();
   await control('save').onclick();
   assert.equal(world.get(saved.chunks, 8, 6), undefined);
-  assert.equal(saved.generators[1].params.points[0].x, 20);
+  assert.equal(saved.generators[2].params.points[0].x, 20);
+
+  const sourceForest = structuredClone(saved.generators[2]);
+  control('template-name').value = 'Роща';
+  await control('template-save').onclick();
+  assert.deepEqual(templates.templates[1], { id: 'template-2', name: 'Роща',
+    kind: 'forest', version: 1, seed: 100, settings: { density: 90 } });
+  control('path-seed').value = '999';
+  control('forest-density').value = '10';
+  control('template-load').onclick();
+  assert.equal(control('path-saved').value, '');
+  assert.equal(control('path-preview').disabled, true);
+  assert.equal(control('path-seed').value, '100');
+  assert.equal(control('forest-density').value, '90');
+  assert.deepEqual(control('template-select').options.map(item => item.label), ['Выбрать шаблон настроек', 'Роща']);
+  for (const [x, y] of [[40, 40], [44, 40], [44, 44], [40, 44]]) canvas.click(x, y);
+  control('path-preview').onclick();
+  control('path-apply').onclick();
+  await control('save').onclick();
+  assert.equal(saved.generators.length, 4);
+  assert.notEqual(saved.generators[3].id, sourceForest.id);
+  assert.deepEqual(saved.generators[3].state.protectedObjects, []);
+  assert.deepEqual(saved.generators[3].state.protectedTiles, []);
+  assert.deepEqual(saved.generators[2], sourceForest, 'a template leaves source manual exceptions with their original section');
+  holdTemplateRead = true;
+  forestTool.onclick();
+  control('template-name').value = 'Роща после сохранения';
+  await control('template-save').onclick();
+  releaseTemplateRead();
+  await new Promise(setImmediate);
+  assert.equal(control('template-select').value, 'template-3', 'a delayed read cannot replace the saved list');
+  assert.equal(control('template-select').options.length, 3);
+
+
 
 });

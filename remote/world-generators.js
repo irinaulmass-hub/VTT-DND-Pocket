@@ -123,6 +123,19 @@
        (recipe.kind === 'forest' && validForestParams(recipe.params)));
   }
 
+  function validTemplate(template) {
+    if (!hasFields(template, ['id', 'name', 'kind', 'version', 'seed', 'settings']) ||
+        typeof template.name !== 'string' || template.name !== template.name.trim() ||
+        !template.name.length || template.name.length > 80) return false;
+    const { settings, kind } = template;
+    const fields = kind === 'path' ? ['terrain', 'width'] : ['density'];
+    if (!hasFields(settings, fields)) return false;
+    const points = [{ x: 0, y: 0 }, { x: 1, y: 0 }];
+    if (kind === 'forest') points.push({ x: 1, y: 1 });
+    return validRecipe({ id: template.id, kind, version: template.version, seed: template.seed,
+      params: { ...settings, points } });
+  }
+
   function validGenerators(recipes) {
     if (!Array.isArray(recipes) || recipes.length > maxRecipes) return false;
     const ids = new Set();
@@ -380,7 +393,7 @@
     return same(generators, after) ? change : { ...change, generators: { before: generators, after } };
   }
 
-  const api = { validGenerators, createRandomV1, generatePath, generateForest, generationChange, protectManualChanges,
+  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generationChange, protectManualChanges,
     maxPathPoints, maxForestPoints };
   if (typeof module === 'object') module.exports = api;
   else root.WorldGenerators = api;

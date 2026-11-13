@@ -6,6 +6,7 @@ const createWorldStore = require('./world-store');
 const registerCharacterPositions = require('./character-positions');
 const createWorldMovement = require('./world-movement');
 const createWorldDiscoveries = require('./world-discoveries');
+const registerWorldTemplates = require('./world-templates');
 const { validGenerators } = require('./remote/world-generators');
 const { project, isRevealedSecret } = require('./world-exploration');
 
@@ -15,6 +16,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const store = createWorldStore(gameFile);
   const { tileLimit, objectLimit } = map;
 
+  registerWorldTemplates(app, { express, requireDm, gameFile });
   const movement = createWorldMovement(store, gameFile);
   const discoveries = createWorldDiscoveries(gameFile);
 

@@ -334,6 +334,57 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await travel(routeMaster,mine)).tokens,[]);
 
   const worldGame='?game='+campaign.id;
+  const templateBase=base+'/api/world-generator-templates';
+  const templateUrl=templateBase+worldGame;
+  const templateInput={revision:0,name:'  Река у деревни  ',kind:'path',version:1,seed:43,settings:{terrain:'water',width:3}};
+  const writeTemplate=(body,headers=noteHeaders,url=templateUrl)=>fetch(url,{
+    method:'POST',headers,redirect:'manual',body:JSON.stringify(body),
+  });
+  const readTemplates=(url=templateUrl,headers=noteHeaders)=>fetch(url,{headers,redirect:'manual'});
+  for (const [url,headers] of [
+    [templateUrl,{}],
+    [templateUrl,{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token}],
+    [templateUrl+'&view=table',noteHeaders],
+  ]) {
+    assert.equal((await readTemplates(url,headers)).status,302);
+    assert.equal((await writeTemplate(templateInput,headers,url)).status,302);
+  }
+  assert.deepEqual(await (await readTemplates()).json(),{revision:0,templates:[]});
+  const templateResponse=await writeTemplate(templateInput);
+  assert.equal(templateResponse.status,201);
+  assert.equal(templateResponse.headers.get('cache-control'),'no-store');
+  const pathTemplates=await templateResponse.json();
+  const pathTemplate=pathTemplates.templates[0];
+  const {revision: templateRevision,...templateSettings}=templateInput;
+  assert.deepEqual(pathTemplate,{...templateSettings,id:pathTemplate.id,name:'Река у деревни'});
+  assert.equal(pathTemplates.revision,templateRevision+1);
+  assert.equal((await writeTemplate({...templateInput,name:'Другой'})).status,409,'a stale writer cannot overwrite templates');
+  assert.equal((await writeTemplate({...templateInput,revision:1,name:'река у деревни'})).status,409,'names are unique within kind');
+  for (const invalid of [
+    {name:''},{name:'x'.repeat(81)},{revision:-1},{revision:1.5},{seed:-1},{seed:'43'},
+    {kind:'room'},{version:2},{settings:{terrain:'water',width:2}},
+    {points:[{x:0,y:0},{x:1,y:0}]},{state:{version:1}},
+    {settings:{terrain:'water',width:3,points:[{x:0,y:0},{x:1,y:0}]}},
+  ]) assert.equal((await writeTemplate({...templateInput,revision:1,...invalid})).status,400);
+  assert.deepEqual(await (await readTemplates()).json(),pathTemplates,'failed writes preserve saved settings');
+  assert.deepEqual(await (await readTemplates(templateBase)).json(),{revision:0,templates:[]},'campaigns have independent settings');
+  const forestTemplateInput={revision:1,name:'Река у деревни',kind:'forest',version:1,seed:99,settings:{density:90}};
+  assert.equal((await writeTemplate(forestTemplateInput)).status,201,'different generator kinds may use the same display name');
+  const savedTemplates=await (await readTemplates()).json();
+  assert.equal(savedTemplates.revision,2);
+  assert.deepEqual(savedTemplates.templates[1].settings,{density:90});
+  const templatesFile=path.join(dir,'campaigns',campaign.id,'world-generator-templates.json');
+  const fullTemplates={revision:2,templates:Array.from({length:128},(_,i)=>({...pathTemplate,id:'template-'+i,name:'Шаблон '+i}))};
+  fs.writeFileSync(templatesFile,JSON.stringify(fullTemplates));
+  assert.equal((await writeTemplate({...templateInput,revision:2,name:'Ещё один'})).status,400);
+  assert.deepEqual(JSON.parse(fs.readFileSync(templatesFile)),fullTemplates,'the limit leaves existing templates intact');
+  const corrupted=JSON.stringify({revision:2,templates:[{...pathTemplate,settings:{terrain:'water',width:2}}]});
+  fs.writeFileSync(templatesFile,corrupted);
+  assert.equal((await readTemplates()).status,500);
+  assert.equal((await writeTemplate({...templateInput,revision:2})).status,500);
+  assert.equal(fs.readFileSync(templatesFile,'utf8'),corrupted,'invalid stored settings cannot be overwritten');
+  fs.writeFileSync(templatesFile,JSON.stringify(savedTemplates));
+
   const worldBase=base+'/api/worlds';
   const worldWrite=(endpoint,method,data)=>fetch(worldBase+endpoint+worldGame,{method,headers:noteHeaders,body:JSON.stringify(data)});
   assert.equal((await fetch(worldBase+worldGame,{redirect:'manual'})).status,302);
@@ -820,6 +871,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
+  assert.deepEqual(await (await readTemplates(templateUrl,{Cookie:newCookie})).json(),savedTemplates,'template settings survive restart');
   assert.deepEqual(await readOwnPosition(otherToken.token),afterDoor);
   assert.deepEqual(await readPosition(secondHero.id,newCookie),afterStairs);
   const restoredLinks=await fetch(worldBase+linkEndpoint+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
