@@ -47,7 +47,7 @@ function install(current, root) {
     return object;
   }
   const factories = new Map([
-    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges','readPublished','readActive'], prefix:'store.' }],
+    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges','readPublished','readPublishedView','readActive'], prefix:'store.' }],
     [path.join(root, 'character-positions.js'), { names:['mapState','projectionRevision'], prefix:'positions.' }],
     [path.join(root, 'world-movement.js'), { names:['districtContext','visibleCells'], prefix:'movement.' }],
     [path.join(root, 'world-districts.js'), { names:['preview','prepareApply','prepareHistory','verifySave'], prefix:'district.' }],

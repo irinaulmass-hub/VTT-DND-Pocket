@@ -58,7 +58,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   }
   function activeNotice() {
     const active = store.readActive();
-    const data = active.id ? store.readPublished(active.id, []) : null;
+    const data = active.id ? store.readPublishedView(active.id, []) : null;
     return notice(data, active);
   }
 
@@ -169,7 +169,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const requested = typeof req.query.chunks === 'string' ? req.query.chunks.split(';') : [];
     if (requested.length > 100 || requested.some(key => !chunkPattern.test(key))) return res.status(400).json({ error: 'Некорректный участок карты' });
     const keys = new Set(requested);
-    const data = store.readPublished(active.id, keys);
+    const data = store.readPublishedView(active.id, keys);
     if (!data) return res.json(null);
     const state = mapState(data.map, data.fog);
     res.json({

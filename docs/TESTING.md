@@ -462,3 +462,21 @@ npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --ou
 ```
 
 Сохранены пять финальных прогонов/150 измеренных ответов: контроль базы c0c18b3 с новым стендом, два новых повтора и туман off. Различается только рабочий модуль; соответствующие responseSha256 совпадают. D3 VM проверяет пропущенное событие/запоздавшие ответы/затемнение; настоящий sync.test.cjs — свежие версии HTTP/WS/кампаний/публикации/дверей/секретов/перезапуска. [Протокол и ограничения](benchmarks/B5B3H_STATUS_READS.md). Холодный запрос, браузер/FPS/LAN/Windows этим срезом не измеряются. Готовые статусы и версии не кешируются.
+
+
+## Read-only манифест B5b3i
+
+Полный npm test — **110/110**, Node.js 24.22.1, без пропусков. Новый test/world-store-view.test.cjs содержит пять сценариев: равенство прежнему API/одно чтение/глубокая неизменяемость/свежие выбранные чанки; обновление кадра/жетонов/seen/fog/публикации при совпадающих метаданных и отказ rename; карты/кампании/перезапуск/внешняя замена/ctime; удаление/JSON/storageVersion/stat/read/oversize/legacy; отсутствие кеша terrain и нестабильное чтение/ошибка повторного stat. На прежнем пути первое ожидание показало два чтения вместо одного.
+
+```bash
+npm test
+node --test test/world-store-view.test.cjs test/world-table-benchmark.test.cjs test/world-table-sync.test.cjs
+node --check world-store.js
+node --check worlds.js
+node --check scripts/world-benchmark-stages.cjs
+node --check test/world-store-view.test.cjs
+node --check test/world-table-benchmark.test.cjs
+npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --output /tmp/published-view-new.json
+```
+
+HTTP-стенд проверяет readPublishedView, отсутствие тёплых positions/manifest-чтений, 60 JSON-байт активного мира у status и прежние публичные ответы. Полные sync/VM сценарии доступа/тумана/секретов/состояния карты/старых ответов/перезапуска проходят. Контроль до изменения и два повтора/туман off тем же стендом: пять прогонов/150 измеренных ответов, хеши соответствующих ответов совпадают. [Отчёт и исходные выборки](benchmarks/B5B3I_PUBLISHED_VIEWS.md). readBytes исключает stat/exists, холодное чтение/замораживание и браузер/FPS/LAN/Windows не измерены. 8 MiB допуска не является пределом heap/мира.

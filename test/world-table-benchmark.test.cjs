@@ -31,12 +31,12 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
   assert.equal(instrumented.rows.length,6,'one warm-up per region is excluded');
   for(const report of [instrumented,clear])for(const row of report.rows) {
     assert.equal(row.status,200);assert.equal(row.writes,0);
-    for(const stage of ['store.readPublished','response.json',...(row.operation==='status'?['positions.projectionRevision']:['positions.mapState','exploration.project'])])
+    for(const stage of ['store.readPublishedView','response.json',...(row.operation==='status'?['positions.projectionRevision']:['positions.mapState','exploration.project'])])
       assert.equal(row.stages[stage].calls,1,stage);
     const categories=Object.values(row.readCategories);
     assert.equal(categories.reduce((n,c)=>n+c.calls,0),row.reads);
     assert.equal(categories.reduce((n,c)=>n+c.bytes,0),row.readBytes);
-    assert.equal(row.readCategories.publishedManifest.calls,1);
+    assert.equal(row.readCategories.publishedManifest,undefined,'warm reads reuse the unchanged publication manifest');
     assert.equal(row.readCategories.positions,undefined,'warm projection reuses the unchanged state document');
     const exclusive=Object.values(row.stages).reduce((n,s)=>n+s.selfMs,0);
     assert.ok(Math.abs(row.serverMs-exclusive-row.unmeasuredMs)<.001,'exclusive time partitions the request');
@@ -48,7 +48,8 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
   assert.equal(instrumented.summary.empty.readCategories.terrainChunk,undefined,'empty viewport loads no terrain files');
   assert.equal(instrumented.summary.empty.readCategories.positions,undefined);
   assert.ok(instrumented.summary.empty.readBytes.median<instrumented.dimensions.positionsBytes,'warm reads exclude the state file');
-  assert.equal(instrumented.summary.empty.readCategories.publishedManifest.bytes.median,instrumented.dimensions.publishedManifestBytes);
+  assert.equal(instrumented.summary.empty.readCategories.publishedManifest,undefined);
+  assert.equal(instrumented.summary.status.readBytes.median,60,'unchanged status reads only the active-world pointer');
   assert.ok(control.rows.every(r=>r.stages===undefined));
   assert.notDeepEqual(clear.responseSha256,instrumented.responseSha256,'fog/memory actually affect the fixture');
   const duplicate=spawnSync(process.execPath,[script,'--samples','1','--output',output],{cwd:root,encoding:'utf8',timeout:20000});
