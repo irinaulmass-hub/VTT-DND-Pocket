@@ -27,11 +27,11 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
   assert.deepEqual(instrumented.responseSha256,control.responseSha256,'wrappers preserve every response byte');
   assert.deepEqual(instrumented.rows.map(r=>[r.operation,r.responseBytes,r.readBytes]),
     control.rows.map(r=>[r.operation,r.responseBytes,r.readBytes]));
-  assert.deepEqual(Object.keys(instrumented.summary).sort(),['adjacent','distant','empty','live','near']);
-  assert.equal(instrumented.rows.length,5,'one warm-up per region is excluded');
+  assert.deepEqual(Object.keys(instrumented.summary).sort(),['adjacent','distant','empty','live','near','status']);
+  assert.equal(instrumented.rows.length,6,'one warm-up per region is excluded');
   for(const report of [instrumented,clear])for(const row of report.rows) {
     assert.equal(row.status,200);assert.equal(row.writes,0);
-    for(const stage of ['store.readPublished','positions.mapState','exploration.project','response.json'])
+    for(const stage of ['store.readPublished','response.json',...(row.operation==='status'?['positions.projectionRevision']:['positions.mapState','exploration.project'])])
       assert.equal(row.stages[stage].calls,1,stage);
     const categories=Object.values(row.readCategories);
     assert.equal(categories.reduce((n,c)=>n+c.calls,0),row.reads);
@@ -42,6 +42,9 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
     assert.ok(Math.abs(row.serverMs-exclusive-row.unmeasuredMs)<.001,'exclusive time partitions the request');
     assert.ok(Object.values(row.stages).every(s=>s.selfMs>=0&&s.totalMs>=s.selfMs));
   }
+  assert.equal(instrumented.summary.status.readCategories.positions,undefined,'warm polling does not reload exploration state');
+  assert.equal(instrumented.summary.status.readCategories.terrainChunk,undefined,'status never loads terrain');
+  assert.equal(instrumented.rows.find(row=>row.operation==='status').stages['positions.mapState'],undefined);
   assert.equal(instrumented.summary.empty.readCategories.terrainChunk,undefined,'empty viewport loads no terrain files');
   assert.equal(instrumented.summary.empty.readCategories.positions,undefined);
   assert.ok(instrumented.summary.empty.readBytes.median<instrumented.dimensions.positionsBytes,'warm reads exclude the state file');

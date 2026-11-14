@@ -45,6 +45,36 @@ function fixture(t) {
 }
 const tile=s=>model.get(s.memory.chunks,0,0);
 
+test('projection revisions reuse only the document and recompute fog/map versions after every change',t=>{
+  const f=fixture(t),api=f.api();
+  assert.equal(api.projectionRevision('world',true),1);
+  assert.equal(api.projectionRevision('world',false),0);
+  assert.equal(api.projectionRevision('other',true),0);
+  api.mapState(f.layout,true);
+  assert.equal(f.reads(),1,'version and map projection share a single unchanged document');
+  const explicit={projectionRevisions:{world:{objects:9,sight:4}}};
+  assert.equal(api.projectionRevision('world',true,explicit),13);
+  assert.equal(f.reads(),1,'explicit state never performs an implicit disk read');
+  assert.equal(api.setDoor(f.layout,f.layout.objects[0],true),true);
+  assert.equal(api.projectionRevision('world',false),1);
+  assert.equal(api.projectionRevision('world',true),2);
+  f.call('post /api/player-position/move',{body:{direction:'east',revision:1}});
+  assert.equal(api.projectionRevision('world',true),3);
+  assert.equal(api.projectionRevision('world',false),1,'private sight revision is omitted without fog');
+  assert.equal(api.revealSecret(f.layout,{id:'secret',kind:'chest',x:0,y:0,turn:0,hidden:true}),true);
+  assert.equal(api.projectionRevision('world',true),4);
+  assert.equal(api.projectionRevision('world',false),2);
+  f.switchTo('b');const other=f.state();other.projectionRevisions.world={objects:8,sight:6};f.save(other);
+  assert.equal(api.projectionRevision('world',true),14);
+  f.switchTo('a');assert.equal(api.projectionRevision('world',true),4);
+  const updated=f.state();updated.projectionRevisions.world={objects:5,sight:7};
+  const replacement=f.file()+'.new';fs.writeFileSync(replacement,JSON.stringify(updated));fs.renameSync(replacement,f.file());
+  assert.equal(api.projectionRevision('world',true),12,'external replacement is visible to status readers');
+  assert.equal(api.mapState(f.layout,true).projectionRevision,12);
+  fs.writeFileSync(f.file(),'{bad');assert.throws(()=>api.projectionRevision('world',true),SyntaxError);
+  fs.unlinkSync(f.file());assert.equal(api.projectionRevision('world',true),0,'missing file cannot reuse an old version');
+});
+
 test('projection reuses one immutable document, recomputes visibility and evicts on campaign/restart',t=>{
   const f=fixture(t),first=f.api().mapState(f.layout,true);
   assert.equal(tile(first),'grass');assert.equal(f.reads(),1);

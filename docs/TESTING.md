@@ -444,3 +444,21 @@ npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --ou
 ```
 
 Контроль выполнен до изменения, после тестов сохранены два повтора с туманом и один без; исходники отличаются только character-positions.js, соответствующие ответы совпадают. [Протокол, цифры и исходные выборки](benchmarks/B5B3G_PROJECTION_CACHE.md). Это тёплые loopback-запросы, без замера первого замораживания, браузера/FPS/LAN/Windows. 8 MiB допуска — размер входа, не heap. /table/status ещё читает состояние прежним путём и относится к B5b3h.
+
+
+## Версия общего экрана B5b3h
+
+Полный npm test — **105/105**, Node.js 24.22.1, без пропусков. Новый сценарий character-projection-cache проверяет общее чтение версии/mapState, пересчёт по ID/fog, явный state без I/O, изменение двери/позиции/секрета, кампанию, внешнюю замену/ошибку/удаление. До изменения default-чтения тест показал четыре чтения вместо одного. HTTP-стенд теперь содержит status плюс пять регионов и проверяет полный notice, отсутствие тёплых positions/terrain-чтений у status и стадии версии.
+
+```bash
+npm test
+node --test test/character-projection-cache.test.cjs test/world-table-benchmark.test.cjs test/world-table-sync.test.cjs
+node --check character-positions.js
+node --check scripts/world-table-benchmark.cjs
+node --check scripts/world-benchmark-stages.cjs
+node --check test/character-projection-cache.test.cjs
+node --check test/world-table-benchmark.test.cjs
+npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --output /tmp/status-new.json
+```
+
+Сохранены пять финальных прогонов/150 измеренных ответов: контроль базы c0c18b3 с новым стендом, два новых повтора и туман off. Различается только рабочий модуль; соответствующие responseSha256 совпадают. D3 VM проверяет пропущенное событие/запоздавшие ответы/затемнение; настоящий sync.test.cjs — свежие версии HTTP/WS/кампаний/публикации/дверей/секретов/перезапуска. [Протокол и ограничения](benchmarks/B5B3H_STATUS_READS.md). Холодный запрос, браузер/FPS/LAN/Windows этим срезом не измеряются. Готовые статусы и версии не кешируются.

@@ -91,7 +91,7 @@ module.exports = function registerCharacterPositions(app, {
       .flatMap(position => visibleCells(position, layout.objects, openDoors)));
   }
 
-  function projectionRevision(id, fog, state = readState()) {
+  function projectionRevision(id, fog, state = readProjectionState()) {
     const revision = state.projectionRevisions?.[id];
     // A map shown without fog does not expose changes to the party’s sight.
     return (revision?.objects ?? 0) + (fog ? revision?.sight ?? 0 : 0);

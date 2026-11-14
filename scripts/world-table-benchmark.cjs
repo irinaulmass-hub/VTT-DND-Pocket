@@ -11,7 +11,7 @@ const {fixture,profiles,aggregate,summary,freePort}=require('./world-benchmark.c
 const map=require('../remote/world-model');
 const {project}=require('../world-exploration');
 const root=path.resolve(__dirname,'..');
-const queries={near:['0,0'],adjacent:['0,0','1,0','0,-1','1,-1'],
+const queries={status:null,near:['0,0'],adjacent:['0,0','1,0','0,-1','1,-1'],
   distant:['-16,32','-15,32','-16,33','-15,33'],live:['31,-2'],empty:['100,100']};
 const publicProp=({id,kind,x,y,turn})=>({id,kind,x,y,turn});
 
@@ -73,10 +73,12 @@ function tableFixture(config,file,fog) {
   const movement=require('../world-movement')(store,file);
   const visible=fog?require('../world-exploration').mask(movement.visibleCells(position,objects,new Set())):{};
   const state={explored,memory,visible,openDoors:new Set(),revealedSecrets};
-  const expected=Object.fromEntries(Object.entries(queries).map(([name,keys])=>[name,{
+  const expected=Object.fromEntries(Object.entries(queries).filter(([,keys])=>keys!==null).map(([name,keys])=>[name,{
     id:layout.id,revision:1,frame:snapshot.frame,tokens:[],version:{generation:1,publication:1,exploration:fog?5:2},
     fog,...project(snapshot,new Set(keys),state),
   }]));
+  expected.status={type:'WORLD_UPDATE',id:layout.id,revision:1,version:{generation:1,publication:1,exploration:fog?5:2},
+    frame:snapshot.frame,party:null,blackout:false};
   return {expected,dimensions:{plots:config.plots,tiles:config.tiles,objects:objects.length,
     chunks:Object.keys(layout.chunks).length,memoryChunks:Object.keys(memory.chunks).length,
     memoryCells:Object.values(memory.chunks).reduce((n,c)=>n+Object.keys(c).length,0),
@@ -88,6 +90,7 @@ function tableFixture(config,file,fog) {
 function verify(name,value,expected,fog) {
   assert.deepEqual(value,expected,'HTTP agrees with the complete published snapshot and state: '+name);
   assert.equal(JSON.stringify(value).includes('BENCH_PRIVATE'),false);
+  if(name==='status')return; // The full status shape above has no map, private state or object list.
   assert.equal(value.objects.some(p=>p.id==='probe-hidden'),false);
   assert.equal(new Set(value.objects.map(p=>p.id)).size,value.objects.length);
   if(name==='near') {
@@ -134,7 +137,8 @@ async function run(options) {
     const rows=[],responseSha256={};let seq=0;
     for(let sample=-1;sample<options.samples;sample++)for(const [name,keys] of Object.entries(queries)) {
       const id='table-'+(++seq),start=performance.now();
-      const response=await fetch(base+'/api/worlds/table?chunks='+keys.join(';'),{
+      const endpoint=keys===null?'/api/worlds/table/status':'/api/worlds/table?chunks='+keys.join(';');
+      const response=await fetch(base+endpoint,{
         headers:{'x-vtt-benchmark-id':id},signal:AbortSignal.timeout(30000)});
       const text=await response.text(),value=JSON.parse(text),wallMs=performance.now()-start;
       assert.equal(response.status,200);verify(name,value,built.expected[name],fog);
@@ -155,7 +159,7 @@ async function run(options) {
       method:{...options,output:undefined,transport:'public loopback HTTP without DM cookie; includes download and JSON parse',
         cache:'one unrecorded warm-up per query; warm OS cache; no forced server GC',queries,
         stageTiming:'optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times',
-        io:'readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/mapState selfMs',
+        io:'readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/positions selfMs',
         response:'response.json includes Express serialization, headers and send; not pure JSON.stringify',
         remainder:'server time outside exclusive spans; independent medians need not sum',
         fixture:'dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign',
