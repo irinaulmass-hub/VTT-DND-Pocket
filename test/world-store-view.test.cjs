@@ -6,6 +6,7 @@ const path=require('node:path');
 const os=require('node:os');
 const createStore=require('../world-store');
 const model=require('../remote/world-model');
+const createIndex=require('../world-object-index');
 const ids=['60000000-0000-0000-0000-000000000001','60000000-0000-0000-0000-000000000002'];
 
 function fixture(t) {
@@ -37,6 +38,68 @@ function fixture(t) {
   const manifest=(id=ids[0])=>file('worlds/'+id+'-live-chunks.json');
   return {dir,file,store,view,manifest,snapshot,reads:()=>reads,chunkReads:()=>chunkReads,switchTo:value=>{campaign=value;}};
 }
+
+test('state-only publications retain immutable object identity without sharing mutable snapshots',t=>{
+  const f=fixture(t),first=f.view(),objects=first.map.objects,index=createIndex(),built=index.get(objects);
+  for(const action of ['frame','tokens','seen','fog']) {
+    const next=f.store.readPublished(ids[0],[]);next.revision++;
+    if(action==='frame')next.frame={...next.frame,x:7,serial:1};
+    if(action==='tokens')next.tokens=[{id:'hero',name:'Hero',x:2,y:3}];
+    if(action==='seen')next.seen={'0,0':{0:true}};
+    if(action==='fog')next.fog=false;
+    f.store.updatePublishedState(ids[0],next);
+    const view=f.view();assert.deepEqual(view,f.store.readPublished(ids[0],[]));
+    assert.equal(view.map.objects,objects,action+' must not rebuild the live index');
+    assert.equal(index.get(view.map.objects),built);
+    assert.notEqual(next.map.objects,objects);next.map.objects[0].x=99;
+    assert.equal(f.view().map.objects[0].x,1,'writers stay independent');
+  }
+  assert.equal(first.frame.x,0);assert.deepEqual(first.tokens,[]);assert.equal(first.fog,true);
+});
+
+test('object changes, array order and exceptional JSON numbers always produce fresh object sources',t=>{
+  const f=fixture(t);let previous=f.view().map.objects;
+  for(const change of [
+    p=>{p.x=2;},p=>{p.hidden=true;},p=>{p.kind='tree';},p=>{p.turn=1;},p=>{p.notes={value:1};},
+    p=>{p.notes.value=2;},p=>{delete p.notes;},p=>{p.id='changed';},
+  ]) {
+    const next=f.store.readPublished(ids[0]);change(next.map.objects[0]);f.store.writePublished(ids[0],next);
+    const current=f.view().map.objects;assert.notEqual(current,previous);assert.deepEqual(current,next.map.objects);previous=current;
+  }
+  const next=f.store.readPublished(ids[0]);next.map.objects.push({id:'second',kind:'tree',x:3,y:3,turn:0});f.store.writePublished(ids[0],next);
+  assert.notEqual(f.view().map.objects,previous,'adding an object replaces the source');
+  previous=f.view().map.objects;next.map.objects.reverse();f.store.writePublished(ids[0],next);
+  assert.notEqual(f.view().map.objects,previous);assert.equal(f.view().map.objects[0].id,'second');
+  previous=f.view().map.objects;next.map.objects.pop();f.store.writePublished(ids[0],next);
+  assert.notEqual(f.view().map.objects,previous,'removing an object replaces the source');assert.equal(f.view().map.objects.length,1);
+  const raw=JSON.parse(fs.readFileSync(f.manifest(),'utf8'));raw.snapshot.map.objects[0].x=0;raw.snapshot.map.objects[0].metric='overflow';
+  const bytes=JSON.stringify(raw);fs.writeFileSync(f.manifest(),bytes.replace('"x":0','"x":-0').replace('"metric":"overflow"','"metric":1e999'));
+  const special=f.view().map.objects;assert.ok(Object.is(special[0].x,-0));assert.equal(special[0].metric,Infinity);
+  fs.writeFileSync(f.manifest(),bytes.replace('"metric":"overflow"','"metric":null'));
+  const changed=f.view().map.objects;assert.notEqual(changed,special);assert.ok(Object.is(changed[0].x,0));assert.equal(changed[0].metric,null);
+  const deep=fs.readFileSync(f.manifest(),'utf8').replace('"turn":0','"turn":0,"deep":'+'['.repeat(10000)+'0'+']'.repeat(10000));
+  fs.writeFileSync(f.manifest(),deep);f.view();
+  fs.writeFileSync(f.manifest(),deep.replace('"serial":0','"serial":1'));
+  assert.equal(f.view().frame.serial,1,'comparison depth must not make a readable external update fail');
+});
+
+test('object sharing is bounded to one file and discarded on errors, legacy and oversized inputs',t=>{
+  const f=fixture(t),first=f.view().map.objects;
+  assert.notEqual(f.view(ids[1]).map.objects,first);assert.notEqual(f.view().map.objects,first);
+  const saved=fs.readFileSync(f.manifest(),'utf8'),prior=f.view().map.objects;
+  fs.writeFileSync(f.manifest(),'{bad');assert.throws(()=>f.view(),SyntaxError);fs.writeFileSync(f.manifest(),saved);
+  const repaired=f.view().map.objects;assert.notEqual(repaired,prior);
+  const large={...JSON.parse(saved),padding:'x'.repeat(8*1024*1024)};fs.writeFileSync(f.manifest(),JSON.stringify(large));f.view();
+  fs.writeFileSync(f.manifest(),saved);assert.notEqual(f.view().map.objects,repaired);
+  const old=f.view().map.objects,draft=f.file('worlds/'+ids[0]+'-chunks.json'),draftBytes=fs.readFileSync(draft);
+  fs.unlinkSync(draft);fs.writeFileSync(f.file('worlds/'+ids[0]+'-live.json'),JSON.stringify(f.snapshot()));f.view();
+  fs.writeFileSync(draft,draftBytes);assert.notEqual(f.view().map.objects,old);
+  const source=f.view().map.objects;f.switchTo('b');assert.notEqual(f.view().map.objects,source);
+  f.switchTo('a');assert.notEqual(f.view().map.objects,source);
+  const many=f.snapshot();many.map.objects=Array.from({length:model.objectLimit+1},(_,i)=>({id:'p'+i,kind:'tree',x:0,y:0,turn:0}));
+  f.store.writePublished(ids[0],many);const over=f.view().map.objects;many.frame.x=3;f.store.updatePublishedState(ids[0],many);
+  assert.notEqual(f.view().map.objects,over,'above index admission limit, full reads still work without sharing');
+});
 
 test('published views reuse one immutable manifest but read the requested terrain afresh',t=>{
   const f=fixture(t),expected=f.store.readPublished(ids[0],['0,0']),before=f.reads();

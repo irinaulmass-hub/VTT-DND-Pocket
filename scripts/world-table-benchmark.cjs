@@ -16,7 +16,7 @@ const queries={status:null,near:['0,0'],adjacent:['0,0','1,0','0,-1','1,-1'],
 const publicProp=({id,kind,x,y,turn})=>({id,kind,x,y,turn});
 
 function optionsFor(args) {
-  const options={profile:'small',samples:5,stages:'on',fog:'on',output:null,ref:null};
+  const options={profile:'small',samples:5,stages:'on',fog:'on',output:null,ref:null,'state-updates':'off'};
   for(let i=0;i<args.length;i+=2) {
     const key=args[i].slice(2),value=args[i+1];
     if(!args[i].startsWith('--')||!Object.hasOwn(options,key)||!value)throw Error('Unknown or missing argument');
@@ -24,7 +24,7 @@ function optionsFor(args) {
   }
   options.samples=Number(options.samples);
   if(!Object.hasOwn(profiles,options.profile)||!Number.isInteger(options.samples)||options.samples<1||options.samples>10||
-    !['on','off'].includes(options.stages)||!['on','off'].includes(options.fog)||
+    !['on','off'].includes(options.stages)||!['on','off'].includes(options.fog)||!['on','off'].includes(options['state-updates'])||
     options.ref&&!/^[a-f0-9]{40}$/.test(options.ref))throw Error('Invalid table benchmark options');
   return options;
 }
@@ -114,9 +114,9 @@ async function run(options) {
   let child;
   try {
     const fog=options.fog==='on',built=tableFixture(profiles[options.profile],name=>path.join(dir,name),fog);
-    const port=await freePort(),base='http://127.0.0.1:'+port;
+    const port=await freePort(),base='http://127.0.0.1:'+port,password=randomBytes(24).toString('hex');
     child=spawn(process.execPath,['--require',path.join(__dirname,'world-benchmark-probe.cjs'),'server.js'],{
-      cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:dir,DM_PASSWORD:randomBytes(24).toString('hex'),
+      cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:dir,DM_PASSWORD:password,
         VTT_WORLD_BENCHMARK:'1',VTT_WORLD_BENCHMARK_STAGES:options.stages},stdio:['ignore','ignore','pipe','ipc']});
     let error='';child.stderr.on('data',b=>{error=(error+b).slice(-2000);});
     const metrics=new Map(),pending=new Map();
@@ -134,8 +134,31 @@ async function run(options) {
       await new Promise(r=>setTimeout(r,50));
     }
     if(!ready)throw Error('Server startup timeout: '+error);
-    const rows=[],warmupRows=[],responseSha256={};let seq=0;
-    for(let sample=-1;sample<options.samples;sample++)for(const [name,keys] of Object.entries(queries)) {
+    let cookie;
+    if(options['state-updates']==='on') {
+      const login=await fetch(base+'/dm-login',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({password}).toString()});
+      assert.equal(login.status,302);cookie=login.headers.get('set-cookie').split(';')[0];
+    }
+    const rows=[],warmupRows=[],updateRows=[],responseSha256={},sequences={};let seq=0;
+    for(let sample=-1;sample<options.samples;sample++) {
+      if(sample>=0&&options['state-updates']==='on') {
+        const id='frame-'+(++seq),serializeAt=performance.now();
+        const payload=JSON.stringify({id:built.expected.status.id,action:'frame',x:sample+1,y:-sample-1,scale:24});
+        const serializeMs=performance.now()-serializeAt,start=performance.now();
+        const response=await fetch(base+'/api/worlds/live/change',{method:'POST',headers:{Cookie:cookie,
+          'Content-Type':'application/json','x-vtt-benchmark-id':id},body:payload,signal:AbortSignal.timeout(30000)});
+        const text=await response.text(),value=JSON.parse(text),wallMs=performance.now()-start;
+        assert.equal(response.status,200);
+        const frame={x:sample+1,y:-sample-1,scale:24,serial:sample+1},revision=sample+2;
+        assert.deepEqual(value,{tokens:[],revision,frame});
+        updateRows.push({...await metric(id),operation:'frame_update',sample,wallMs,serializeMs,
+          responseBytes:Buffer.byteLength(text),requestBytes:Buffer.byteLength(payload)});
+        for(const expected of Object.values(built.expected)) {
+          expected.frame=frame;expected.revision=revision;expected.version.publication=revision;
+        }
+      }
+      for(const [name,keys] of Object.entries(queries)) {
       const id='table-'+(++seq),start=performance.now();
       const endpoint=keys===null?'/api/worlds/table/status':'/api/worlds/table?chunks='+keys.join(';');
       const response=await fetch(base+endpoint,{
@@ -143,9 +166,12 @@ async function run(options) {
       const text=await response.text(),value=JSON.parse(text),wallMs=performance.now()-start;
       assert.equal(response.status,200);verify(name,value,built.expected[name],fog);
       const digest=createHash('sha256').update(text).digest('hex');
-      if(responseSha256[name])assert.equal(digest,responseSha256[name]);else responseSha256[name]=digest;
+      if(options['state-updates']==='off'&&responseSha256[name])assert.equal(digest,responseSha256[name]);
+      responseSha256[name]=digest;
+      (sequences[name] ||= createHash('sha256')).update(Buffer.byteLength(text)+':').update(text);
       const measured=await metric(id);
-      (sample>=0?rows:warmupRows).push({...measured,operation:name,wallMs,responseBytes:Buffer.byteLength(text),requestBytes:0,serializeMs:0});
+      (sample>=0?rows:warmupRows).push({...measured,operation:name,sample,responseSha256:digest,wallMs,responseBytes:Buffer.byteLength(text),requestBytes:0,serializeMs:0});
+      }
     }
     const summaries=aggregate(rows);
     for(const [name,item] of Object.entries(summaries))item.readCategories=Object.fromEntries(
@@ -154,6 +180,11 @@ async function run(options) {
     for(const [name,item] of Object.entries(summaries))item.work=Object.fromEntries(
       [...new Set(rows.filter(r=>r.operation===name).flatMap(r=>Object.keys(r.work||{})))].map(key=>
         [key,summary(rows.filter(r=>r.operation===name).map(r=>r.work?.[key]||0))]));
+    const updateCycles=updateRows.map(update=>{
+      const cycle=rows.filter(row=>row.sample===update.sample),status=cycle.find(row=>row.operation==='status'),near=cycle.find(row=>row.operation==='near');
+      return {sample:update.sample,updateMs:update.wallMs,firstReadsMs:status.wallMs+near.wallMs,
+        updateAndFirstReadsMs:update.wallMs+status.wallMs+near.wallMs};
+    });
     return {schemaVersion:1,applicationRef:options.ref,createdAt:new Date().toISOString(),
       environment:{node:process.version,platform:process.platform,arch:process.arch,cpu:os.cpus()[0]?.model,osRelease:os.release()},
       sourceSha256:Object.fromEntries(['worlds.js','world-store.js','world-exploration.js','character-positions.js',
@@ -163,12 +194,15 @@ async function run(options) {
         cache:'one warm-up per query retained separately in warmupRows; summaries exclude warm-up; warm OS cache; no forced server GC',queries,
         stageTiming:'optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times',
         work:'benchmark-only index candidates/lookups/builds/fallbacks; absent means hooks were not called, not zero linear work',
+        stateUpdates:'optional authenticated frame POST before each measured read cycle; updateRows measured separately, GETs remain public; sequence hashes cover warm-up and all revisions',
         io:'readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/positions selfMs',
         response:'response.json includes Express serialization, headers and send; not pure JSON.stringify',
         remainder:'server time outside exclusive spans; independent medians need not sum',
         fixture:'dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign',
         exclusions:'no browser/FPS, Wi-Fi, Windows or physical devices; diagnostic overhead is not production timing'},
-      status:'verified',dimensions:built.dimensions,responseSha256,rows,warmupRows,summary:summaries};
+      status:'verified',dimensions:built.dimensions,responseSha256,
+      responseSequenceSha256:Object.fromEntries(Object.entries(sequences).map(([name,hash])=>[name,hash.digest('hex')])),
+      rows,warmupRows,summary:summaries,updateRows,updateSummary:aggregate(updateRows),updateCycles};
   } finally {
     if(child&&child.exitCode===null&&child.signalCode===null){const done=new Promise(r=>child.once('exit',r));child.kill();await done;}
     fs.rmSync(dir,{recursive:true,force:true});

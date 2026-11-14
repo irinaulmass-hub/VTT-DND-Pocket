@@ -71,6 +71,29 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
 
 test('table benchmark rejects invalid options before starting a server',()=>{
   for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],
-    ['--fog','missing'],['--stages','missing'],['--unknown','x'],['--samples']])assert.throws(()=>optionsFor(args));
+    ['--fog','missing'],['--stages','missing'],['--state-updates','missing'],['--unknown','x'],['--samples']])assert.throws(()=>optionsFor(args));
   assert.equal(optionsFor([]).stages,'on');
+});
+
+test('controlled frame updates keep live indices while fresh revisions remain byte-compatible without hooks',()=>{
+  const run=stages=>{
+    const result=spawnSync(process.execPath,[script,'--samples','2','--state-updates','on','--stages',stages],
+      {cwd:root,encoding:'utf8',timeout:20000});
+    assert.equal(result.status,0,result.stderr);return JSON.parse(result.stdout);
+  };
+  const measured=run('on'),control=run('off');
+  assert.equal(measured.method['state-updates'],'on');
+  assert.equal(measured.rows.length,12);assert.equal(measured.updateRows.length,2);assert.equal(measured.warmupRows.length,6);
+  assert.deepEqual(measured.responseSequenceSha256,control.responseSequenceSha256);
+  for(const row of measured.rows) {
+    assert.equal(row.work.arrayIndexBuilds||0,0,'frame updates retain the published object collection');
+    assert.equal(row.work.dictionaryIndexBuilds||0,0,'frame updates do not replace exploration memory');
+    assert.equal(row.writes,0);
+    if(row.operation==='status')assert.equal(row.readCategories.publishedManifest.calls,1,'updated state is read afresh');
+    else assert.equal(row.readCategories.publishedManifest,undefined);
+  }
+  assert.equal(new Set(measured.rows.filter(r=>r.operation==='status').map(r=>r.responseSha256)).size,2,'versions actually change');
+  assert.ok(measured.updateRows.every(row=>row.status===200&&row.writes>0));
+  assert.ok(measured.updateCycles.every(row=>row.firstReadsMs>=0&&row.updateAndFirstReadsMs>=row.firstReadsMs));
+  assert.ok(control.rows.every(row=>Object.keys(row.work).length===0));
 });

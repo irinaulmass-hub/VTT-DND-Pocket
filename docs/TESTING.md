@@ -501,3 +501,21 @@ npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --ou
 ```
 
 HTTP-стенд проверяет ноль тёплых построений/отказов и ноль кандидатов для пустой/дальней геометрии, первый near строит два индекса с туманом/один без. work-счётчики устанавливаются только guarded hooks; отсутствие счётчика у линейного контроля не означает отсутствие работы. Первые шесть запросов теперь сохранены в warmupRows и исключены из summary. Пять финальных прогонов, соответствующие хеши ответов прежние. [Отчёт с ценой первого построения](benchmarks/B5B3J_OBJECT_INDEX.md). Первый near медленнее (39.83/67.94 против 14.77 мс); тёплый empty быстрее (1.04/1.08 против 3.62 мс). Изменения снимков/камеры могут снова вызвать построение; FPS/LAN/Windows/браузер этим срезом не измерялись.
+
+## Стабильные объекты B5b3k
+
+Полный npm test — **119/119**, Node.js 24.22.1, без пропусков. Три новых сценария world-store-view.test.cjs проверяют идентичность массива/индекса после frame/tokens/seen/fog, независимые мутации, свежесть любых полей/порядка/состава, -0/0 и Infinity/null, глубину, ошибки/legacy/oversize/кампании и превышение допуска. Новый world-table-benchmark.test.cjs сценарий делает два настоящих frame POST, сверяет версии/ответы при stages on/off, ноль перестроений/записей GET и наличие записи POST.
+
+```sh
+node --check world-store.js
+node --check scripts/world-table-benchmark.cjs
+node --check scripts/world-benchmark-stages.cjs
+node --check test/world-store-view.test.cjs
+node --check test/world-table-benchmark.test.cjs
+npm test
+node scripts/world-table-benchmark.cjs --profile limit --samples 5 --fog on --state-updates on --output /tmp/state-updates.json
+```
+
+--state-updates off по умолчанию сохраняет статический режим. Контролируемый режим использует временный DM-вход только для frame POST; GET остаются публичными. Отдельные updateRows/updateSummary и updateCycles сохраняют цену команды, status + near и полную сумму по каждому циклу. responseSequenceSha256 учитывает сырые тела warm-up и всех меняющихся ревизий; сравнивать между одинаковыми fog-профилями. arrayIndexBuilds/dictionaryIndexBuilds относятся к форме коллекции (в этой сцене живые/память). Первое построение остаётся в warmupRows. Выходной файл должен отсутствовать.
+
+Пять финальных прогонов: 150 GET, 30 первых GET и 25 POST; контролируется точный исходник базы, отличается только world-store.js. Последовательности ответов совпали, после frame живой индекс не перестраивается. [Исходные данные и ограничения](benchmarks/B5B3K_STABLE_OBJECTS.md). Store-тесты покрывают жетоны/seen/fog; HTTP-замеры только кадр. Движение/обновление памяти, холодный запуск, FPS/LAN/Windows этим срезом не объявляются проверенными.

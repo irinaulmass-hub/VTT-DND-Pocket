@@ -100,7 +100,7 @@ function install(current, root) {
         cache.get=function(...args) {
           const index=stages.measure('index.get',()=>get.apply(this,args));
           if (!index) { lastIndex=undefined;count('indexFallbacks');return index; }
-          if (lastIndex!==index)count('indexBuilds');
+          if (lastIndex!==index) { count('indexBuilds');count(Array.isArray(args[0])?'arrayIndexBuilds':'dictionaryIndexBuilds'); }
           lastIndex=index;
           return {
             select(...args) { const selected=stages.measure('index.select',()=>index.select(...args));count('indexCandidates',selected.length);return selected; },

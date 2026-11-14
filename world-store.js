@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const { size, valid } = require('./remote/world-model');
+const { isDeepStrictEqual } = require('node:util');
+const { size, valid, objectLimit } = require('./remote/world-model');
 
 const idPattern = /^[a-f0-9-]{36}$/;
 
@@ -32,20 +33,23 @@ module.exports = function createWorldStore(gameFile) {
   const manifestFile = (id, suffix) => worldFile(id, suffix + '-chunks');
   const chunkFile = (id, hash) => path.join(gameFile('worlds'), id + '-chunks', hash + '.json');
   const viewLimit = 8 * 1024 * 1024; // Input JSON admission limit, not decoded heap size.
-  let publishedManifest;
+  let publishedManifest, publishedObjects;
   const identity = stat => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 
   function readViewManifest(filename) {
     const file = path.resolve(filename);
     let before;
     try { before = fs.statSync(file, { bigint: true }); }
-    catch { publishedManifest = undefined; return readManifest(file); }
+    catch { publishedManifest = publishedObjects = undefined; return readManifest(file); }
     if (!before.isFile() || before.size > BigInt(viewLimit)) {
       publishedManifest = undefined;
+      publishedObjects = undefined;
       return readManifest(file);
     }
     const stamp = identity(before);
     if (publishedManifest?.file === file && publishedManifest.stamp === stamp) return publishedManifest.value;
+    const previousObjects = publishedObjects?.file === file ? publishedObjects.objects : undefined;
+    publishedObjects = undefined;
     publishedManifest = undefined;
     const text = fs.readFileSync(file, 'utf8'), value = checkedManifest(JSON.parse(text));
     let after;
@@ -53,14 +57,23 @@ module.exports = function createWorldStore(gameFile) {
     catch { return readManifest(file); }
     if (identity(after) !== stamp) return readManifest(file);
     if (Buffer.byteLength(text) > viewLimit) return value;
+    const objects = value?.snapshot?.map?.objects;
+    const shareable = Array.isArray(objects) && objects.length <= objectLimit;
+    if (shareable && previousObjects) {
+      // Reuse is optional: an unusually deep legacy value must remain readable.
+      let equal = false;
+      try { equal = isDeepStrictEqual(objects, previousObjects); } catch {}
+      if (equal) value.snapshot.map.objects = previousObjects;
+    }
     const stack = [value];
     while (stack.length) {
       const item = stack.pop();
-      if (!item || typeof item !== 'object') continue;
+      if (!item || typeof item !== 'object' || Object.isFrozen(item)) continue;
       for (const child of Object.values(item)) if (child && typeof child === 'object') stack.push(child);
       Object.freeze(item);
     }
     publishedManifest = { file, stamp, value };
+    if (shareable) publishedObjects = { file, objects: value.snapshot.map.objects };
     return value;
   }
 
@@ -182,7 +195,7 @@ module.exports = function createWorldStore(gameFile) {
   // Read-only source for public projection/status; mutation callers keep readPublished().
   function readPublishedView(id, keys) {
     if (!hasChunkDraft(id)) {
-      publishedManifest = undefined;
+      publishedManifest = publishedObjects = undefined;
       return read(worldFile(id, '-live'));
     }
     const manifest = readViewManifest(manifestFile(id, '-live'));
@@ -199,7 +212,7 @@ module.exports = function createWorldStore(gameFile) {
 
   function writePublished(id, snapshot) {
     if (!hasChunkDraft(id)) {
-      publishedManifest = undefined;
+      publishedManifest = publishedObjects = undefined;
       return write(worldFile(id, '-live'), snapshot);
     }
     saveChunkPublished(id, snapshot);
