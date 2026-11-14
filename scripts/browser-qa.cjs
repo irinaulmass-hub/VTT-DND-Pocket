@@ -104,6 +104,26 @@ if (!qaStore.readDraft(visualId, [])) {
   for(let y=-10;y<=-8;y++)for(let x=-5;x<=1;x++)set(visual.chunks,x,y,'water');
   qaStore.writeDraft(visual);
 }
+const bridgesId = '40000000-0000-0000-0000-000000000003';
+if (!qaStore.readDraft(bridgesId, [])) {
+  const { set } = require('../remote/world-model');
+  const bridges = { id:bridgesId, name:'Мосты · Берега и масштаб', revision:0, chunks:{}, objects:[
+    {id:'bridge-horizontal',kind:'bridge',x:-9,y:-4,turn:0},
+    {id:'bridge-vertical',kind:'bridge',x:7,y:3,turn:1},
+    {id:'bridge-cottage',kind:'house',x:0,y:-6,turn:0},
+    {id:'bridge-west-house',kind:'house',x:-15,y:-8,turn:0},
+    {id:'bridge-tavern',kind:'tavern',x:13,y:-7,turn:0},
+    {id:'bridge-person-scale',kind:'goblinArcher',x:-4,y:-3,turn:0},
+    ...[[-4,0],[15,0],[-15,7],[2,8]].map(([x,y],i)=>({id:'bridge-tree-'+i,kind:'tree',x,y,turn:i})),
+    {id:'bridge-barrel',kind:'barrel',x:2,y:-8,turn:0},
+    {id:'bridge-secret',kind:'chest',x:17,y:8,turn:0,hidden:true},
+  ] };
+  for(let y=-11;y<=11;y++)for(let x=-20;x<=20;x++) {
+    const river=x===-9||x===-8||y===3||y===4;
+    set(bridges.chunks,x,y,river?'water':(y===-4||y===-3||x===7||x===8)?'path':'grass');
+  }
+  qaStore.writeDraft(bridges);
+}
 const password = randomBytes(32).toString('hex');
 const upstream = spawn(process.execPath, ['server.js'], {
   cwd: root, env: { ...process.env, PORT: String(upstreamPort), DATA_DIR: dataDir, DM_PASSWORD: password },

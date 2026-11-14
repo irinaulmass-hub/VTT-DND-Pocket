@@ -358,32 +358,36 @@
   }
 
   function paintBridge(ctx, prop, width, height) {
-    const w = width / 2, h = height / 2;
+    const w = width / 2, h = height * .34;
     const rnd = random((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107)) >>> 0);
-    polygon(ctx, [[-w, -h + .07], [w - .04, -h], [w, h - .08], [-w + .03, h]], '#4f4134');
-    for (let x = -w + .035; x < w - .12; x += .23) {
-      const end = Math.min(w - .015, x + .215);
-      const drift = (rnd() - .5) * .05;
-      polygon(ctx, [[x, -h + .14 + drift], [end, -h + .13], [end, h - .12 + drift], [x, h - .13]],
+    // The walkable cell centers remain on the deck, with room for slender side rails.
+    // A four-by-two bridge reads as a narrow crossing rather than a solid wooden slab.
+    polygon(ctx, [[-w, -h + .025], [w, -h], [w, h - .02], [-w, h]], '#4f4134');
+    for (let x = -w + .025; x < w - .04; x += .18) {
+      const end = Math.min(w - .018, x + .168);
+      const drift = (rnd() - .5) * .018;
+      polygon(ctx, [[x, -h + .035 + drift], [end, -h + .03], [end, h - .03 + drift], [x, h - .035]],
         ['#ab8960', '#b6966b', '#9b7b54'][Math.floor(rnd() * 3)]);
       ctx.strokeStyle = '#e2bd7f54';
-      ctx.lineWidth = .018;
+      ctx.lineWidth = .012;
       ctx.beginPath();
-      ctx.moveTo(x + .035, -h + .31);
-      ctx.quadraticCurveTo(x + .015, 0, x + .05, h - .33);
+      ctx.moveTo(x + .035, -h + .13);
+      ctx.quadraticCurveTo(x + .02, 0, x + .045, h - .14);
       ctx.stroke();
     }
-    for (const y of [-h + .10, h - .10]) {
-      ctx.fillStyle = '#6d5237';
-      ctx.fillRect(-w + .028, y - .055, width - .06, .115);
-      ctx.fillStyle = '#be9c6b';
-      ctx.fillRect(-w + .04, y - .055, width - .08, .029);
-      for (const x of [-w + .13, 0, w - .13]) {
-        polygon(ctx, [[x - .095, y - .075], [x + .088, y - .068],
-          [x + .081, y + .09], [x - .083, y + .086]], '#574634');
+    for (const y of [-h - .055, h + .055]) {
+      ctx.fillStyle = '#3d352b55';
+      ctx.fillRect(-w + .06, y + .055, width - .12, .045);
+      for (const x of [-w + .10, -w / 3, w / 3, w - .10]) {
+        ctx.fillStyle = '#574634';
+        ctx.fillRect(x - .046, y - .075, .092, .15);
         ctx.fillStyle = '#bc9e72';
-        ctx.fillRect(x - .052, y - .035, .10, .078);
+        ctx.fillRect(x - .032, y - .064, .064, .057);
       }
+      ctx.fillStyle = '#654b34';
+      ctx.fillRect(-w + .06, y - .024, width - .12, .048);
+      ctx.fillStyle = '#c5a577';
+      ctx.fillRect(-w + .07, y - .024, width - .14, .016);
     }
   }
 
@@ -579,10 +583,12 @@
     const bridge = prop.kind === 'bridge';
     if (prop.hidden) ctx.globalAlpha = .65;
     if (building || bridge) {
+      const shadowWidth = bridge && prop.turn % 2 ? h * .76 : center.width;
+      const shadowHeight = bridge && !(prop.turn % 2) ? h * .76 : center.height;
       ctx.fillStyle = '#323a3033';
-      ctx.fillRect(-center.width / 2 + .14, -center.height / 2 + .2, center.width + .10, center.height + .09);
+      ctx.fillRect(-shadowWidth / 2 + .14, -shadowHeight / 2 + .2, shadowWidth + .10, shadowHeight + .09);
       ctx.fillStyle = '#30382d38';
-      ctx.fillRect(-center.width / 2 + .12, -center.height / 2 + .17, center.width, center.height);
+      ctx.fillRect(-shadowWidth / 2 + .12, -shadowHeight / 2 + .17, shadowWidth, shadowHeight);
     }
     if (WorldMap.furnitureKinds.has(prop.kind)) {
       // World-space shadow stays southeast when furniture turns.

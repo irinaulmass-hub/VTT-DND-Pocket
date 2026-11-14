@@ -6,6 +6,8 @@
 
 Код генераторов и внутренних сцен F4–F5d и V3a находится в ветке `codex/audit-and-stabilization` и [PR #1](https://github.com/irinaulmass-hub/VTT-DND-Pocket/pull/1). Для проверки используйте [ZIP этой ветки](https://github.com/irinaulmass-hub/VTT-DND-Pocket/archive/refs/heads/codex/audit-and-stabilization.zip). Path и Forest Plot поддерживают регенерацию с сохранением ручных правок. Добавлены шаблоны настроек дорог и леса для кампании. Браузерная приёмка F4/F5a пройдена. Добавлен Room: пол, стены и вход из контура. Постройки связываются с интерьером или этажом парой входа и возврата. Добавлены кровать и лестница, проверены мебель, свет и публикация интерьера. District Plot доступен в редакторе: два угла, число домов, seed, защищённая регенерация и Undo/Redo.
 
+Мосты: исправлены пропорции настила, перил и теней. Новая тестовая сцена показывает оба направления между сухими берегами; сохранённые размеры прохода прежние. [Свежие кадры и проверка](docs/qa/BRIDGE_PROPORTIONS_ACCEPTANCE.md).
+
 ## Запуск на Windows
 
 1. [Скачайте ZIP](https://github.com/irinaulmass-hub/VTT-DND-Pocket/archive/refs/heads/codex/audit-and-stabilization.zip), войдя в GitHub под аккаунтом с доступом, и распакуйте его.

@@ -61,6 +61,22 @@ test('the browser fixture isolates data, uses real master login, proxies WS, and
   const roof=visual.objects.find(p=>p.id==='visual-roof'),model=require('../remote/world-model');
   assert.equal(model.cellBounds(roof).right,-1);
   assert.ok(model.visualBounds(roof).right>0,'visual fixture contains an overhang beyond its occupied chunk');
+  const bridgesMap=list.worlds.find(item=>item.name==='Мосты · Берега и масштаб');assert.ok(bridgesMap);
+  const bridges=await fetch(base+'/api/worlds/'+bridgesMap.id).then(r=>r.json());
+  const gameFile=name=>path.join(dataDir,name);
+  const movement=require('../world-movement')(require('../world-store')(gameFile),gameFile);
+  for(const bridge of bridges.objects.filter(p=>p.kind==='bridge')) {
+    const b=model.cellBounds(bridge),vertical=bridge.turn%2;
+    assert.equal(vertical?b.bottom-b.top+1:b.right-b.left+1,4,'existing bridge length is unchanged');
+    assert.equal(vertical?b.right-b.left+1:b.bottom-b.top+1,2,'existing bridge width is unchanged');
+    const first=vertical?b.top:b.left,last=vertical?b.bottom:b.right;
+    const point=n=>({worldId:bridges.id,sceneId:'overworld',floorId:'ground',x:vertical?bridge.x:n,y:vertical?n:bridge.y});
+    for(let n=first-1;n<=last+1;n++)assert.equal(movement.canStep(point(n),false),true,'crossing connects both dry approaches');
+    for(const n of [first-1,first,last,last+1]){const p=point(n);assert.equal(model.get(bridges.chunks,p.x,p.y),'path','bridge ends reach the banks');}
+    assert.equal(model.get(bridges.chunks,bridge.x,bridge.y),'water','deck actually crosses water');
+    const side={...point(vertical?bridge.y:bridge.x),x:vertical?b.right+1:bridge.x,y:vertical?bridge.y:b.bottom+1};
+    assert.equal(movement.canStep(side,false),false,'adjacent water stays impassable');
+  }
   assert.equal((await fetch('http://127.0.0.1:' + upstreamPort + '/api/worlds', { redirect: 'manual' })).status, 302,
     'the underlying application still requires authentication');
   const ws = new WebSocket(base.replace('http:', 'ws:') + '/ws');
