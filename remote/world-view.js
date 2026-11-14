@@ -8,7 +8,7 @@
     const ctx = canvas.getContext('2d');
     let camera = { x: 0, y: 0, scale: 24 };
     let data = { chunks: {}, objects: [], tokens: [] };
-    let width = 1, height = 1, frame, gesture;
+    let width = 1, height = 1, frame, gesture, hover, hoveringBrush = false;
     const minScale = () => Math.max(7, width / (size * 8), height / (size * 8));
     function bounds() {
       return {
@@ -53,13 +53,26 @@
           ? { ...object, ...gesture.destination } : object);
         const structures = window.WorldMap.structures(objects);
         for (const prop of objects) {
-          if (prop.x < area.left - 5 || prop.x > area.right + 5 || prop.y < area.top - 5 || prop.y > area.bottom + 5) continue;
+          if (!window.WorldMap.boundsIntersect(window.WorldMap.visualBounds(prop), area)) continue;
           paintProp(ctx, prop, options.selected?.() === prop.id, structures);
         }
+        const placement = hover && options.placementPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        if (placement) {
+          ctx.save(); ctx.globalAlpha = .55;
+          paintProp(ctx, placement.prop, true, window.WorldMap.structures([...objects, placement.prop]));
+          ctx.restore();
+          if (!placement.allowed) {
+            const bounds = window.WorldMap.cellBounds(placement.prop);
+            ctx.strokeStyle = '#bf493d'; ctx.lineWidth = 2 / camera.scale;
+            ctx.strokeRect(bounds.left, bounds.top, bounds.right - bounds.left + 1, bounds.bottom - bounds.top + 1);
+          }
+        }
         if (options.player && data.fog) {
-          ctx.fillStyle = '#121915';
           for (let y = area.top; y < area.bottom; y++) for (let x = area.left; x < area.right; x++) {
-            if (!get(data.seen, x, y)) ctx.fillRect(x, y, 1.002, 1.002);
+            const seen = get(data.seen, x, y);
+            if (seen && (!data.visible || get(data.visible, x, y))) continue;
+            ctx.fillStyle = seen ? 'rgba(18,25,21,.48)' : '#121915';
+            ctx.fillRect(x, y, 1.002, 1.002);
           }
         }
         for (const token of data.tokens || []) {
@@ -72,6 +85,11 @@
         if (mark) {
           ctx.strokeStyle = '#ffe09b'; ctx.lineWidth = .12;
           ctx.strokeRect(mark.x + .04, mark.y + .04, .92, .92);
+        }
+        const brush = hover && options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        if (brush) {
+          ctx.fillStyle = '#eacb6940'; ctx.strokeStyle = '#fff0b5'; ctx.lineWidth = 1 / camera.scale;
+          for (const cell of brush) { ctx.fillRect(cell.x, cell.y, 1, 1); ctx.strokeRect(cell.x, cell.y, 1, 1); }
         }
       });
     }
@@ -86,6 +104,12 @@
       return { x: camera.x + (e.clientX - rect.left - width / 2) / camera.scale,
         y: camera.y + (e.clientY - rect.top - height / 2) / camera.scale };
     }
+    // Selecting may open an inspector and move the canvas under the pointer.
+    // Only pointer travel, at the gesture's original scale, moves an object.
+    function propDestination(start, event) {
+      return { x: start.prop.x + Math.round((event.clientX - start.x) / start.camera.scale),
+        y: start.prop.y + Math.round((event.clientY - start.y) / start.camera.scale) };
+    }
     new ResizeObserver(() => {
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
@@ -99,27 +123,43 @@
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     canvas.addEventListener('wheel', event => {
       event.preventDefault();
+      if (gesture?.stroke) return;
       const before = point(event);
       const scale = Math.max(minScale(), Math.min(100, camera.scale * Math.exp(-event.deltaY * .0016)));
       const change = camera.scale / scale;
       setCamera({ x: before.x - (before.x - camera.x) * change, y: before.y - (before.y - camera.y) * change, scale });
+      hover = point(event);
     }, { passive: false });
     canvas.addEventListener('pointerdown', event => {
-      if (event.button > 2) return;
+      if (event.button > 2 || gesture) return;
       canvas.setPointerCapture(event.pointerId);
       if (options.pickProp && event.button === 0) canvas.focus({ preventScroll: true });
       const p = point(event);
+      hover = p;
+      if (event.button === 0 && options.startStroke?.(Math.floor(p.x), Math.floor(p.y))) {
+        gesture = { id: event.pointerId, stroke: true };
+        canvas.focus({ preventScroll: true });
+        draw(); return;
+      }
       gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, camera: { ...camera },
         point: p, prop: event.button === 0 ? options.pickProp?.(p.x, p.y) : null,
         pan: event.button !== 0 || options.pan?.() || !options.click,
         token: event.button === 0 && options.moveToken && (data.tokens || []).find(t => t.x === Math.floor(p.x) && t.y === Math.floor(p.y)) };
     });
     canvas.addEventListener('pointermove', event => {
+      hover = point(event);
+      if (gesture?.stroke && gesture.id === event.pointerId) {
+        options.strokeTo?.(Math.floor(hover.x), Math.floor(hover.y)); draw(); return;
+      }
+      if (!gesture) {
+        const active = !!(options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y)) ||
+          options.placementPreview?.(Math.floor(hover.x), Math.floor(hover.y)));
+        if (active || hoveringBrush) draw();
+        hoveringBrush = active; return;
+      }
       if (gesture?.id !== event.pointerId || gesture.token) return;
       if (gesture.prop) {
-        const p = point(event);
-        const x = gesture.prop.x + Math.round(p.x - gesture.point.x);
-        const y = gesture.prop.y + Math.round(p.y - gesture.point.y);
+        const { x, y } = propDestination(gesture, event);
         if (window.WorldMap.valid(x) && window.WorldMap.valid(y)) gesture.destination = { x, y };
         draw();
         return;
@@ -129,17 +169,31 @@
       setCamera({ x: start.x - (event.clientX - gesture.x) / start.scale,
         y: start.y - (event.clientY - gesture.y) / start.scale, scale: start.scale });
     });
-    canvas.addEventListener('lostpointercapture', () => { gesture = null; draw(); });
+    function cancelGesture(event) {
+      if (event?.pointerId !== undefined && gesture?.id !== event.pointerId) return;
+      const cancelled = gesture; gesture = null;
+      if (cancelled?.stroke) options.endStroke?.(false);
+      draw();
+    }
+    canvas.addEventListener('lostpointercapture', cancelGesture);
+    canvas.addEventListener('pointercancel', cancelGesture);
+    canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; hoveringBrush = false; draw(); } });
+    canvas.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && gesture?.stroke) { event.preventDefault(); cancelGesture(); }
+    });
     canvas.addEventListener('pointerup', event => {
       if (gesture?.id !== event.pointerId) return;
       const start = gesture;
       gesture = null;
       const p = point(event);
+      if (start.stroke) {
+        options.strokeTo?.(Math.floor(p.x), Math.floor(p.y));
+        options.endStroke?.(true); draw(); return;
+      }
       if (start.prop) {
         draw();
         const prop = start.prop;
-        const x = prop.x + Math.round(p.x - start.point.x);
-        const y = prop.y + Math.round(p.y - start.point.y);
+        const { x, y } = propDestination(start, event);
         if (window.WorldMap.valid(x) && window.WorldMap.valid(y) && (x !== prop.x || y !== prop.y)) {
           options.moveProp(prop, x, y);
         }

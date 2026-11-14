@@ -1,0 +1,2080 @@
+{
+  "schemaVersion": 1,
+  "applicationRef": null,
+  "createdAt": "2026-11-14T06:09:39.867Z",
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "osRelease": "6.18.57"
+  },
+  "sourceSha256": {
+    "worlds.js": "48aae1933d755bc9aa671b400870cbfd4d6023277c9c05e3674e4b1a62ff0b91",
+    "world-store.js": "c7d7bffd738009bf786d470f359d28570b4f22f6145e706675a205bffa4b7007",
+    "world-exploration.js": "f99bd7402941237b10441236b74851b305685cdbc0af79ff195a96526bba248f",
+    "character-positions.js": "840ac891175fd3f980e1cba1e87c3f9163e80e40f55bff8cbdc64d78556aeab3",
+    "world-movement.js": "7bd6455b7853f24ebf4f17405a3fc5d1a8094ae4ab5ca5f4e76c73a673cafef7",
+    "remote/world-model.js": "accd9ea49c63b936c717c654677d2b887b6a921188680078558d415c228c29ba",
+    "scripts/world-benchmark.cjs": "06b33f0e0ed475f98474658c6f02d42dfd7ae4f8aa3710fdd1bcb68066cfceaf",
+    "scripts/world-benchmark-probe.cjs": "d00a727e2f87c1710fc03da1f4638f591fac2d6967179d27d780f33806e6fe6b",
+    "scripts/world-benchmark-stages.cjs": "d8d1b93f8577f52a51d0c18fc0e4e9b545bff823179fa16c6b8d06c67cb9f117",
+    "scripts/world-table-benchmark.cjs": "46898d1140afbea9a24fcda456c11aff0cc53131f58cc417e5d07917b5e5a530"
+  },
+  "method": {
+    "profile": "limit",
+    "samples": 5,
+    "stages": "off",
+    "fog": "on",
+    "ref": null,
+    "transport": "public loopback HTTP without DM cookie; includes download and JSON parse",
+    "cache": "one unrecorded warm-up per query; warm OS cache; no forced server GC",
+    "queries": {
+      "near": [
+        "0,0"
+      ],
+      "adjacent": [
+        "0,0",
+        "1,0",
+        "0,-1",
+        "1,-1"
+      ],
+      "distant": [
+        "-16,32",
+        "-15,32",
+        "-16,33",
+        "-15,33"
+      ],
+      "live": [
+        "31,-2"
+      ],
+      "empty": [
+        "100,100"
+      ]
+    },
+    "stageTiming": "optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times",
+    "io": "readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/mapState selfMs",
+    "response": "response.json includes Express serialization, headers and send; not pure JSON.stringify",
+    "remainder": "server time outside exclusive spans; independent medians need not sum",
+    "fixture": "dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign",
+    "exclusions": "no browser/FPS, Wi-Fi, Windows or physical devices; diagnostic overhead is not production timing"
+  },
+  "status": "verified",
+  "dimensions": {
+    "plots": 125,
+    "tiles": 150000,
+    "objects": 3000,
+    "chunks": 599,
+    "memoryChunks": 600,
+    "memoryCells": 150002,
+    "memoryObjects": 2997,
+    "publishedManifestBytes": 392532,
+    "positionsBytes": 4022228
+  },
+  "responseSha256": {
+    "near": "705029c1d6d7400c28e69051b44a0bda7e91ac80620d83d5d60735f2f4a18832",
+    "adjacent": "4076eb4ecd82ec363d5732229b6c31ced902de189f267e072ca85913a9320fc9",
+    "distant": "81bc7d7df888e460fb602d4f60fc10a84a56fdc55962bb1edc4ec5517dc0458d",
+    "live": "87bbcd27fe04c033620421815c948cd951b25315a62d4d24fa6fd60d8481354f",
+    "empty": "7308c0fe830d6b23c5558c07e16dfa85a5f03159e4c7ce729b6dc502dbf6bac2"
+  },
+  "rows": [
+    {
+      "type": "world-benchmark",
+      "id": "table-6",
+      "status": 200,
+      "serverMs": 22.853302999999983,
+      "cpuMs": 24.912,
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 4417091,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01611499999995658
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.19982099999998582
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.008723000000031789
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.9103450000000066
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.016855000000020937
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23010312,
+      "heapAfterBytes": 41849520,
+      "rssBytes": 143896576,
+      "processPeakRssBytes": 148160512,
+      "operation": "near",
+      "wallMs": 24.062613000000056,
+      "responseBytes": 4994,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-7",
+      "status": 200,
+      "serverMs": 29.372224000000017,
+      "cpuMs": 50.481,
+      "reads": 6,
+      "uniqueReadFiles": 6,
+      "readBytes": 4419152,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.013371000000006461
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.3169470000000274
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.021842999999989843
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.775136000000032
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01992000000001326
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41858680,
+      "heapAfterBytes": 60708968,
+      "rssBytes": 151236608,
+      "processPeakRssBytes": 151236608,
+      "operation": "adjacent",
+      "wallMs": 30.706661999999596,
+      "responseBytes": 9362,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-8",
+      "status": 200,
+      "serverMs": 26.014329999999973,
+      "cpuMs": 31.694,
+      "reads": 8,
+      "uniqueReadFiles": 8,
+      "readBytes": 4471320,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011657000000013795
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2970470000000205
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 56445,
+          "readMs": 0.04061200000006693
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.170466000000033
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.018376999999986765
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23238944,
+      "heapAfterBytes": 43985952,
+      "rssBytes": 146649088,
+      "processPeakRssBytes": 151236608,
+      "operation": "distant",
+      "wallMs": 27.986949000000095,
+      "responseBytes": 101471,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-9",
+      "status": 200,
+      "serverMs": 34.35774700000002,
+      "cpuMs": 51.114,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.014461999999980435
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.29406300000005103
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 13.298072999999931
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.022874000000001615
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 43867976,
+      "heapAfterBytes": 62485512,
+      "rssBytes": 155168768,
+      "processPeakRssBytes": 155168768,
+      "operation": "live",
+      "wallMs": 35.91037300000062,
+      "responseBytes": 386,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-10",
+      "status": 200,
+      "serverMs": 21.526976999999988,
+      "cpuMs": 22.312,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011597999999935382
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.26026200000001154
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.947716000000014
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.016024000000015803
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23727256,
+      "heapAfterBytes": 41511784,
+      "rssBytes": 146673664,
+      "processPeakRssBytes": 155168768,
+      "operation": "empty",
+      "wallMs": 22.57515500000045,
+      "responseBytes": 232,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-11",
+      "status": 200,
+      "serverMs": 39.602179999999976,
+      "cpuMs": 39.56,
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 4417091,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010346000000026834
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.218578999999977
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.010917000000063126
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 19.950905000000034
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.020531000000005406
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41520552,
+      "heapAfterBytes": 59763808,
+      "rssBytes": 155324416,
+      "processPeakRssBytes": 155324416,
+      "operation": "near",
+      "wallMs": 40.4755439999999,
+      "responseBytes": 4994,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-12",
+      "status": 200,
+      "serverMs": 22.134670999999912,
+      "cpuMs": 23.45,
+      "reads": 6,
+      "uniqueReadFiles": 6,
+      "readBytes": 4419152,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011456999999950312
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.3097569999999905
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.04583900000000085
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.8012860000000046
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.016525000000001455
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23416768,
+      "heapAfterBytes": 41861936,
+      "rssBytes": 146849792,
+      "processPeakRssBytes": 155455488,
+      "operation": "adjacent",
+      "wallMs": 22.954985000000306,
+      "responseBytes": 9362,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-13",
+      "status": 200,
+      "serverMs": 22.64067399999999,
+      "cpuMs": 22.818,
+      "reads": 8,
+      "uniqueReadFiles": 8,
+      "readBytes": 4471320,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011777000000051885
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.22345599999994192
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 56445,
+          "readMs": 0.042983999999933076
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.7930790000000343
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.017305999999962296
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41870896,
+      "heapAfterBytes": 61069960,
+      "rssBytes": 151568384,
+      "processPeakRssBytes": 155455488,
+      "operation": "distant",
+      "wallMs": 24.117565999999897,
+      "responseBytes": 101471,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-14",
+      "status": 200,
+      "serverMs": 20.407421,
+      "cpuMs": 20.674,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011536999999975706
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.21787799999992785
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.730664000000047
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01694499999996424
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23409120,
+      "heapAfterBytes": 41560816,
+      "rssBytes": 146927616,
+      "processPeakRssBytes": 155455488,
+      "operation": "live",
+      "wallMs": 21.28367999999955,
+      "responseBytes": 386,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-15",
+      "status": 200,
+      "serverMs": 20.47270000000003,
+      "cpuMs": 20.431,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010806000000002314
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.20021100000008119
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.8063589999999294
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.021702000000004773
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41569592,
+      "heapAfterBytes": 59722152,
+      "rssBytes": 151515136,
+      "processPeakRssBytes": 155455488,
+      "operation": "empty",
+      "wallMs": 21.370952000000216,
+      "responseBytes": 232,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-16",
+      "status": 200,
+      "serverMs": 20.614312999999925,
+      "cpuMs": 20.803,
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 4417091,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009663999999929729
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.1703659999999445
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.008392999999955464
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.721911000000091
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.05772699999999986
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23348280,
+      "heapAfterBytes": 41611912,
+      "rssBytes": 146927616,
+      "processPeakRssBytes": 155455488,
+      "operation": "near",
+      "wallMs": 21.779837000000043,
+      "responseBytes": 4994,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-17",
+      "status": 200,
+      "serverMs": 20.691028999999958,
+      "cpuMs": 20.653,
+      "reads": 6,
+      "uniqueReadFiles": 6,
+      "readBytes": 4419152,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009925000000066575
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2323189999999613
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.011797999999998865
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.9038850000000593
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.018087000000036824
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41620880,
+      "heapAfterBytes": 60033368,
+      "rssBytes": 151515136,
+      "processPeakRssBytes": 155455488,
+      "operation": "adjacent",
+      "wallMs": 21.80069900000035,
+      "responseBytes": 9362,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-18",
+      "status": 200,
+      "serverMs": 21.972917999999936,
+      "cpuMs": 21.902,
+      "reads": 8,
+      "uniqueReadFiles": 8,
+      "readBytes": 4471320,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009974999999940337
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.17779800000005253
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 56445,
+          "readMs": 0.035822999999936656
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.692207000000053
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.016235000000051514
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23350008,
+      "heapAfterBytes": 42566592,
+      "rssBytes": 146956288,
+      "processPeakRssBytes": 155455488,
+      "operation": "distant",
+      "wallMs": 23.304070999999567,
+      "responseBytes": 101471,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-19",
+      "status": 200,
+      "serverMs": 21.24103600000001,
+      "cpuMs": 21.201,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01020600000003924
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2487540000000763
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.3316489999999703
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.019198999999957778
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 42575544,
+      "heapAfterBytes": 60692440,
+      "rssBytes": 151543808,
+      "processPeakRssBytes": 155455488,
+      "operation": "live",
+      "wallMs": 22.166199000000233,
+      "responseBytes": 386,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-20",
+      "status": 200,
+      "serverMs": 20.465669999999932,
+      "cpuMs": 21.928,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01147800000001098
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.23000600000000304
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.781541000000061
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01705600000002505
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23350424,
+      "heapAfterBytes": 41539224,
+      "rssBytes": 146984960,
+      "processPeakRssBytes": 155455488,
+      "operation": "empty",
+      "wallMs": 21.192273999999998,
+      "responseBytes": 232,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-21",
+      "status": 200,
+      "serverMs": 20.583215999999993,
+      "cpuMs": 20.548,
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 4417091,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009404000000017732
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.19674600000007558
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.009823999999980515
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.803254000000038
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.015984000000003107
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41548032,
+      "heapAfterBytes": 59827872,
+      "rssBytes": 151572480,
+      "processPeakRssBytes": 155455488,
+      "operation": "near",
+      "wallMs": 21.544984000000113,
+      "responseBytes": 4994,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-22",
+      "status": 200,
+      "serverMs": 20.27020600000003,
+      "cpuMs": 20.422,
+      "reads": 6,
+      "uniqueReadFiles": 6,
+      "readBytes": 4419152,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009694999999965148
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.18866399999990335
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.015653999999926782
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.7686220000000503
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.012938999999960288
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23366848,
+      "heapAfterBytes": 41813312,
+      "rssBytes": 146984960,
+      "processPeakRssBytes": 155455488,
+      "operation": "adjacent",
+      "wallMs": 21.130129999999554,
+      "responseBytes": 9362,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-23",
+      "status": 200,
+      "serverMs": 22.118345999999974,
+      "cpuMs": 22.615,
+      "reads": 8,
+      "uniqueReadFiles": 8,
+      "readBytes": 4471320,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009844999999927495
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.21327099999996335
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 56445,
+          "readMs": 0.04292499999985466
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.8333989999999858
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01603499999998803
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41822288,
+      "heapAfterBytes": 60994136,
+      "rssBytes": 151572480,
+      "processPeakRssBytes": 155455488,
+      "operation": "distant",
+      "wallMs": 23.606646000000183,
+      "responseBytes": 101471,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-24",
+      "status": 200,
+      "serverMs": 20.549556999999936,
+      "cpuMs": 21.476,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010335999999938394
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.17834800000002815
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.7527380000000221
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01770699999997305
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 23379208,
+      "heapAfterBytes": 41528664,
+      "rssBytes": 147013632,
+      "processPeakRssBytes": 155455488,
+      "operation": "live",
+      "wallMs": 21.5356299999994,
+      "responseBytes": 386,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-25",
+      "status": 200,
+      "serverMs": 20.35626400000001,
+      "cpuMs": 20.319,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010464999999953761
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.21652599999993072
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.8859579999999596
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.016043999999965308
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41537472,
+      "heapAfterBytes": 59687376,
+      "rssBytes": 151601152,
+      "processPeakRssBytes": 155455488,
+      "operation": "empty",
+      "wallMs": 21.15697,
+      "responseBytes": 232,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-26",
+      "status": 200,
+      "serverMs": 27.754929999999945,
+      "cpuMs": 28.635,
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 4417091,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009765000000015789
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2218040000000201
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.008382999999980711
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.8941859999999906
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.021452000000067528
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 59696184,
+      "heapAfterBytes": 41551296,
+      "rssBytes": 148992000,
+      "processPeakRssBytes": 158416896,
+      "operation": "near",
+      "wallMs": 28.57793800000036,
+      "responseBytes": 4994,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-27",
+      "status": 200,
+      "serverMs": 20.538599999999974,
+      "cpuMs": 20.506,
+      "reads": 6,
+      "uniqueReadFiles": 6,
+      "readBytes": 4419152,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009413999999992484
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.22059200000001056
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.012218000000075335
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.9106749999999693
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.01592399999992722
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 41561568,
+      "heapAfterBytes": 59994368,
+      "rssBytes": 153579520,
+      "processPeakRssBytes": 158416896,
+      "operation": "adjacent",
+      "wallMs": 21.52036700000008,
+      "responseBytes": 9362,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-28",
+      "status": 200,
+      "serverMs": 22.849217000000067,
+      "cpuMs": 22.804,
+      "reads": 8,
+      "uniqueReadFiles": 8,
+      "readBytes": 4471320,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009625000000028194
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2647379999999657
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 56445,
+          "readMs": 0.04258400000014717
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.0217529999999897
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.017546000000038475
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 27419976,
+      "heapAfterBytes": 46636688,
+      "rssBytes": 153452544,
+      "processPeakRssBytes": 158416896,
+      "operation": "distant",
+      "wallMs": 24.316635000000133,
+      "responseBytes": 101471,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-29",
+      "status": 200,
+      "serverMs": 20.911922000000004,
+      "cpuMs": 20.871,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01065599999992628
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.2361150000001544
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 2.2221639999997933
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.018047000000024127
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 46645640,
+      "heapAfterBytes": 64762784,
+      "rssBytes": 158040064,
+      "processPeakRssBytes": 158416896,
+      "operation": "live",
+      "wallMs": 21.933649999999943,
+      "responseBytes": 386,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-30",
+      "status": 200,
+      "serverMs": 20.01772600000004,
+      "cpuMs": 20.143,
+      "reads": 4,
+      "uniqueReadFiles": 4,
+      "readBytes": 4414875,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009583999999904336
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392532,
+          "readMs": 0.17696699999987686
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4022228,
+          "readMs": 1.796734000000015
+        },
+        "other": {
+          "calls": 1,
+          "bytes": 55,
+          "readMs": 0.015644000000065716
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 27387984,
+      "heapAfterBytes": 45554360,
+      "rssBytes": 153505792,
+      "processPeakRssBytes": 158416896,
+      "operation": "empty",
+      "wallMs": 20.780953999999838,
+      "responseBytes": 232,
+      "requestBytes": 0,
+      "serializeMs": 0
+    }
+  ],
+  "summary": {
+    "near": {
+      "samples": 5,
+      "wallMs": {
+        "min": 21.544984000000113,
+        "median": 24.062613000000056,
+        "p95": 40.4755439999999,
+        "max": 40.4755439999999
+      },
+      "serverMs": {
+        "min": 20.583215999999993,
+        "median": 22.853302999999983,
+        "p95": 39.602179999999976,
+        "max": 39.602179999999976
+      },
+      "cpuMs": {
+        "min": 20.548,
+        "median": 24.912,
+        "p95": 39.56,
+        "max": 39.56
+      },
+      "responseBytes": {
+        "min": 4994,
+        "median": 4994,
+        "p95": 4994,
+        "max": 4994
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 5,
+        "median": 5,
+        "p95": 5,
+        "max": 5
+      },
+      "readBytes": {
+        "min": 4417091,
+        "median": 4417091,
+        "p95": 4417091,
+        "max": 4417091
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 41551296,
+        "median": 41849520,
+        "p95": 59827872,
+        "max": 59827872
+      },
+      "rssBytes": {
+        "min": 143896576,
+        "median": 148992000,
+        "p95": 155324416,
+        "max": 155324416
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.009404000000017732,
+            "median": 0.009765000000015789,
+            "p95": 0.01611499999995658,
+            "max": 0.01611499999995658
+          }
+        },
+        "publishedManifest": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 392532,
+            "median": 392532,
+            "p95": 392532,
+            "max": 392532
+          },
+          "readMs": {
+            "min": 0.1703659999999445,
+            "median": 0.19982099999998582,
+            "p95": 0.2218040000000201,
+            "max": 0.2218040000000201
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 2216,
+            "median": 2216,
+            "p95": 2216,
+            "max": 2216
+          },
+          "readMs": {
+            "min": 0.008382999999980711,
+            "median": 0.008723000000031789,
+            "p95": 0.010917000000063126,
+            "max": 0.010917000000063126
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4022228,
+            "median": 4022228,
+            "p95": 4022228,
+            "max": 4022228
+          },
+          "readMs": {
+            "min": 1.721911000000091,
+            "median": 1.9103450000000066,
+            "p95": 19.950905000000034,
+            "max": 19.950905000000034
+          }
+        },
+        "other": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 55,
+            "median": 55,
+            "p95": 55,
+            "max": 55
+          },
+          "readMs": {
+            "min": 0.015984000000003107,
+            "median": 0.020531000000005406,
+            "p95": 0.05772699999999986,
+            "max": 0.05772699999999986
+          }
+        }
+      }
+    },
+    "adjacent": {
+      "samples": 5,
+      "wallMs": {
+        "min": 21.130129999999554,
+        "median": 21.80069900000035,
+        "p95": 30.706661999999596,
+        "max": 30.706661999999596
+      },
+      "serverMs": {
+        "min": 20.27020600000003,
+        "median": 20.691028999999958,
+        "p95": 29.372224000000017,
+        "max": 29.372224000000017
+      },
+      "cpuMs": {
+        "min": 20.422,
+        "median": 20.653,
+        "p95": 50.481,
+        "max": 50.481
+      },
+      "responseBytes": {
+        "min": 9362,
+        "median": 9362,
+        "p95": 9362,
+        "max": 9362
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 6,
+        "median": 6,
+        "p95": 6,
+        "max": 6
+      },
+      "readBytes": {
+        "min": 4419152,
+        "median": 4419152,
+        "p95": 4419152,
+        "max": 4419152
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 41813312,
+        "median": 59994368,
+        "p95": 60708968,
+        "max": 60708968
+      },
+      "rssBytes": {
+        "min": 146849792,
+        "median": 151236608,
+        "p95": 153579520,
+        "max": 153579520
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.009413999999992484,
+            "median": 0.009925000000066575,
+            "p95": 0.013371000000006461,
+            "max": 0.013371000000006461
+          }
+        },
+        "publishedManifest": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 392532,
+            "median": 392532,
+            "p95": 392532,
+            "max": 392532
+          },
+          "readMs": {
+            "min": 0.18866399999990335,
+            "median": 0.2323189999999613,
+            "p95": 0.3169470000000274,
+            "max": 0.3169470000000274
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 2,
+            "median": 2,
+            "p95": 2,
+            "max": 2
+          },
+          "bytes": {
+            "min": 4277,
+            "median": 4277,
+            "p95": 4277,
+            "max": 4277
+          },
+          "readMs": {
+            "min": 0.011797999999998865,
+            "median": 0.015653999999926782,
+            "p95": 0.04583900000000085,
+            "max": 0.04583900000000085
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4022228,
+            "median": 4022228,
+            "p95": 4022228,
+            "max": 4022228
+          },
+          "readMs": {
+            "min": 1.7686220000000503,
+            "median": 1.9106749999999693,
+            "p95": 2.8012860000000046,
+            "max": 2.8012860000000046
+          }
+        },
+        "other": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 55,
+            "median": 55,
+            "p95": 55,
+            "max": 55
+          },
+          "readMs": {
+            "min": 0.012938999999960288,
+            "median": 0.016525000000001455,
+            "p95": 0.01992000000001326,
+            "max": 0.01992000000001326
+          }
+        }
+      }
+    },
+    "distant": {
+      "samples": 5,
+      "wallMs": {
+        "min": 23.304070999999567,
+        "median": 24.117565999999897,
+        "p95": 27.986949000000095,
+        "max": 27.986949000000095
+      },
+      "serverMs": {
+        "min": 21.972917999999936,
+        "median": 22.64067399999999,
+        "p95": 26.014329999999973,
+        "max": 26.014329999999973
+      },
+      "cpuMs": {
+        "min": 21.902,
+        "median": 22.804,
+        "p95": 31.694,
+        "max": 31.694
+      },
+      "responseBytes": {
+        "min": 101471,
+        "median": 101471,
+        "p95": 101471,
+        "max": 101471
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 8,
+        "median": 8,
+        "p95": 8,
+        "max": 8
+      },
+      "readBytes": {
+        "min": 4471320,
+        "median": 4471320,
+        "p95": 4471320,
+        "max": 4471320
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 42566592,
+        "median": 46636688,
+        "p95": 61069960,
+        "max": 61069960
+      },
+      "rssBytes": {
+        "min": 146649088,
+        "median": 151568384,
+        "p95": 153452544,
+        "max": 153452544
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.009625000000028194,
+            "median": 0.009974999999940337,
+            "p95": 0.011777000000051885,
+            "max": 0.011777000000051885
+          }
+        },
+        "publishedManifest": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 392532,
+            "median": 392532,
+            "p95": 392532,
+            "max": 392532
+          },
+          "readMs": {
+            "min": 0.17779800000005253,
+            "median": 0.22345599999994192,
+            "p95": 0.2970470000000205,
+            "max": 0.2970470000000205
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 4,
+            "median": 4,
+            "p95": 4,
+            "max": 4
+          },
+          "bytes": {
+            "min": 56445,
+            "median": 56445,
+            "p95": 56445,
+            "max": 56445
+          },
+          "readMs": {
+            "min": 0.035822999999936656,
+            "median": 0.04258400000014717,
+            "p95": 0.042983999999933076,
+            "max": 0.042983999999933076
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4022228,
+            "median": 4022228,
+            "p95": 4022228,
+            "max": 4022228
+          },
+          "readMs": {
+            "min": 1.692207000000053,
+            "median": 1.8333989999999858,
+            "p95": 2.170466000000033,
+            "max": 2.170466000000033
+          }
+        },
+        "other": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 55,
+            "median": 55,
+            "p95": 55,
+            "max": 55
+          },
+          "readMs": {
+            "min": 0.01603499999998803,
+            "median": 0.017305999999962296,
+            "p95": 0.018376999999986765,
+            "max": 0.018376999999986765
+          }
+        }
+      }
+    },
+    "live": {
+      "samples": 5,
+      "wallMs": {
+        "min": 21.28367999999955,
+        "median": 21.933649999999943,
+        "p95": 35.91037300000062,
+        "max": 35.91037300000062
+      },
+      "serverMs": {
+        "min": 20.407421,
+        "median": 20.911922000000004,
+        "p95": 34.35774700000002,
+        "max": 34.35774700000002
+      },
+      "cpuMs": {
+        "min": 20.674,
+        "median": 21.201,
+        "p95": 51.114,
+        "max": 51.114
+      },
+      "responseBytes": {
+        "min": 386,
+        "median": 386,
+        "p95": 386,
+        "max": 386
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 4,
+        "median": 4,
+        "p95": 4,
+        "max": 4
+      },
+      "readBytes": {
+        "min": 4414875,
+        "median": 4414875,
+        "p95": 4414875,
+        "max": 4414875
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 41528664,
+        "median": 60692440,
+        "p95": 64762784,
+        "max": 64762784
+      },
+      "rssBytes": {
+        "min": 146927616,
+        "median": 151543808,
+        "p95": 158040064,
+        "max": 158040064
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.01020600000003924,
+            "median": 0.01065599999992628,
+            "p95": 0.014461999999980435,
+            "max": 0.014461999999980435
+          }
+        },
+        "publishedManifest": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 392532,
+            "median": 392532,
+            "p95": 392532,
+            "max": 392532
+          },
+          "readMs": {
+            "min": 0.17834800000002815,
+            "median": 0.2361150000001544,
+            "p95": 0.29406300000005103,
+            "max": 0.29406300000005103
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4022228,
+            "median": 4022228,
+            "p95": 4022228,
+            "max": 4022228
+          },
+          "readMs": {
+            "min": 1.730664000000047,
+            "median": 2.2221639999997933,
+            "p95": 13.298072999999931,
+            "max": 13.298072999999931
+          }
+        },
+        "other": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 55,
+            "median": 55,
+            "p95": 55,
+            "max": 55
+          },
+          "readMs": {
+            "min": 0.01694499999996424,
+            "median": 0.018047000000024127,
+            "p95": 0.022874000000001615,
+            "max": 0.022874000000001615
+          }
+        }
+      }
+    },
+    "empty": {
+      "samples": 5,
+      "wallMs": {
+        "min": 20.780953999999838,
+        "median": 21.192273999999998,
+        "p95": 22.57515500000045,
+        "max": 22.57515500000045
+      },
+      "serverMs": {
+        "min": 20.01772600000004,
+        "median": 20.465669999999932,
+        "p95": 21.526976999999988,
+        "max": 21.526976999999988
+      },
+      "cpuMs": {
+        "min": 20.143,
+        "median": 20.431,
+        "p95": 22.312,
+        "max": 22.312
+      },
+      "responseBytes": {
+        "min": 232,
+        "median": 232,
+        "p95": 232,
+        "max": 232
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 4,
+        "median": 4,
+        "p95": 4,
+        "max": 4
+      },
+      "readBytes": {
+        "min": 4414875,
+        "median": 4414875,
+        "p95": 4414875,
+        "max": 4414875
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 41511784,
+        "median": 45554360,
+        "p95": 59722152,
+        "max": 59722152
+      },
+      "rssBytes": {
+        "min": 146673664,
+        "median": 151515136,
+        "p95": 153505792,
+        "max": 153505792
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.009583999999904336,
+            "median": 0.010806000000002314,
+            "p95": 0.011597999999935382,
+            "max": 0.011597999999935382
+          }
+        },
+        "publishedManifest": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 392532,
+            "median": 392532,
+            "p95": 392532,
+            "max": 392532
+          },
+          "readMs": {
+            "min": 0.17696699999987686,
+            "median": 0.21652599999993072,
+            "p95": 0.26026200000001154,
+            "max": 0.26026200000001154
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4022228,
+            "median": 4022228,
+            "p95": 4022228,
+            "max": 4022228
+          },
+          "readMs": {
+            "min": 1.781541000000061,
+            "median": 1.8063589999999294,
+            "p95": 2.947716000000014,
+            "max": 2.947716000000014
+          }
+        },
+        "other": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 55,
+            "median": 55,
+            "p95": 55,
+            "max": 55
+          },
+          "readMs": {
+            "min": 0.015644000000065716,
+            "median": 0.016043999999965308,
+            "p95": 0.021702000000004773,
+            "max": 0.021702000000004773
+          }
+        }
+      }
+    }
+  }
+}

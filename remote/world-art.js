@@ -4,7 +4,7 @@
   const { get, terrain, props } = WorldMap;
   const sides = [[0,-1],[1,0],[0,1],[-1,0]];
   const corners = [[-1,-1],[1,-1],[1,1],[-1,1]];
-  const colors = { grass:'#788653', dirt:'#9c7955', stone:'#858279', wood:'#98704c', water:'#477f89', forest:'#566748' };
+  const colors = { grass: '#848d62', dirt: '#aa8b60', stone: '#8a8577', wood: '#98704c', water: '#426c71' };
   const cache = new Map();
   function ellipse(ctx, x, y, rx, ry, color) {
     ctx.fillStyle = color;
@@ -29,25 +29,40 @@
     for (let i = 0; i < count; i++) ellipse(ctx, rnd(), rnd(), .01 + rnd() * .045, .007 + rnd() * .022, colors[i % colors.length]);
   }
   function path(ctx, mask) {
+    const connections = sides.filter((_, index) => mask & (1 << index));
+    const [first, second] = connections;
+    const bend = connections.length === 2 && first[0] + second[0] !== 0;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    for (const [width, color] of [[.61,'#666e47'],[.55,'#9f835c'],[.43,'#b2956d']]) {
+    for (const [width, color] of [[.82, '#777651'], [.74, '#a48a64'], [.63, '#c3a779']]) {
       ctx.lineWidth = width;
       ctx.strokeStyle = color;
       ctx.beginPath();
-      sides.forEach(([dx,dy], i) => {
-        if (!(mask & (1 << i))) return;
-        ctx.moveTo(.5 + dx * .53, .5 + dy * .53);
-        ctx.quadraticCurveTo(.5 + dx * .22 - dy * .045, .5 + dy * .22 + dx * .045, .5, .5);
-      });
+      if (bend) {
+        ctx.moveTo(.5 + first[0] * .52, .5 + first[1] * .52);
+        ctx.quadraticCurveTo(.5, .5, .5 + second[0] * .52, .5 + second[1] * .52);
+      } else {
+        for (const [dx, dy] of connections) {
+          ctx.moveTo(.5 + dx * .52, .5 + dy * .52);
+          ctx.lineTo(.5, .5);
+        }
+      }
       ctx.stroke();
-      ellipse(ctx,.5,.5,width / 2,width / 2,color);
+      if (!connections.length) ellipse(ctx, .5, .5, width / 2, width / 2, color);
+      // Complete inside corners of a wide road so the center reads as one dirt surface.
+      for (const [i, [dx, dy]] of corners.entries()) {
+        const horizontal = dx > 0 ? 2 : 8, vertical = dy > 0 ? 4 : 1;
+        if ((mask & horizontal) && (mask & vertical) && (mask & (1 << (i + 4)))) {
+          ctx.fillStyle = color;
+          ctx.fillRect(dx > 0 ? .498 : 0, dy > 0 ? .498 : 0, .502, .502);
+        }
+      }
     }
   }
   const surrounding = [...sides, ...corners];
-  const sand = [144,134,103];
-  const shallow = [104,151,147];
-  const baseMaterial = type => ['forest','denseForest','path'].includes(type) ? 'grass' : type;
+  const sand = [173, 148, 104];
+  const shallow = [110, 150, 138];
+  const baseMaterial = type => ['forest','denseForest','woodland','path'].includes(type) ? 'grass' : type;
   function smooth(x) {
     x = Math.max(0, Math.min(1, x));
     return x*x*(3-2*x);
@@ -87,14 +102,18 @@
       const round=Math.max(0,.18-Math.abs(edgeX-edgeY));
       const roundedEdge=Math.min(edgeX,edgeY)-round*round/.72;
       const depth=Math.min(Math.sqrt(distance),roundedEdge)+ripple;
-      const wet=smooth((depth-.02)/.17), deep=smooth((depth-.11)/.21);
+      const wet = smooth((depth - .025) / .13), deep = smooth((depth - .11) / .22);
+      const foam = Math.max(0, 1 - Math.abs(depth - .14) / .023) * .16;
       const offset=(row*size+col)*4;
       for(let i=0;i<3;i++) {
         const shore=land[i]/total*(1-wet)+shallow[i]*wet;
-        image.data[offset+i]=shore*(1-deep)+image.data[offset+i]*deep;
+        image.data[offset+i]=(shore*(1-deep)+image.data[offset+i]*deep)*(1-foam)+197*foam;
       }
     }
-    ctx.putImageData(image,0,0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.putImageData(image, 0, 0);
+    ctx.restore();
   }
   function blendLand(ctx, type, neighbors) {
     const own = baseMaterial(type);
@@ -124,7 +143,10 @@
       const index=(row*size+col)*4;
       for(let c=0;c<3;c++) image.data[index+c]=image.data[index+c]*(1-blend)+mixed[c]/total*blend;
     }
-    ctx.putImageData(image,0,0);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.putImageData(image, 0, 0);
+    ctx.restore();
   }
   function leaf(ctx, x, y, angle, length, color) {
     ctx.save();
@@ -162,34 +184,230 @@
     }
     ctx.restore();
   }
-  function roof(ctx, width, height, tavern) {
-    const w=width/2, h=height/2;
-    polygon(ctx,[[-w,-h+.06],[w-.12,-h],[w,h-.08],[-w+.08,h]],'#48382d');
-    polygon(ctx,[[-w+.08,-h+.14],[w-.15,-h+.08],[w-.06,-.08],[-w+.06,-.08]],tavern?'#9e6d50':'#827b59');
-    polygon(ctx,[[-w+.06,-.08],[w-.06,-.08],[w-.13,h-.14],[-w+.14,h-.09]],tavern?'#76513f':'#646046');
-    ctx.strokeStyle='#45382b77';
-    ctx.lineWidth=.023;
-    for(let y=-h+.23, row=0;y<h-.11;y+=.17,row++) {
-      ctx.beginPath();
-      ctx.moveTo(-w+.11,y);
-      ctx.lineTo(w-.12,y+.018);
-      for(let x=-w+.24+(row%2)*.13;x<w-.15;x+=.29) {
-        ctx.moveTo(x,y);
-        ctx.lineTo(x+.015,y-.13);
-      }
+  const crowns = new Map();
+  const crownPalettes = [
+    ['#354333', '#586744', '#788554', '#a6a870'],
+    ['#384535', '#626d44', '#89935d', '#b0ad76'],
+    ['#344538', '#526c50', '#718b64', '#a3ad7c'],
+    ['#453f2b', '#766d41', '#958751', '#bbaa70'],
+  ];
+
+  function crownShape(ctx, x, y, radius, seed, fill, outline) {
+    const rnd = random(seed);
+    const points = Array.from({ length: 12 }, (_, index) => {
+      const angle = index * Math.PI / 6;
+      const edge = radius * (.81 + rnd() * .24);
+      return [x + Math.cos(angle) * edge, y + Math.sin(angle) * edge * .89];
+    });
+    const [firstX, firstY] = points[0], [lastX, lastY] = points.at(-1);
+    ctx.beginPath();
+    ctx.moveTo((firstX + lastX) / 2, (firstY + lastY) / 2);
+    for (const [index, [px, py]] of points.entries()) {
+      const [nx, ny] = points[(index + 1) % points.length];
+      ctx.quadraticCurveTo(px, py, (px + nx) / 2, (py + ny) / 2);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (outline) {
+      ctx.lineWidth = .014;
+      ctx.strokeStyle = outline;
       ctx.stroke();
     }
-    polygon(ctx,[[-w+.03,-.11],[w-.05,-.13],[w-.08,.01],[-w+.09,.02]],tavern?'#c08e66':'#a79b70');
-    ctx.fillStyle='#49433a';ctx.fillRect(w*.44,-h*.63,.39,.48);
-    ctx.fillStyle='#969184';ctx.fillRect(w*.44,-h*.63,.33,.40);
-    ctx.fillStyle='#423e36';ctx.fillRect(w*.44+.07,-h*.63+.07,.19,.21);
-    polygon(ctx,[[-.39,h-.16],[.39,h-.16],[.49,h+.18],[-.49,h+.18]],'#7c654c');
-    ctx.fillStyle='#b29973';ctx.fillRect(-.41,h+.02,.82,.07);
-    if(tavern) {
-      polygon(ctx,[[.55,h-.37],[1.06,h-.41],[1.08,h-.16],[.56,h-.11]],'#d2a061');
-      ctx.fillStyle='#654931';ctx.fillRect(.65,h-.29,.30,.045);
+  }
+
+  function paintCrown(ctx, prop) {
+    const frame = WorldMap.crownFrame(prop), { variant } = frame;
+    const key = prop.kind + variant;
+    let sprite = crowns.get(key);
+    if (!sprite) {
+      sprite = document.createElement('canvas');
+      sprite.width = sprite.height = 192;
+      const art = sprite.getContext('2d');
+      art.setTransform(80, 0, 0, 80, 96, 88);
+      const shrub = prop.kind === 'bush';
+      const rnd = random(variant * 71 + (shrub ? 29 : 0));
+      const radius = (shrub ? .31 : .67) + rnd() * (shrub ? .15 : .21);
+      const palette = crownPalettes[(variant + (shrub ? 1 : 0)) % crownPalettes.length];
+
+      art.shadowColor = '#232d2266';
+      art.shadowBlur = 8;
+      ellipse(art, radius * .31, radius * .42, radius * .95, radius * .65, '#232d2255');
+      art.shadowBlur = 0;
+      if (!shrub) ellipse(art, .02, radius * .71, .05, .10, '#554433');
+      crownShape(art, 0, 0, radius, variant, palette[0], '#303b30');
+      const lobes = shrub ? 4 : 6;
+      for (let i = 0; i < lobes; i++) {
+        const angle = i * Math.PI * 2 / lobes + rnd() * .47;
+        const x = Math.cos(angle) * radius * .42, y = Math.sin(angle) * radius * .37;
+        crownShape(art, x, y, radius * (.43 + rnd() * .20), variant * 17 + i,
+          palette[x + y < .05 ? 2 : 1], '#303b3055');
+      }
+      crownShape(art, -radius * .12, -radius * .14, radius * .53, variant + 37, palette[2], '#35433255');
+      for (let i = 0; i < 20; i++) {
+        const angle = rnd() * Math.PI * 2, distance = Math.sqrt(rnd()) * radius * .72;
+        const x = Math.cos(angle) * distance, y = Math.sin(angle) * distance * .89;
+        leaf(art, x, y, angle, radius * (.08 + rnd() * .15), x + y < 0 ? palette[3] : palette[1]);
+      }
+      crowns.set(key, sprite);
+    }
+    ctx.drawImage(sprite, frame.left, frame.top, frame.width, frame.height);
+  }
+
+  const roofSprites = new Map();
+  const roofColors = {
+    house: [
+      ['#746044', '#aa8955', '#c5a469', '#d6bb80'],
+      ['#615b4c', '#8c7e66', '#a7997e', '#c7b396'],
+      ['#70564a', '#9a7358', '#b88e6d', '#cca788'],
+    ],
+    tavern: [
+      ['#694537', '#995b43', '#b77554', '#cf936b'],
+      ['#684738', '#98674a', '#b9825c', '#cfa27a'],
+      ['#635044', '#926c56', '#ab8166', '#c39d78'],
+    ],
+    barn: [
+      ['#65543d', '#937548', '#ae905b', '#c1a773'],
+      ['#565343', '#7b7257', '#998a69', '#b2a17b'],
+      ['#64503d', '#937052', '#a98664', '#c0a07d'],
+    ],
+  };
+
+  function roofSlope(ctx, shape, w, from, to, palette, lit, rnd, kind) {
+    polygon(ctx, shape, palette[lit ? 2 : 1]);
+    ctx.save();
+    ctx.clip();
+    const step = kind === 'barn' ? .22 : .16;
+    for (let y = from, row = 0; y < to; y += step, row++) {
+      for (let x = -w - .30 + (row % 2) * .14; x < w; x += .29) {
+        const accent = rnd() < (lit ? .28 : .31);
+        const tone = palette[lit ? (accent ? 3 : 2) : (accent ? 0 : 1)];
+        ctx.globalAlpha = accent ? .60 : 1;
+        const drift = (rnd() - .5) * .044;
+        polygon(ctx, [[x, y], [x + .275, y + drift], [x + .283, y + step - .014],
+          [x + .037, y + step + drift]], tone);
+        ctx.globalAlpha = 1;
+        if (rnd() < .35) {
+          ctx.fillStyle = lit ? '#f2d59a40' : '#edc8872b';
+          ctx.fillRect(x + .045, y + .025, .11 + rnd() * .08, .016);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function paintBuilding(ctx, prop, width, height) {
+    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107)) >>> 0) % 3;
+    const northLit = prop.turn === 0 || prop.turn === 3;
+    const key = prop.kind + ':' + variant + ':' + northLit;
+    let sprite = roofSprites.get(key);
+    if (!sprite) {
+      const w = width / 2, h = height / 2;
+      const rnd = random(31 + variant * 89 + width * 17);
+      const palette = roofColors[prop.kind][variant];
+      const barn = prop.kind === 'barn';
+      sprite = document.createElement('canvas');
+      sprite.width = (width + .6) * 50;
+      sprite.height = (height + .6) * 50;
+      const art = sprite.getContext('2d');
+      art.setTransform(50, 0, 0, 50, sprite.width / 2, sprite.height / 2);
+      const left = -w + .07, right = w - .07, top = -h + .07, bottom = h - .24;
+      const ridge = -.1 + variant * .05;
+      polygon(art, [[left + .12, top + .12], [right - .09, top + .12], [right, h - .09], [left + .10, h - .03]], '#554237');
+      polygon(art, [[left + .17, bottom - .09], [right - .14, bottom - .08], [right - .16, h - .12], [left + .19, h - .10]], '#ab8d62');
+      polygon(art, [[left, top + .04], [right - .09, top], [right, bottom + .04],
+        [left + .08, bottom]], '#41382f');
+
+      roofSlope(art, [[left + .055, top + .082], [right - .12, top + .063],
+        [right - .058, ridge], [left + .086, ridge + .027]], w, top + .04, ridge + .035, palette, northLit, rnd, prop.kind);
+      roofSlope(art, [[left + .086, ridge + .022], [right - .058, ridge],
+        [right - .058, bottom - .019], [left + .121, bottom - .057]], w, ridge, bottom, palette, !northLit, rnd, prop.kind);
+      polygon(art, [[left + .027, ridge + .002], [right + .003, ridge - .026], [right + .002, ridge + .025],
+        [left + .037, ridge + .058]], palette[0]);
+      art.fillStyle = palette[3];
+      art.fillRect(left + .12, ridge + .013, width - .26, .025);
+
+      const doorWidth = barn ? .45 : .25;
+      art.fillStyle = '#483829';
+      art.fillRect(-doorWidth, bottom + .025, doorWidth * 2, .28);
+      art.fillStyle = '#866345';
+      art.fillRect(-doorWidth + .035, bottom + .053, doorWidth * 2 - .07, .18);
+      art.fillStyle = '#ba9b6d';
+      art.fillRect(-doorWidth - .07, h + .02, doorWidth * 2 + .14, .08);
+      if (!barn) {
+        const x = w * .46, y = top + .32;
+        art.fillStyle = '#403b35aa';
+        art.fillRect(x + .07, y + .11, .42, .41);
+        art.fillStyle = '#53483e';
+        art.fillRect(x, y, .39, .40);
+        art.fillStyle = '#a49a86';
+        art.fillRect(x + .027, y + .027, .33, .31);
+        art.fillStyle = '#504940';
+        art.fillRect(x + .085, y + .09, .22, .18);
+      }
+      if (prop.kind === 'tavern') {
+        art.fillStyle = '#544029';
+        art.fillRect(.55, bottom + .06, .47, .19);
+        art.fillStyle = '#d4ab5e';
+        art.fillRect(.59, bottom + .095, .38, .11);
+        ellipse(art, .78, bottom + .15, .055, .035, '#775535');
+      }
+      roofSprites.set(key, sprite);
+    }
+    ctx.drawImage(sprite, -(width + .6) / 2, -(height + .6) / 2, width + .6, height + .6);
+  }
+
+  function paintBridge(ctx, prop, width, height) {
+    const w = width / 2, h = height * .34;
+    const rnd = random((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107)) >>> 0);
+    // The walkable cell centers remain on the deck, with room for slender side rails.
+    // A four-by-two bridge reads as a narrow crossing rather than a solid wooden slab.
+    polygon(ctx, [[-w, -h + .025], [w, -h], [w, h - .02], [-w, h]], '#4f4134');
+    for (let x = -w + .025; x < w - .04; x += .18) {
+      const end = Math.min(w - .018, x + .168);
+      const drift = (rnd() - .5) * .018;
+      polygon(ctx, [[x, -h + .035 + drift], [end, -h + .03], [end, h - .03 + drift], [x, h - .035]],
+        ['#ab8960', '#b6966b', '#9b7b54'][Math.floor(rnd() * 3)]);
+      ctx.strokeStyle = '#e2bd7f54';
+      ctx.lineWidth = .012;
+      ctx.beginPath();
+      ctx.moveTo(x + .035, -h + .13);
+      ctx.quadraticCurveTo(x + .02, 0, x + .045, h - .14);
+      ctx.stroke();
+    }
+    for (const y of [-h - .055, h + .055]) {
+      ctx.fillStyle = '#3d352b55';
+      ctx.fillRect(-w + .06, y + .055, width - .12, .045);
+      for (const x of [-w + .10, -w / 3, w / 3, w - .10]) {
+        ctx.fillStyle = '#574634';
+        ctx.fillRect(x - .046, y - .075, .092, .15);
+        ctx.fillStyle = '#bc9e72';
+        ctx.fillRect(x - .032, y - .064, .064, .057);
+      }
+      ctx.fillStyle = '#654b34';
+      ctx.fillRect(-w + .06, y - .024, width - .12, .048);
+      ctx.fillStyle = '#c5a577';
+      ctx.fillRect(-w + .07, y - .024, width - .14, .016);
     }
   }
+
+  function meadow(ctx, seed, woodland) {
+    const rnd = random(seed * 157 + 37);
+    if (woodland) {
+      ctx.fillStyle = '#3e50382b';
+      ctx.fillRect(0, 0, 1, 1);
+    }
+    for (let i = 0; i < 8; i++) {
+      const x = rnd(), y = rnd();
+      ellipse(ctx, x, y, .035 + rnd() * .13, .025 + rnd() * .065, i % 3 ? '#4d633b20' : '#c7b77427');
+      for (let j = 0; j < 3; j++) {
+        leaf(ctx, x + j * .009, y, -2.1 + j * .45, .035 + rnd() * .047,
+          j === 0 ? '#526441a0' : '#aeb17b95');
+      }
+      if (i % 3 === 0) ellipse(ctx, x + .025, y - .01, .014, .011, woodland ? '#ae8c57a0' : '#cec49199');
+    }
+  }
+
   function tile(type, mask, neighbors, seed) {
     const key = [type,mask,neighbors?.join(','),seed].join(':');
     if (cache.has(key)) return cache.get(key);
@@ -198,20 +416,20 @@
     const ctx = canvas.getContext('2d');
     ctx.scale(64,64);
     const forest = type === 'forest' || type === 'denseForest';
-    ctx.fillStyle = colors[type === 'path' || forest ? 'grass' : type] || terrain[type][1];
+    ctx.fillStyle = colors[type === 'path' || type === 'woodland' || forest ? 'grass' : type] || terrain[type][1];
     ctx.fillRect(0,0,1,1);
-    if (type === 'grass' || type === 'path' || type === 'forest' || type === 'dirt') {
-      ellipse(ctx,.29+seed*.06,.33,.22,.17,'#d9c28c18');
-      ellipse(ctx,.62-seed*.04,.71,.23,.15,'#35462d1e');
-    }
+
     if (type !== 'water') grain(ctx, seed, ['#e4d5a32c','#3033222e','#b5b38325']);
     if (type === 'path') {
       path(ctx,mask);
       for (let i=0;i<7;i++) ellipse(ctx,.25+(i*13%31)/60,.26+((i+seed)*7%29)/60,.012,.009,'#63533c70');
     } else if (type === 'water') {
-      ctx.fillStyle='#9ac1ba66';
-      ctx.fillRect(.23,.26+seed/14,.34,.03);
-      shore(ctx,neighbors);
+      const rnd = random(seed * 71);
+      for (let i = 0; i < 6; i++) {
+        const x = .04 + rnd() * .69, y = .10 + rnd() * .8;
+        ellipse(ctx, x, y, .045 + rnd() * .11, .007 + rnd() * .008, i % 2 ? '#b2cdc66a' : '#3760668a');
+      }
+      shore(ctx, neighbors);
     } else if (forest) {
       const layouts = [
         [[.36,.39,.38],[.69,.71,.26]], [[.64,.35,.34],[.31,.67,.29]],
@@ -264,12 +482,8 @@
         const x = .21+((i*7+seed)%8)/13;
         ctx.beginPath();ctx.moveTo(x,y-.25);ctx.lineTo(x,y);ctx.stroke();
       }
-    } else if (type === 'grass') {
-      const rnd=random(seed*79);
-      for(let i=0;i<8;i++) {
-        const x=.12+rnd()*.76,y=.18+rnd()*.66;
-        for(let j=0;j<3;j++) leaf(ctx,x,y,-1.9+j*.42,.031+rnd()*.035,j===0?'#596746a0':'#a4a47588');
-      }
+    } else if (type === 'grass' || type === 'woodland') {
+      meadow(ctx, seed, type === 'woodland');
     }
     if (type !== 'water' && neighbors) blendLand(ctx,type,neighbors);
     if (cache.size >= 384) cache.delete(cache.keys().next().value);
@@ -282,13 +496,16 @@
     // Water owns its shoreline. Dry ground only blends with other dry surfaces.
     const neighbors = type === 'water' ? rawNeighbors : rawNeighbors.map(value =>
       value && value !== 'water' ? baseMaterial(value) : null);
-    if (type === 'path' || type === 'forest' || type === 'denseForest') {
-      sides.forEach(([dx,dy],i) => {
-        const neighbor=get(chunks,x+dx,y+dy);
-        if (type==='path' ? neighbor==='path' : neighbor==='forest'||neighbor==='denseForest') mask |= 1<<i;
-      });
+    if (type === 'path') {
+      rawNeighbors.forEach((neighbor, i) => { if (neighbor === 'path') mask |= 1 << i; });
+    } else if (type === 'forest' || type === 'denseForest') {
+      for (let i = 0; i < sides.length; i++) {
+        if (rawNeighbors[i] === 'forest' || rawNeighbors[i] === 'denseForest') mask |= 1 << i;
+      }
     }
-    const seed=((Math.imul(x,374761393)^Math.imul(y,668265263))>>>0)%5;
+    const hash = (Math.imul(x, 374761393) ^ Math.imul(y, 668265263)) >>> 0;
+    const variants = type === 'grass' || type === 'woodland' || type === 'water' ? 17 : 5;
+    const seed = hash % variants;
     const different = type === 'water' || neighbors.some(value => value && value !== baseMaterial(type));
     ctx.drawImage(tile(type,mask,different ? neighbors : null,seed),...destination);
   }
@@ -327,7 +544,15 @@
       ctx.restore();
     }
   }
-  function door(ctx) {
+  function door(ctx, open) {
+    if (open) {
+      ctx.fillStyle = '#42372a';
+      ctx.fillRect(-.50,-.15,.11,.30);
+      ctx.fillRect(.39,-.15,.11,.30);
+      ctx.fillStyle = '#a9794d';
+      ctx.fillRect(-.40,-.06,.13,.51);
+      return;
+    }
     ctx.fillStyle='#42372a';
     ctx.fillRect(-.501,-.155,1.002,.31);
     ctx.fillStyle='#ad9673';
@@ -353,10 +578,31 @@
     ctx.save();
     const center = WorldMap.footprint(prop);
     ctx.translate(center.x,center.y);
-    ctx.rotate((prop.kind === 'door' ? (layout?.doorAxis(prop) ?? prop.turn) : prop.turn)*Math.PI/2);
-    if (prop.hidden) ctx.globalAlpha=.65;
+    const vegetation = prop.kind === 'tree' || prop.kind === 'bush';
+    const building = Object.hasOwn(roofColors, prop.kind);
+    const bridge = prop.kind === 'bridge';
+    if (prop.hidden) ctx.globalAlpha = .65;
+    if (building || bridge) {
+      const shadowWidth = bridge && prop.turn % 2 ? h * .76 : center.width;
+      const shadowHeight = bridge && !(prop.turn % 2) ? h * .76 : center.height;
+      ctx.fillStyle = '#323a3033';
+      ctx.fillRect(-shadowWidth / 2 + .14, -shadowHeight / 2 + .2, shadowWidth + .10, shadowHeight + .09);
+      ctx.fillStyle = '#30382d38';
+      ctx.fillRect(-shadowWidth / 2 + .12, -shadowHeight / 2 + .17, shadowWidth, shadowHeight);
+    }
+    if (WorldMap.furnitureKinds.has(prop.kind)) {
+      // World-space shadow stays southeast when furniture turns.
+      ctx.fillStyle = '#29271f35';
+      ctx.fillRect(-center.width * .44 + .08, -center.height * .34 + .12,
+        center.width * .88, center.height * .68);
+    }
+    if (!vegetation) ctx.rotate((prop.kind === 'door' ? (layout?.doorAxis(prop) ?? prop.turn) : prop.turn)*Math.PI/2);
     const decor = window.WorldDecor.paint[prop.kind];
-    if (window.WorldSprites?.has(prop.kind)) {
+    if (building) {
+      paintBuilding(ctx, prop, w, h);
+    } else if (bridge) {
+      paintBridge(ctx, prop, w, h);
+    } else if (window.WorldSprites?.has(prop.kind)) {
       window.WorldSprites.draw(ctx, prop.kind);
     } else if (decor) {
       ctx.save();
@@ -364,30 +610,17 @@
       decor(ctx);
       ctx.restore();
     } else if (prop.kind==='door') {
-      door(ctx);
-    } else if (prop.kind==='tree' || prop.kind==='bush') {
-      const seed = ((Math.imul(prop.x,53)^Math.imul(prop.y,107))>>>0)%17;
-      foliage(ctx,0,0,prop.kind==='tree'?.59:.47,seed,prop.kind==='bush');
+      door(ctx, prop.open);
+    } else if (vegetation) {
+      paintCrown(ctx, prop);
     } else {
-      const building=prop.kind==='house'||prop.kind==='tavern';
       ctx.fillStyle='#272d2475';ctx.fillRect(-w/2+.10,-h/2+.16,w,h);
       ctx.fillStyle='#45382c';ctx.fillRect(-w/2,-h/2,w,h);
-      ctx.fillStyle=building?'#87624a':'#a78056';
+      ctx.fillStyle='#a78056';
       ctx.fillRect(-w/2+.055,-h/2+.055,w-.11,h-.11);
-      if (building) {
-        roof(ctx,w,h,prop.kind==='tavern');
-      } else {
-        ctx.strokeStyle='#534535b0';ctx.lineWidth=.035;
-        for (let x=-w/2+.17;x<w/2-.08;x+=.22) {
-          ctx.beginPath();ctx.moveTo(x,-h/2+.07);ctx.lineTo(x,h/2-.07);ctx.stroke();
-        }
-        if (prop.kind==='bridge') {
-          ctx.fillStyle='#6d5237';ctx.fillRect(-w/2,-h/2+.06,w,.1);ctx.fillRect(-w/2,h/2-.16,w,.1);
-          for (const x of [-w/2+.11,0,w/2-.11]) for (const y of [-h/2+.12,h/2-.12]) {
-            polygon(ctx,[[x-.11,y-.11],[x+.09,y-.10],[x+.10,y+.10],[x-.08,y+.12]],'#523f30');
-            ctx.fillStyle='#b19469';ctx.fillRect(x-.058,y-.057,.116,.10);
-          }
-        }
+      ctx.strokeStyle='#534535b0';ctx.lineWidth=.035;
+      for (let x=-w/2+.17;x<w/2-.08;x+=.22) {
+        ctx.beginPath();ctx.moveTo(x,-h/2+.07);ctx.lineTo(x,h/2-.07);ctx.stroke();
       }
     }
     if (selected) {

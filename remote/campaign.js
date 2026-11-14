@@ -4,9 +4,20 @@
  const tableView = /^\/tv\/?$/.test(location.pathname);
  if (tableView) document.documentElement.dataset.tableView = '';
  window.currentCampaignId=id;
- const scopedUrl=value=>{const url=new URL(value,location.href);if(url.host===location.host && (url.pathname.startsWith('/api/') || url.pathname==='/ws'))url.searchParams.set('game',id);return url.href;};
+ const scopedUrl=value=>{
+  const url=new URL(value,location.href);
+  if(url.host===location.host && (url.pathname.startsWith('/api/') || url.pathname==='/ws')){
+   url.searchParams.set('game',id);
+   if(tableView)url.searchParams.set('view','table');
+  }
+  return url.href;
+ };
  const nativeFetch=window.fetch.bind(window);
- window.fetch=(input,options)=>nativeFetch(input instanceof Request ? new Request(scopedUrl(input.url),input) : scopedUrl(input),options);
+ window.fetch=(input,options)=>{
+  const url=scopedUrl(input instanceof Request ? input.url : input);
+  const request=input instanceof Request ? new Request(url,input) : url;
+  return nativeFetch(request,tableView ? {...options,credentials:'omit'} : options);
+ };
  const NativeSocket=window.WebSocket;
  window.WebSocket=class extends NativeSocket {constructor(url,protocols){super(scopedUrl(url),protocols);}};
  // Separate saved character selection, initiative and map settings in each campaign.
@@ -39,7 +50,7 @@
     form.onsubmit=async event=>{event.preventDefault();button.disabled=true;try{const res=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:input.value,pack:pack.value})});if(!res.ok)throw Error('Не удалось создать кампанию');navigate((await res.json()).id);}catch(e){error.textContent=e.message;button.disabled=false;}};
    }
    // Keep links to player/TV views in the selected campaign, including links added later.
-   document.addEventListener('click',event=>{const a=event.target.closest('a');if(!a)return;const url=new URL(a.href,location.href);if(url.origin===location.origin && ['/player','/tv','/remote/player'].includes(url.pathname)){url.searchParams.set('game',id);a.href=url.href;}},true);
+   document.addEventListener('click',event=>{const a=event.target.closest('a');if(!a)return;const url=new URL(a.href,location.href);if(url.origin===location.origin && ['/player','/tv','/remote/player','/dm/access.html'].includes(url.pathname)){url.searchParams.set('game',id);a.href=url.href;}},true);
   }catch(e){error.textContent=e.message;}
  });
 })();

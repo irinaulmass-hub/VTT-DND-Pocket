@@ -271,6 +271,10 @@ function connectWebSocket() {
   };
   ws.onmessage = function (event) {
     var msg = JSON.parse(event.data);
+    if (msg.type === 'CHARACTER_POSITION') {
+      window.dispatchEvent(new CustomEvent('character-position', { detail: msg }));
+      return;
+    }
     if (msg.type === 'WORLD_UPDATE') {
       window.dispatchEvent(new CustomEvent('world-update', { detail: msg }));
       return;

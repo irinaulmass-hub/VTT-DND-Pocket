@@ -4,6 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const characterView = require('./character-view');
 
 const app = express();
 const server = http.createServer(app);
@@ -170,7 +171,7 @@ function uid(name) {
 function saveState() {
   try {
     const snapshot = {
-      currentSceneView: game().currentSceneView, currentFogStates: game().currentFogStates, currentTokens: game().currentTokens, currentTokensMapKey: game().currentTokensMapKey,
+      currentSceneView: game().currentSceneView, currentAudio: game().currentAudio, currentFogStates: game().currentFogStates, currentTokens: game().currentTokens, currentTokensMapKey: game().currentTokensMapKey,
       currentTokensShowRings: game().currentTokensShowRings, currentDrawing: game().currentDrawing, currentDrawingMapKey: game().currentDrawingMapKey,
       currentFeatures: game().currentFeatures, currentFeatureStates: game().currentFeatureStates, currentMapMeta: game().currentMapMeta, currentTargets: game().currentTargets,
       gridEnabled: game().gridEnabled, allPlayersLocked: game().allPlayersLocked, blackout: game().currentState.blackout,
@@ -188,6 +189,10 @@ function loadState() {
     if (!fs.existsSync(gameFile('state.json'))) return;
     const saved = JSON.parse(fs.readFileSync(gameFile('state.json'), 'utf8'));
     if (saved.currentSceneView) game().currentSceneView = saved.currentSceneView;
+    if (Object.hasOwn(saved, 'currentAudio')) game().currentAudio = saved.currentAudio;
+    else if (saved.currentSceneView?.audio) {
+      game().currentAudio = { url: saved.currentSceneView.audio, loop: saved.currentSceneView.audioLoop !== false };
+    }
     if (saved.currentFogStates) game().currentFogStates = saved.currentFogStates;
     if (Array.isArray(saved.currentTokens)) game().currentTokens = saved.currentTokens;
     if (saved.currentTokensMapKey) game().currentTokensMapKey = saved.currentTokensMapKey;
@@ -224,7 +229,9 @@ function parseCookies(req) {
   });
   return out;
 }
-function isDmAuthed(req) { return dmSessions.has(parseCookies(req).dm_token || ''); }
+function isDmAuthed(req) {
+  return req.query?.view !== 'table' && dmSessions.has(parseCookies(req).dm_token || '');
+}
 
 app.get('/dm-login', (req, res) => {
   if (isDmAuthed(req)) return res.redirect('/');
@@ -261,21 +268,58 @@ function requireDm(req, res, next) {
   res.redirect('/dm-login');
 }
 
-app.use('/assets', (req, res, next) => {
-  let asset;
-  try { asset = decodeURIComponent(req.path); }
-  catch { return res.sendStatus(400); }
-  if (/\.map\.json(?:[. /:\\]|$)/i.test(asset)) return res.sendStatus(404);
-  next();
-});
-app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
+function assetPath(urlPath) {
+  try {
+    const decoded = decodeURIComponent(urlPath);
+    if (/[\\:\x00-\x1f]/.test(decoded) || decoded.split('/').some(segment => /^\.{1,2}$|[. ]$/.test(segment))) return null;
+    return path.posix.normalize('/' + decoded.replace(/^\/+/, ''));
+  } catch { return null; }
+}
+
+function publishedAssetPath(value, host) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value, 'http://' + host);
+    if (!['http:', 'https:'].includes(url.protocol) || url.host !== host || !url.pathname.startsWith('/assets/')) return null;
+    return assetPath(url.pathname.slice('/assets'.length));
+  } catch { return null; }
+}
+
+const assetFiles = express.Router();
+assetFiles.use(express.static(path.join(__dirname, 'public/assets')));
 const _mapsDir = path.join(__dirname, 'public/assets/maps');
 if (fs.existsSync(_mapsDir)) {
   for (const _sub of fs.readdirSync(_mapsDir)) {
     const _subPath = path.join(_mapsDir, _sub);
-    if (fs.statSync(_subPath).isDirectory()) app.use('/assets/maps', express.static(_subPath));
+    if (fs.statSync(_subPath).isDirectory()) assetFiles.use('/maps', express.static(_subPath));
   }
 }
+app.use('/assets', (req, res, next) => {
+  const asset = assetPath(req.path);
+  if (!asset || /\.map\.json(?:[. /]|$)/i.test(asset)) return res.sendStatus(404);
+  if (/^\/(maps|audio)(\/|$)/i.test(asset)) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!isDmAuthed(req)) return res.sendStatus(404);
+  }
+  next();
+}, assetFiles);
+
+app.use('/presentation/assets', (req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', 'sandbox');
+  const asset = assetPath(req.path);
+  if (!asset || !/^\/(?:maps\/.+\.(?:png|jpe?g|webp|gif)|audio\/.+\.(?:mp3|ogg|wav))$/i.test(asset)) {
+    return res.sendStatus(404);
+  }
+  const g = game();
+  const published = [g.currentSceneView?.image, g.currentAudio?.url];
+  for (const feature of g.currentFeatures) {
+    if (visibleOnMap(feature) && g.currentFeatureStates[feature.id] === 'triggered') published.push(feature.linkedMap);
+  }
+  if (!published.some(value => publishedAssetPath(value, req.get('host')) === asset)) return res.sendStatus(404);
+  next();
+}, assetFiles);
 
 const BLOCKED_PATHS = ['/server.js', '/package.json', '/package-lock.json'];
 const BLOCKED_PREFIXES = ['/seeds/', '/node_modules/', '/.git/'];
@@ -366,8 +410,11 @@ function featureForPlayers(feature) {
 }
 
 function sendView(client, data) {
+  if (client.accessToken && !client.characterId) return;
   if (client.readyState !== WebSocket.OPEN || (client.tableView && !tableMessages.has(data.type))) return;
+  if (data.type === 'PLAYER_DISCOVERIES_CHANGED' && client.characterId !== data.characterId) return;
   if (!game().dmClients.has(client)) {
+    if (data.type === 'CHARACTER_POSITION' && client.characterId !== data.characterId) return;
     if (data.type === 'UPDATE_TOKENS') {
       data = { ...data, tokens: data.tokens.filter(visibleOnMap) };
     } else if (data.type === 'SHOW_SCENE_VIEW' || data.type === 'UPDATE_FEATURES') {
@@ -392,6 +439,11 @@ function sendView(client, data) {
       data = { ...data, targets };
     }
   }
+  if (!game().dmClients.has(client) && data.type === 'CHARACTERS_UPDATE') {
+    data = { ...data, characters: data.characters.filter(ch => ch.id === client.characterId).map(characterView) };
+  }
+  if (!game().dmClients.has(client) && data.type === 'PLAYER_DATA_UPDATE' && data.player.id !== client.characterId) return;
+  if (!game().dmClients.has(client) && data.type === 'PLAYER_DATA_UPDATE') data = { ...data, player: characterView(data.player) };
   client.send(JSON.stringify(data));
 }
 
@@ -411,9 +463,11 @@ function sendFullState(ws) {
     }
     send(world);
   }
-  if (game().currentSceneView) send(game().currentSceneView);
+  const audio = game().currentAudio;
+  if (game().currentSceneView) send({ ...game().currentSceneView, audio: audio?.url || null, audioLoop: audio?.loop !== false });
   else if (game().currentSceneId) send({ type: 'SHOW_SCENE', sceneId: game().currentSceneId });
   else if (ws.tableView) { send({ type: 'CLEAR_SCENE' }); send({ type: 'BLACKOUT', active: false }); }
+  if (!game().currentSceneView && audio) send({ type: 'PLAY_AUDIO', ...audio });
   for (const fogKey of Object.keys(game().currentFogStates)) send({ type: 'UPDATE_FOG', fogKey, fogGrid: game().currentFogStates[fogKey] });
   if (game().currentTokensMapKey) send({ type: 'UPDATE_TOKENS', tokens: game().currentTokens, mapKey: game().currentTokensMapKey, showRings: game().currentTokensShowRings });
   if (game().currentDrawingMapKey) send({ type: 'UPDATE_DRAWING', strokes: game().currentDrawing, mapKey: game().currentDrawingMapKey });
@@ -570,6 +624,7 @@ wss.on('connection', (ws, req) => {
   const params = new URL(req.url, 'http://localhost').searchParams;
   const id = params.get('game') || 'default';
   ws.tableView = params.get('view') === 'table';
+  ws.playerView = params.get('view') === 'player';
   if (!campaigns.some(c => c.id === id)) { ws.close(1008, 'Unknown campaign'); return; }
   const context = getGame(id);
   campaignContext.run(context, () => initializeConnection(ws, req, context));
@@ -578,7 +633,7 @@ function initializeConnection(ws, req, context) {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   game().clients.add(ws);
-  const dmAuthed = !ws.tableView && isDmAuthed(req);
+  const dmAuthed = !ws.tableView && !ws.playerView && isDmAuthed(req);
   if (dmAuthed) game().dmClients.add(ws);
   if (!dmAuthed) ws.guestId = ++game().guestCounter;
   console.log(`Client connected. Total: ${game().clients.size} | isDM: ${dmAuthed}`);
@@ -595,6 +650,14 @@ function initializeConnection(ws, req, context) {
       const message = JSON.parse(raw);
       if (ws.tableView && message.action !== 'request-sync') return;
       const isDm = game().dmClients.has(ws);
+      if (ws.accessToken && playerAccess.resolve(ws.accessToken) !== ws.characterId) {
+        ws.characterId = null;
+        ws.playerName = null;
+        ws.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+        ws.close(1008, 'Access revoked');
+        return;
+      }
+      if (!isDm && ['interact-object','interact-lightbox-object'].includes(message.action) && !ws.characterId) return;
       if (message.action === 'open-location') {
         if (!isDm) return;
         const location = typeof message.viewId === 'string' && findLocation(message.viewId);
@@ -653,8 +716,8 @@ function initializeConnection(ws, req, context) {
         case 'clear-scene':
           closeLocation();
           break;
-        case 'play-audio': if (message.url) { game().currentAudio = { url: message.url, loop: message.loop !== false }; broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); } break;
-        case 'stop-audio': game().currentAudio = null; broadcast({ type: 'STOP_AUDIO' }); break;
+        case 'play-audio': if (message.url) { game().currentAudio = { url: message.url, loop: message.loop !== false }; saveState(); broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); } break;
+        case 'stop-audio': game().currentAudio = null; saveState(); broadcast({ type: 'STOP_AUDIO' }); break;
         case 'send-overlay': broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000, subtype: message.subtype || '' }); break;
         case 'update-fog': {
           const active = game().currentSceneView;
@@ -734,20 +797,25 @@ function initializeConnection(ws, req, context) {
           break;
         }
         case 'toggle-grid': game().gridEnabled = !game().gridEnabled; broadcast({ type: 'GRID_TOGGLE', enabled: game().gridEnabled }); saveState(); break;
-        case 'player-login': {
-          const loginName = String(message.name || '').trim().slice(0, 64); const loginCls = String(message.cls || '').trim().slice(0, 32);
-          if (!loginName || !loginCls) break;
-          try {
-            const player = loadCharacters().characters.find(p => p.name.toLowerCase() === loginName.toLowerCase());
-            if (!player) { ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Выберите героя, созданного мастером.' })); break; }
-            ws.playerName = player.name; game().loggedInPlayers.set(player.name, ws); ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_OK', player }));
-            if (game().allPlayersLocked || game().lockedPlayers.has(player.name)) ws.send(JSON.stringify({ type: 'MOVEMENT_LOCK', name: player.name, locked: true }));
-            const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...game().loggedInPlayers.keys()] });
-            for (const dm of game().dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
-            broadcastClientCount(); console.log('Player logged in:', player.name);
-          } catch (e) { console.error('player-login error:', e); ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Server error during login.' })); }
+        case 'player-auth': {
+          const characterId = playerAccess.resolve(message.token);
+          if (!characterId) {
+            ws.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+            ws.close(1008, 'Invalid invitation');
+            break;
+          }
+          const character = loadCharacters().characters.find(ch => ch.id === characterId);
+          ws.accessToken = message.token;
+          ws.characterId = characterId;
+          ws.playerName = character.name;
+          sendView(ws, { type: 'CHARACTERS_UPDATE', characters: [character] });
+          sendView(ws, { type: 'CHARACTER_POSITION', characterId, position: worlds.getPosition(characterId) });
           break;
         }
+        case 'player-login':
+        case 'claim-character':
+          ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Откройте приглашение мастера в /player.' }));
+          break;
         case 'move-player-token': {
           if (!ws.playerName) break; if (game().allPlayersLocked || game().lockedPlayers.has(ws.playerName)) break;
           const tokIdx = game().currentTokens.findIndex(t => t.label === ws.playerName && t.type === 'player'); if (tokIdx === -1) break;
@@ -781,26 +849,7 @@ function initializeConnection(ws, req, context) {
           break;
         }
         case 'request-characters': {
-          ws.send(JSON.stringify({ type: 'CHARACTERS_UPDATE', characters: loadCharacters().characters }));
-          break;
-        }
-        case 'claim-character': {
-          const data = loadCharacters();
-          const ch = data.characters.find(c => c.id === message.characterId);
-          if (!ch) break;
-          data.characters.forEach(c => {
-            if (c.claimedBy === message.playerName) c.claimedBy = null;
-          });
-          ch.claimedBy = message.playerName || 'player';
-          saveCharacters(data);
-          broadcast({ type: 'CHARACTERS_UPDATE', characters: data.characters });
-          ws.send(JSON.stringify({ type: 'CHARACTER_CLAIMED', character: ch }));
-          // Also set playerName for movement etc.
-          ws.playerName = ch.name;
-          game().loggedInPlayers.set(ch.name, ws);
-          const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...game().loggedInPlayers.keys()] });
-          for (const dm of game().dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
-          broadcastClientCount();
+          sendView(ws, { type: 'CHARACTERS_UPDATE', characters: loadCharacters().characters });
           break;
         }
         case 'update-character': {
@@ -871,7 +920,7 @@ app.post('/api/dice-roll', requireDm, express.json({ limit: '1mb' }), (req, res)
   res.json({ ok: true });
 });
 
-app.post('/api/stopaudio', requireDm, (req, res) => { broadcast({ type: 'STOP_AUDIO' }); res.json({ ok: true }); });
+app.post('/api/stopaudio', requireDm, (req, res) => { game().currentAudio = null; saveState(); broadcast({ type: 'STOP_AUDIO' }); res.json({ ok: true }); });
 app.post('/api/blackout', requireDm, (req, res) => { game().currentState.blackout = !game().currentState.blackout; broadcast({ type: 'BLACKOUT', active: game().currentState.blackout }); res.json({ ok: true, blackout: game().currentState.blackout }); });
 
 app.post('/api/clear', requireDm, (req, res) => {
@@ -885,7 +934,7 @@ app.post('/api/clear-scene', requireDm, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/state', (req, res) => { res.json(game().currentState); });
+app.get('/api/state', requireDm, (req, res) => { res.json(game().currentState); });
 
 const https = require('https');
 app.get('/api/bestiary/:file', (req, res) => {
@@ -903,12 +952,12 @@ app.get('/api/bestiary/:file', (req, res) => {
   }).on('error', () => res.status(502).end());
 });
 
-app.get('/api/maps', (req, res) => {
+app.get('/api/maps', requireDm, (req, res) => {
   const maps = listFiles('public/assets/maps', ['.jpg', '.jpeg', '.png', '.webp']);
   res.json({ maps });
 });
 
-app.get('/api/tiles', (req, res) => {
+app.get('/api/tiles', requireDm, (req, res) => {
   const tilesDir = path.join(__dirname, 'public/assets/tiles');
   if (!fs.existsSync(tilesDir)) return res.json({ tiles: [] });
   const files = fs.readdirSync(tilesDir)
@@ -917,7 +966,7 @@ app.get('/api/tiles', (req, res) => {
   res.json({ tiles: files });
 });
 
-app.get('/api/audio', (req, res) => {
+app.get('/api/audio', requireDm, (req, res) => {
   const files = listFiles('public/assets/audio', ['.mp3', '.ogg', '.wav']);
   const groups = {};
   files.forEach(f => {
@@ -932,7 +981,7 @@ app.get('/api/audio', (req, res) => {
   res.json({ audio, categories });
 });
 
-app.get('/api/scenes', (req, res) => {
+app.get('/api/scenes', requireDm, (req, res) => {
   try {
     const scenes = JSON.parse(fs.readFileSync(sceneFile(), 'utf8'));
     const examples=JSON.parse(fs.readFileSync(path.join(__dirname,'seeds','scenes.json'),'utf8'));
@@ -954,11 +1003,35 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
 });
 
 
+const playerAccess = require('./player-access')(app, {
+  express, requireDm, gameFile, loadCharacters,
+  onChange(characterId) {
+    for (const client of game().clients) {
+      if (client.characterId === characterId) {
+        client.characterId = null;
+        client.playerName = null;
+        client.send(JSON.stringify({ type: 'ACCESS_REVOKED' }));
+        client.close(1008, 'Access revoked');
+      }
+    }
+  },
+});
+
 require('./advancement')(app, {express,loadCharacters,saveCharacters,requireDm,broadcast});
 require('./adventure')(app, { express, fs, path, gameFile, requireDm, hasWindenPack });
 const library = require('./library')(app, { express, crypto, gameFile, requireDm, hasWindenPack });
 
-require('./loot')(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast });
+function assignedCharacter(req) {
+  const header = req.headers.authorization || '';
+  return header.startsWith('Bearer ') ? playerAccess.resolve(header.slice(7)) : null;
+}
+function visibleCharacters(req) {
+  const characters = loadCharacters().characters;
+  if (isDmAuthed(req)) return characters;
+  const id = assignedCharacter(req);
+  return characters.filter(character => character.id === id).map(characterView);
+}
+require('./loot')(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast, assignedCharacter });
 
 // ── Character REST API ────────────────────────────────────────
 app.post('/api/characters/automatic', requireDm, express.json({ limit: '32kb' }), (req, res) => {
@@ -968,7 +1041,7 @@ app.post('/api/characters/automatic', requireDm, express.json({ limit: '32kb' })
 });
 
 app.get('/api/characters', (req, res) => {
-  res.json({ characters: loadCharacters().characters });
+  res.setHeader('Cache-Control', 'no-store'); res.json({ characters: visibleCharacters(req) });
 });
 
 app.post('/api/characters', requireDm, express.json({ limit: '64kb' }), (req, res) => {
@@ -1027,15 +1100,18 @@ app.post('/api/characters/:id/duplicate', requireDm, (req, res) => {
 
 app.delete('/api/characters/:id', requireDm, (req, res) => {
   const data = loadCharacters();
+  const update = data.characters.some(c => c.id === req.params.id)
+    ? worlds.rememberCharacterView(req.params.id) : null;
   data.characters = data.characters.filter(c => c.id !== req.params.id);
   saveCharacters(data);
   broadcast({ type: 'CHARACTERS_UPDATE', characters: data.characters });
+  if (update) broadcast(update);
   res.json({ ok: true });
 });
 
 // Legacy API uses the same character store. Omissions do not delete characters.
 function loadPlayers() { return loadCharacters().characters; }
-app.get('/api/players', (req, res) => res.json({ players: loadPlayers() }));
+app.get('/api/players', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ players: visibleCharacters(req) }); });
 app.post('/api/players', requireDm, express.json({ limit: '64kb' }), (req, res) => {
   if (!Array.isArray(req.body.players) || req.body.players.some(p => !p || typeof p.name !== 'string' || !p.name.trim())) return res.status(400).json({ error: 'Named players required' });
   const data = loadCharacters();
@@ -1055,7 +1131,14 @@ app.get('/map-builder', requireDm, (req, res) => {
 
 const legacyMapDir = path.join(__dirname, 'public', 'assets', 'maps');
 const worlds = require('./worlds')(app, {
-  express, requireDm, gameFile, broadcast, loadCharacters,
+  express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter,
+  movementLocked(characterId) {
+    const g = game();
+    if (g.allPlayersLocked) return true;
+    const hero = loadCharacters().characters.find(character => character.id === characterId);
+    return g.lockedPlayers.has(hero?.name);
+  },
+  screenBlackout: () => game().currentState.blackout,
   revealScreen() {
     game().currentState.blackout = false;
     saveState();

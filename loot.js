@@ -1,7 +1,7 @@
 'use strict';
 
 // Containers and inventories share one atomic snapshot: a transfer cannot save only half.
-module.exports = function registerLoot(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast }) {
+module.exports = function registerLoot(app, { express, crypto, loadCharacters, saveCharacters, isDmAuthed, requireDm, broadcast, assignedCharacter }) {
   const rarities = new Set(['common', 'uncommon', 'rare', 'very-rare', 'legendary']);
   const fail = (status, message) => { throw Object.assign(new Error(message), { status }); };
   const route = handler => (req, res) => {
@@ -64,6 +64,7 @@ module.exports = function registerLoot(app, { express, crypto, loadCharacters, s
     if (!item) fail(409, 'Этот предмет уже забрали. Обновите контейнер.');
     const amount = quantity(body.quantity);
     if (amount > item.quantity) fail(409, 'В контейнере осталось меньше предметов.');
+    if (!isDmAuthed(req) && assignedCharacter(req) !== body.characterId) fail(403, 'Нет доступа к этому персонажу.');
     const character = data.characters.find(c => c.id === body.characterId);
     if (!character) fail(404, 'Выберите персонажа этой кампании.');
     if (!Array.isArray(character.inventory)) character.inventory = [];

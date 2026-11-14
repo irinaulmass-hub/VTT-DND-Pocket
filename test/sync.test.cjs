@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const {spawn,execFileSync}=require('node:child_process');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
@@ -32,16 +32,50 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/characters',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:'{}'})).status,302);
   const login=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const cookie=login.headers.get('set-cookie').split(';')[0];
-  const ch=(await (await fetch(base+'/api/characters')).json()).characters[0];
+  const ch=(await (await fetch(base+'/api/characters',{headers:{Cookie:cookie}})).json()).characters[0];
+  const invitationResponse=await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:ch.id})});
+  assert.equal(invitationResponse.status,201);
+  const invitation=await invitationResponse.json();
+  const invited=await open();sockets.push(invited);
+  let invitedNext=message(invited,m=>m.type==='CHARACTERS_UPDATE');
+  invited.send(JSON.stringify({action:'player-auth',token:invitation.token}));
+  assert.deepEqual((await invitedNext).characters.map(c=>c.id),[ch.id]);
+  invitedNext=message(invited,m=>m.type==='PLAYER_LOGIN_ERR');
+  invited.send(JSON.stringify({action:'claim-character',characterId:'another',playerName:'Other'}));
+  await invitedNext;
+  const revoked=message(invited,m=>m.type==='ACCESS_REVOKED');
+  assert.equal((await fetch(base+'/api/player-access/'+ch.id,{method:'DELETE',headers:{Cookie:cookie}})).status,200);
+  await revoked;
+  const rejected=await open();sockets.push(rejected);
+  const rejection=message(rejected,m=>m.type==='ACCESS_REVOKED');
+  rejected.send(JSON.stringify({action:'player-auth',token:invitation.token}));
+  await rejection;
+  const playerToken=(await (await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:ch.id})})).json()).token;
+  assert.deepEqual((await (await fetch(base+'/api/characters')).json()).characters,[]);
+  const guest=await open();sockets.push(guest);
+  const emptyRoster=message(guest,m=>m.type==='CHARACTERS_UPDATE');
+  guest.send(JSON.stringify({action:'request-characters'}));
+  assert.deepEqual((await emptyRoster).characters,[]);
   const player=await open();sockets.push(player);
+  const authenticated=message(player,m=>m.type==='CHARACTERS_UPDATE');
+  player.send(JSON.stringify({action:'player-auth',token:playerToken}));
+  assert.deepEqual((await authenticated).characters.map(c=>c.id),[ch.id]);
+  const own=await fetch(base+'/api/characters',{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json());
+  assert.deepEqual(own.characters.map(c=>c.id),[ch.id]);
   player.send(JSON.stringify({action:'update-character',characterId:ch.id,patch:{hp:1}}));
   // Roundtrip through the same connection ensures the rejected write was processed.
   let next=message(player,m=>m.type==='CHARACTERS_UPDATE');player.send(JSON.stringify({action:'request-characters'}));
   assert.equal((await next).characters[0].hp,ch.hp);
   next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&m.characters[0].hp===24);
-  const patch={hp:24,eclipse:3,conditions:['Отравление'],inventory:[{name:'Ключ',quantity:1}],abilities:[{name:'Второе дыхание',maxUses:1,used:0}],attacks:[{name:'Меч',attackBonus:6,damage:'1d8+4'}]};
+  const patch={hp:24,eclipse:3,notes:'DM-only note',futurePrivateField:'DM-only future',conditions:['Отравление'],inventory:[{name:'Ключ',quantity:1}],abilities:[{name:'Второе дыхание',maxUses:1,used:0}],attacks:[{name:'Меч',attackBonus:6,damage:'1d8+4'}]};
   assert.equal((await fetch(base+'/api/characters/'+ch.id,{method:'PUT',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(patch)})).status,200);
-  const update=(await next).characters[0];assert.equal(update.eclipse,3);assert.equal(update.inventory[0].name,'Ключ');
+  const update=(await next).characters[0];
+  assert.equal(update.notes,undefined);assert.equal(update.futurePrivateField,undefined);
+  const privateMaster=await fetch(base+'/api/characters',{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(privateMaster.characters.find(c=>c.id===ch.id).notes,'DM-only note');
+  const personal=await fetch(base+'/api/characters',{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json());
+  assert.equal(personal.characters[0].notes,undefined);
+  assert.equal(update.eclipse,3);assert.equal(update.inventory[0].name,'Ключ');
   const dm=await open(cookie);sockets.push(dm);next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&m.characters[0].hp===23);dm.send(JSON.stringify({action:'update-character',characterId:ch.id,patch:{hp:23}}));await next;
   assert.deepEqual((await (await fetch(base+'/api/players')).json()).players, (await (await fetch(base+'/api/characters')).json()).characters);
   next=message(player,m=>m.type==='CHARACTERS_UPDATE' && m.characters[0].xp===125);
@@ -58,7 +92,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/campaigns',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Forbidden'})})).status,302);
   const campaign=await (await fetch(base+'/api/campaigns',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({name:'Вторая игра'})})).json();
   assert.deepEqual((await (await fetch(base+'/api/characters?game='+campaign.id)).json()).characters,[]);
-  assert.deepEqual((await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes,[]);
+  assert.deepEqual((await (await fetch(base+'/api/scenes?game='+campaign.id,{headers:{Cookie:cookie}})).json()).scenes,[]);
   assert.equal((await fetch(base+'/api/characters?game=../bad')).status,404);
   const other=await open(cookie,campaign.id);sockets.push(other);
   let crossTalk=false;const crossObserve=raw=>{if(['CHARACTERS_UPDATE','UPDATE_TOKENS'].includes(JSON.parse(raw).type))crossTalk=true;};player.on('message',crossObserve);
@@ -73,8 +107,10 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.ok(unchanged.characters.every(c=>c.name!=='Другой герой'));
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'characters.json'))).characters[0].hp,12);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentTokens[0].id,'other-token');
-  const otherReconnected=await open(undefined,campaign.id);sockets.push(otherReconnected);
-  next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,12);
+  const otherToken=await fetch(base+'/api/player-access?game='+campaign.id,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({characterId:otherChar.id})}).then(r=>r.json());
+  assert.deepEqual((await fetch(base+'/api/characters?game='+campaign.id,{headers:{Authorization:'Bearer '+playerToken}}).then(r=>r.json())).characters,[]);
+  const otherReconnected=await open(cookie,campaign.id,'player');sockets.push(otherReconnected);
+  next=message(otherReconnected,m=>m.type==='CHARACTERS_UPDATE');otherReconnected.send(JSON.stringify({action:'player-auth',token:otherToken.token}));assert.equal((await next).characters[0].hp,12);
   assert.ok(JSON.parse(fs.readFileSync(path.join(dir,'campaigns.json'))).some(c=>c.id===campaign.id));
 
   // DM-only notes: separate campaign/scene scopes and optimistic concurrency.
@@ -107,7 +143,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.match(assistantPayload.messages[1].content,/Другой сюжет/);assert.doesNotMatch(assistantPayload.messages[1].content,/Засада в лесу/);
   // Loot is private until revealed; one snapshot contains both stock and inventory.
   const lootHeaders={Cookie:cookie,'Content-Type':'application/json'};
-  const writeLoot=(url,method,body,asDm=true)=>fetch(base+url,{method,redirect:'manual',headers:asDm?lootHeaders:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const writeLoot=(url,method,body,asDm=true)=>fetch(base+url,{method,redirect:'manual',headers:asDm?lootHeaders:{'Content-Type':'application/json',Authorization:'Bearer '+playerToken},body:JSON.stringify(body)});
   const getLoot=async (suffix='',asDm=false)=>(await (await fetch(base+'/api/loot'+suffix,{headers:asDm?{Cookie:cookie}:{}})).json()).containers;
   assert.equal((await writeLoot('/api/loot','POST',{name:'Forbidden'},false)).status,302);
   const chest=await (await writeLoot('/api/loot','POST',{name:'Тайник',tokenId:'chest-one',mapKey:'forest'})).json();
@@ -127,15 +163,17 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const take={revision:filled.revision,itemId:filled.items[0].id,quantity:1,characterId:ch.id};
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:-1},false)).status,400);
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,quantity:4},false)).status,409);
-  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,characterId:otherChar.id},false)).status,404);
+  assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,characterId:otherChar.id},false)).status,403);
   const outcomes=await Promise.all([writeLoot('/api/loot/'+chest.id+'/take','POST',take,false),writeLoot('/api/loot/'+chest.id+'/take','POST',take,false)]);
   assert.deepEqual(outcomes.map(r=>r.status).sort(),[200,409]);
   assert.equal((await writeLoot('/api/loot/'+chest.id,'PUT',filled)).status,409,'stale editor cannot restore taken stock');
   let remaining=(await getLoot())[0];assert.equal(remaining.items[0].quantity,2);
-  next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&m.characters.find(c=>c.id===ch.id).inventory.filter(i=>i.sourceContainer===chest.id).length===2);
+  const receivedLoot=message=>message.characters.find(c=>c.id===ch.id).inventory.filter(i=>i.name===filled.items[0].name);
+  next=message(player,m=>m.type==='CHARACTERS_UPDATE'&&receivedLoot(m).length===2);
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,revision:remaining.revision,quantity:2},false)).status,200);
-  const received=(await next).characters.find(c=>c.id===ch.id).inventory.filter(i=>i.sourceContainer===chest.id);
+  const received=receivedLoot(await next);
   assert.equal(received.reduce((sum,i)=>sum+i.quantity,0),3);assert.equal(received[0].rarity,'rare');assert.equal(received[0].properties,'Лечение');
+  assert.ok(received.every(item=>!Object.hasOwn(item,'sourceContainer')));
   remaining=(await getLoot())[0];assert.equal(remaining.items.length,0);
   assert.equal((await writeLoot('/api/loot/'+chest.id+'/take','POST',{...take,revision:remaining.revision},false)).status,409);
   const snapshot=JSON.parse(fs.readFileSync(path.join(dir,'characters.json')));
@@ -167,7 +205,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   const copiedDraft=(await (await fetch(base+draftUrl+'&game='+campaign.id,{headers:noteHeaders})).json());
   assert.equal(copiedDraft.bgImage,'/api/catalog/starter-farm/image');
   assert.equal((await fetch(base+copiedDraft.bgImage,{redirect:'manual'})).status,302);
-  const localScenes=(await (await fetch(base+'/api/scenes?game='+campaign.id)).json()).scenes;
+  const localScenes=(await (await fetch(base+'/api/scenes?game='+campaign.id,{headers:{Cookie:cookie}})).json()).scenes;
   assert.equal(localScenes[0].views[0].builderDraft,mapCopy.draft);
   assert.equal((await fetch(base+'/api/library/'+template.id,{method:'PUT',headers:noteHeaders,body:JSON.stringify({...templateBody,revision:99})})).status,409);
   const copy=await (await fetch(base+'/api/characters/'+ch.id+'/duplicate',{method:'POST',headers:{Cookie:cookie}})).json();assert.notEqual(copy.id,ch.id);assert.equal(copy.hp,23);assert.equal(copy.claimedBy,null);
@@ -178,12 +216,45 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(player,m=>m.type==='UPDATE_TOKENS');player.send(JSON.stringify({action:'request-sync'}));assert.equal((await next).tokens.length,1);
   // A table window shares the master's browser cookie, but its connection is read-only.
   const table=await open(cookie,campaign.id,'table');sockets.push(table);
+  const tableQuery='?game='+campaign.id+'&view=table';
+  const farmAsset='/assets/maps/winden-farm.png';
+  const linkedAsset='/assets/maps/winden-mine.png';
+  const publicAsset=(asset,query=tableQuery)=>base+'/presentation'+asset+query;
+  for(const endpoint of ['/api/scenes','/api/maps','/api/audio','/api/tiles','/api/state']){
+   assert.equal((await fetch(base+endpoint+tableQuery,{headers:{Cookie:cookie},redirect:'manual'})).status,302);
+   assert.equal((await fetch(base+endpoint+'?game='+campaign.id,{redirect:'manual'})).status,302);
+  }
+  assert.equal((await fetch(base+farmAsset)).status,404);
+  assert.equal((await fetch(base+'/assets/%6daps/winden-farm.png')).status,404);
+  assert.equal((await fetch(base+farmAsset+tableQuery,{headers:{Cookie:cookie}})).status,404);
+  assert.equal((await fetch(base+farmAsset,{headers:{Cookie:cookie}})).status,200);
+  assert.equal((await fetch(publicAsset(farmAsset),{headers:{Cookie:cookie}})).status,404);
   const tableMessages=[];table.on('message',raw=>tableMessages.push(JSON.parse(raw)));
   const pendingTrap={id:'pending-trap',type:'trap',cells:[[2,3]],description:'Где находится засада'};
-  const publicEffect={id:'public-effect',type:'effect',cells:[[1,1]],description:'Заметка мастера'};
+  const publicEffect={id:'public-effect',type:'effect',cells:[[1,1]],description:'Заметка мастера',linkedMap:linkedAsset};
   next=message(table,m=>m.type==='SHOW_SCENE_VIEW');
   other.send(JSON.stringify({action:'show-scene-view',image:'/assets/maps/winden-farm.png',mapKey:'table-map',fogKey:'table-map',features:[pendingTrap,publicEffect],mapMeta:{cols:4,rows:4}}));
   assert.deepEqual((await next).features,[]);
+  const publishedMap=await fetch(publicAsset(farmAsset));
+  assert.equal(publishedMap.status,200);
+  assert.match(publishedMap.headers.get('cache-control'),/no-store/);
+  assert.equal((await fetch(publicAsset(farmAsset,'?game=default'))).status,404);
+  assert.equal((await fetch(publicAsset(linkedAsset))).status,404);
+  const audioAsset='/assets/audio/'+campaign.id+'.wav';
+  const audioFile=path.join(root,'public',audioAsset.slice(1));
+  fs.mkdirSync(path.dirname(audioFile),{recursive:true});
+  fs.writeFileSync(audioFile,'RIFF-test-audio');
+  catalogImages.push(audioFile);
+  assert.equal((await fetch(base+audioAsset)).status,404);
+  assert.equal((await fetch(publicAsset(audioAsset))).status,404);
+  next=message(table,m=>m.type==='PLAY_AUDIO');
+  other.send(JSON.stringify({action:'play-audio',url:audioAsset}));
+  await next;
+  assert.equal((await fetch(publicAsset(audioAsset))).status,200);
+  next=message(table,m=>m.type==='STOP_AUDIO');
+  other.send(JSON.stringify({action:'stop-audio'}));
+  await next;
+  assert.equal((await fetch(publicAsset(audioAsset))).status,404);
   next=message(table,m=>m.type==='UPDATE_FOG'&&m.fogGrid?.[0]?.[0]===true);
   other.send(JSON.stringify({action:'update-fog',fogKey:'table-map',fogGrid:[[true,false],[false,false]]}));
   assert.deepEqual((await next).fogGrid,[[true,false],[false,false]]);
@@ -193,6 +264,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   next=message(table,m=>m.type==='TRIGGER_FEATURE');
   other.send(JSON.stringify({action:'trigger-feature',featureId:publicEffect.id,mapKey:'table-map'}));
   const triggered=(await next);assert.equal(triggered.feature.id,publicEffect.id);assert.equal(triggered.feature.description,undefined);assert.equal(triggered.allFeatures,undefined);
+  assert.equal((await fetch(publicAsset(linkedAsset))).status,200);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'campaigns',campaign.id,'state.json'))).currentFeatureStates[publicEffect.id],'triggered');
   const tableAgain=await open(cookie,campaign.id,'table');sockets.push(tableAgain);
   tableAgain.on('message',raw=>tableMessages.push(JSON.parse(raw)));
@@ -232,7 +304,7 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.equal((await fetch(base+'/api/characters/'+autoHero.id+'/advance',{method:'POST',headers:noteHeaders,body:JSON.stringify({fromLevel:1,level:2})})).status,409);
   const rested=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'short'})})).json();assert.equal(rested.resources[0].used,1);assert.equal(rested.hp,18);
   const longRest=await (await fetch(base+'/api/characters/'+autoHero.id+'/rest',{method:'POST',headers:noteHeaders,body:JSON.stringify({type:'long'})})).json();assert.equal(longRest.resources[0].used,0);assert.equal(longRest.hp,23);
-  player.close();const reconnected=await open();sockets.push(reconnected);next=message(reconnected,m=>m.type==='CHARACTERS_UPDATE');reconnected.send(JSON.stringify({action:'request-characters'}));assert.equal((await next).characters[0].hp,23);
+  player.close();const reconnected=await open();sockets.push(reconnected);next=message(reconnected,m=>m.type==='CHARACTERS_UPDATE');reconnected.send(JSON.stringify({action:'player-auth',token:playerToken}));assert.equal((await next).characters[0].hp,23);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'characters.json'))).characters[0].hp,23);
 
   const linksPath='/api/locations/links?game='+packedCampaign.id;
@@ -262,50 +334,1102 @@ test('master authority, live updates, reconnect and persistence',async()=>{
   assert.deepEqual((await travel(routeMaster,mine)).tokens,[]);
 
   const worldGame='?game='+campaign.id;
+  const templateBase=base+'/api/world-generator-templates';
+  const templateUrl=templateBase+worldGame;
+  const templateInput={revision:0,name:'  Река у деревни  ',kind:'path',version:1,seed:43,settings:{terrain:'water',width:3}};
+  const writeTemplate=(body,headers=noteHeaders,url=templateUrl)=>fetch(url,{
+    method:'POST',headers,redirect:'manual',body:JSON.stringify(body),
+  });
+  const readTemplates=(url=templateUrl,headers=noteHeaders)=>fetch(url,{headers,redirect:'manual'});
+  for (const [url,headers] of [
+    [templateUrl,{}],
+    [templateUrl,{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token}],
+    [templateUrl+'&view=table',noteHeaders],
+  ]) {
+    assert.equal((await readTemplates(url,headers)).status,302);
+    assert.equal((await writeTemplate(templateInput,headers,url)).status,302);
+  }
+  assert.deepEqual(await (await readTemplates()).json(),{revision:0,templates:[]});
+  const templateResponse=await writeTemplate(templateInput);
+  assert.equal(templateResponse.status,201);
+  assert.equal(templateResponse.headers.get('cache-control'),'no-store');
+  const pathTemplates=await templateResponse.json();
+  const pathTemplate=pathTemplates.templates[0];
+  const {revision: templateRevision,...templateSettings}=templateInput;
+  assert.deepEqual(pathTemplate,{...templateSettings,id:pathTemplate.id,name:'Река у деревни'});
+  assert.equal(pathTemplates.revision,templateRevision+1);
+  assert.equal((await writeTemplate({...templateInput,name:'Другой'})).status,409,'a stale writer cannot overwrite templates');
+  assert.equal((await writeTemplate({...templateInput,revision:1,name:'река у деревни'})).status,409,'names are unique within kind');
+  for (const invalid of [
+    {name:''},{name:'x'.repeat(81)},{revision:-1},{revision:1.5},{seed:-1},{seed:'43'},
+    {kind:'room'},{version:2},{settings:{terrain:'water',width:2}},
+    {points:[{x:0,y:0},{x:1,y:0}]},{state:{version:1}},
+    {settings:{terrain:'water',width:3,points:[{x:0,y:0},{x:1,y:0}]}},
+  ]) assert.equal((await writeTemplate({...templateInput,revision:1,...invalid})).status,400);
+  assert.deepEqual(await (await readTemplates()).json(),pathTemplates,'failed writes preserve saved settings');
+  assert.deepEqual(await (await readTemplates(templateBase)).json(),{revision:0,templates:[]},'campaigns have independent settings');
+  const forestTemplateInput={revision:1,name:'Река у деревни',kind:'forest',version:1,seed:99,settings:{density:90}};
+  assert.equal((await writeTemplate(forestTemplateInput)).status,201,'different generator kinds may use the same display name');
+  const savedTemplates=await (await readTemplates()).json();
+  assert.equal(savedTemplates.revision,2);
+  assert.deepEqual(savedTemplates.templates[1].settings,{density:90});
+  const templatesFile=path.join(dir,'campaigns',campaign.id,'world-generator-templates.json');
+  const fullTemplates={revision:2,templates:Array.from({length:128},(_,i)=>({...pathTemplate,id:'template-'+i,name:'Шаблон '+i}))};
+  fs.writeFileSync(templatesFile,JSON.stringify(fullTemplates));
+  assert.equal((await writeTemplate({...templateInput,revision:2,name:'Ещё один'})).status,400);
+  assert.deepEqual(JSON.parse(fs.readFileSync(templatesFile)),fullTemplates,'the limit leaves existing templates intact');
+  const corrupted=JSON.stringify({revision:2,templates:[{...pathTemplate,settings:{terrain:'water',width:2}}]});
+  fs.writeFileSync(templatesFile,corrupted);
+  assert.equal((await readTemplates()).status,500);
+  assert.equal((await writeTemplate({...templateInput,revision:2})).status,500);
+  assert.equal(fs.readFileSync(templatesFile,'utf8'),corrupted,'invalid stored settings cannot be overwritten');
+  fs.writeFileSync(templatesFile,JSON.stringify(savedTemplates));
+
   const worldBase=base+'/api/worlds';
   const worldWrite=(endpoint,method,data)=>fetch(worldBase+endpoint+worldGame,{method,headers:noteHeaders,body:JSON.stringify(data)});
   assert.equal((await fetch(worldBase+worldGame,{redirect:'manual'})).status,302);
   const world=await (await worldWrite('','POST',{name:'Деревня у озера',sample:true})).json();
+  const worldDir=path.join(dir,'campaigns',campaign.id,'worlds');
+  const backup=path.join(worldDir,world.id+'.bak');
+  fs.writeFileSync(backup,'backup contents');
+  fs.mkdirSync(path.join(worldDir,'00000000-0000-0000-0000-000000000000.json'));
+  const listing=await fetch(worldBase+worldGame,{headers:{Cookie:cookie}});
+  assert.equal(listing.status,200);
+  assert.deepEqual((await listing.json()).worlds,[{id:world.id,name:world.name}]);
+  assert.equal(fs.readFileSync(backup,'utf8'),'backup contents');
+  const positionBase=base+'/api/character-positions/';
+  const ownPositionUrl=base+'/api/player-position'+worldGame;
+  const positionUrl=id=>positionBase+encodeURIComponent(id)+worldGame;
+  const setPosition=(id,position,headers=noteHeaders)=>fetch(positionUrl(id),{
+    method:'PUT',headers,redirect:'manual',body:JSON.stringify(position),
+  });
+  const readPosition=(id,masterCookie)=>fetch(positionUrl(id),{headers:{Cookie:masterCookie}}).then(r=>r.json());
+  const readOwnPosition=token=>fetch(ownPositionUrl,{headers:{Authorization:'Bearer '+token}}).then(r=>r.json());
+  const firstPosition={worldId:world.id,sceneId:'overworld',floorId:'ground',x:-33,y:31};
+  assert.deepEqual(await readPosition(otherChar.id,cookie),{position:null});
+  assert.deepEqual(await readOwnPosition(otherToken.token),{position:null});
+  assert.equal((await fetch(ownPositionUrl)).status,401);
+  assert.equal((await fetch(ownPositionUrl,{headers:{Authorization:'Bearer '+playerToken}})).status,401);
+  assert.equal((await fetch(positionUrl(otherChar.id),{redirect:'manual'})).status,302);
+  assert.equal((await setPosition(otherChar.id,firstPosition,{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token})).status,302);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:0.5})).status,400);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,floorId:'upstairs'})).status,404);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,sceneId:'unknown'})).status,404);
+  assert.equal((await setPosition(ch.id,firstPosition)).status,404);
+  assert.equal((await fetch(positionBase+encodeURIComponent(ch.id),{method:'PUT',headers:noteHeaders,body:JSON.stringify(firstPosition)})).status,404);
+  next=message(otherReconnected,msg=>msg.type==='CHARACTERS_UPDATE');
+  const secondHero=await fetch(base+'/api/characters'+worldGame,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify({name:'Разведчик'}),
+  }).then(r=>r.json());
+  assert.deepEqual((await next).characters.map(hero=>hero.id),[otherChar.id],
+    'a phone socket in a master browser remains bound to its invited hero');
+  const secondWorld=await worldWrite('','POST',{name:'Северный мир'}).then(r=>r.json());
+  const secondPosition={...firstPosition,worldId:secondWorld.id,x:32,y:-1};
+  assert.equal((await setPosition(secondHero.id,secondPosition)).status,200);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:10})).status,200);
+  assert.equal((await setPosition(otherChar.id,firstPosition)).status,200);
+  const firstSaved={position:{characterId:otherChar.id,...firstPosition,revision:2}};
+  const secondSaved={position:{characterId:secondHero.id,...secondPosition,revision:1}};
+  const legacyPositionsFile=path.join(worldDir,'..','character-positions.json');
+  const legacyPositions=JSON.parse(fs.readFileSync(legacyPositionsFile,'utf8')).positions;
+  fs.writeFileSync(legacyPositionsFile,JSON.stringify(legacyPositions));
+  assert.deepEqual(await readOwnPosition(otherToken.token),firstSaved);
+  assert.deepEqual(await readPosition(secondHero.id,cookie),secondSaved);
+  assert.equal((await fetch(ownPositionUrl+'&characterId='+secondHero.id,{
+    headers:{Authorization:'Bearer '+otherToken.token},
+  }).then(r=>r.json())).position.characterId,otherChar.id);
+
+  const movePosition=(body,token=otherToken.token)=>fetch(base+'/api/player-position/move'+worldGame,{
+    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),
+  });
+  assert.equal((await movePosition({direction:'east',revision:2},playerToken)).status,401);
+  assert.equal((await movePosition({direction:'east',revision:2,characterId:secondHero.id})).status,400);
+  assert.equal((await movePosition({direction:'diagonal',revision:2})).status,400);
+  const secondInvitation=await fetch(base+'/api/player-access'+worldGame,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify({characterId:secondHero.id}),
+  }).then(r=>r.json());
+  const secondSocket=await open(undefined,campaign.id);sockets.push(secondSocket);
+  next=message(secondSocket,m=>m.type==='CHARACTER_POSITION');
+  secondSocket.send(JSON.stringify({action:'player-auth',token:secondInvitation.token}));
+  assert.deepEqual((await next).position,secondSaved.position);
+  const observedPositions=[];
+  secondSocket.on('message',raw=>{
+    const msg=JSON.parse(raw);
+    if(msg.type==='CHARACTER_POSITION')observedPositions.push(msg.characterId);
+  });
+  next=message(otherReconnected,m=>m.type==='CHARACTER_POSITION');
+  const step={direction:'east',revision:2};
+  const [firstStep,retry]=await Promise.all([movePosition(step),movePosition(step)]);
+  const results=[firstStep,retry];
+  assert.deepEqual(results.map(response=>response.status).sort(),[200,409]);
+  const afterStep={...firstSaved.position,x:-32,revision:3};
+  assert.deepEqual((await next).position,afterStep);
+  assert.deepEqual((await results.find(response=>response.status===409).json()).position,afterStep);
+  next=message(secondSocket,m=>m.type==='CHARACTER_POSITION');
+  assert.equal((await movePosition({direction:'north',revision:1},secondInvitation.token)).status,200);
+  const secondMoved={...secondSaved.position,y:-2,revision:2};
+  assert.deepEqual((await next).position,secondMoved);
+  assert.deepEqual(observedPositions,[secondHero.id]);
+
+  next=message(otherReconnected,m=>m.type==='MOVEMENT_LOCK'&&m.locked===true);
+  other.send(JSON.stringify({action:'lock-player',name:otherChar.name}));
+  await next;
+  assert.equal((await movePosition({direction:'east',revision:3})).status,403);
+  next=message(otherReconnected,m=>m.type==='CHARACTER_POSITION');
+  const transferredPosition={...firstPosition,worldId:secondWorld.id,x:80,y:-60};
+  assert.equal((await setPosition(otherChar.id,transferredPosition)).status,200);
+  const transferred={position:{characterId:otherChar.id,...transferredPosition,revision:4}};
+  assert.deepEqual((await next).position,transferred.position);
+  next=message(otherReconnected,m=>m.type==='MOVEMENT_LOCK'&&m.locked===false);
+  other.send(JSON.stringify({action:'unlock-player',name:otherChar.name}));
+  await next;
+  const staleMove=await movePosition({direction:'east',revision:3});
+  assert.equal(staleMove.status,409);
+  assert.deepEqual((await staleMove.json()).position,transferred.position);
+  assert.deepEqual(await readOwnPosition(otherToken.token),transferred);
+  assert.ok(tableMessages.every(msg=>msg.type!=='CHARACTER_POSITION'));
+
+
   const tiles=require('../remote/world-model');
   tiles.set(world.chunks,-70,-41,'path');
-  world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true});
+  world.chunks['7,7']={0:'dirt'};
+  world.objects.push({id:'secret-door',kind:'door',x:0,y:0,turn:0,hidden:true},
+    {id:'secret-marker',kind:'torch',x:14,y:12,turn:0,hidden:true},
+    {id:'another-secret',kind:'torch',x:14,y:12,turn:1,hidden:true});
+  for(let x=20;x<=30;x++) tiles.set(world.chunks,x,0,'path');
+  tiles.set(world.chunks,20,-1,'grass');
+  tiles.set(world.chunks,14,12,'grass');
+  tiles.set(world.chunks,14,13,'grass');
+  world.objects.push(
+    {id:'party-wall',kind:'wall',x:22,y:0,turn:1},
+    {id:'remembered-torch',kind:'torch',x:29,y:0,turn:0},
+    {id:'private-party-torch',kind:'torch',x:21,y:0,turn:0,hidden:true},
+  );
+  const roadRecipe={
+    id:'road-main',kind:'path',version:1,seed:0,
+    params:{terrain:'path',width:3,points:[{x:-33,y:0},{x:32,y:1}]},
+  };
+  const forestRecipe={
+    id:'forest-north',kind:'forest',version:1,seed:39,
+    params:{density:78,points:[{x:-76,y:-55},{x:-65,y:-55},{x:-65,y:-45},{x:-76,y:-45}]},
+  };
+  const generators=require('../remote/world-generators');
+  const forestPlot=generators.generateForest(forestRecipe,world);
+  world.generators=[roadRecipe];
+  const forestChange=generators.generationChange(forestRecipe,world);
+  for (const cell of forestChange.tiles) tiles.set(world.chunks,cell.x,cell.y,cell.after);
+  world.objects=forestChange.objects.after;
+  world.generators=forestChange.generators.after;
+  const invalidState={...world.generators[1],state:{...world.generators[1].state,version:2}};
+  assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidState]})).status,400);
+  const invalidRecipe={...roadRecipe,version:2};
+  assert.equal((await worldWrite('/'+world.id,'PUT',{...world,generators:[invalidRecipe]})).status,400);
   const savedWorld=await (await worldWrite('/'+world.id,'PUT',world)).json();
+  assert.equal(savedWorld.revision,world.revision+1,'invalid recipes do not consume the draft revision');
+  assert.deepEqual(savedWorld.generators,world.generators);
+  assert.deepEqual(savedWorld.chunks,world.chunks,'saving a recipe does not paint the map');
+  assert.equal((await fetch(worldBase+'/'+world.id+worldGame,{redirect:'manual'})).status,302);
   assert.equal(tiles.get(savedWorld.chunks,-70,-41),'path');
   assert.equal((await worldWrite('/'+world.id,'PUT',world)).status,409);
   next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
-  assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
+  const initialPublication=await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true});
+  assert.equal(initialPublication.status,200);
+  assert.equal((await initialPublication.json()).map.generators,undefined);
+  const publishedNotice=await next;
+  const tableWorld=(keys='0,0')=>fetch(worldBase+'/table'+worldGame+'&chunks='+encodeURIComponent(keys)).then(r=>r.json());
+  const tableStatus=(query=worldGame)=>fetch(worldBase+'/table/status'+query).then(r=>r.json());
+  const freshTable=await tableWorld();
+  assert.deepEqual(freshTable.version,publishedNotice.version);
+  assert.deepEqual(await tableStatus(),{...publishedNotice,blackout:false});
+  assert.equal((await tableStatus('?game='+packedCampaign.id)).id,null);
+  assert.deepEqual(freshTable.chunks['0,0'],{});
+  assert.deepEqual(freshTable.tokens,[]);
+  assert.equal(freshTable.positions,undefined);
+  assert.equal(freshTable.generators,undefined);
+  assert.equal((await setPosition(otherChar.id,{...firstPosition,x:20,y:0})).status,200);
+  assert.equal((await setPosition(secondHero.id,{...firstPosition,x:24,y:0})).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,20,0),undefined,'a transfer alone does not explore the map');
+
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  const partyStep=await movePosition({direction:'east',revision:5});
+  assert.equal(partyStep.status,200);
+  const partyFirst=await partyStep.json();
+  const stepNotice=await next;
+  const firstExplored=await tableWorld();
+  assert.deepEqual(firstExplored.version,stepNotice.version);
+  assert.deepEqual(stepNotice.version,{...publishedNotice.version,exploration:publishedNotice.version.exploration+1});
+  assert.deepEqual((await tableStatus()).version,stepNotice.version);
+  assert.equal(tiles.get(firstExplored.chunks,20,0),'path');
+  assert.equal(tiles.get(firstExplored.chunks,21,0),'path');
+  assert.equal(tiles.get(firstExplored.chunks,22,0),'path','the wall cell itself is visible');
+  assert.equal(tiles.get(firstExplored.visible,21,0),true);
+  assert.equal(tiles.get(firstExplored.visible,23,0),undefined);
+  assert.equal(tiles.get(firstExplored.chunks,23,0),undefined,'the wall blocks sight beyond it');
+  assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass','sight crosses chunk boundaries');
+  assert.ok(firstExplored.objects.every(prop=>prop.id!=='private-party-torch'));
+  assert.equal((await movePosition({direction:'east',revision:6})).status,409);
+  assert.deepEqual(await readOwnPosition(otherToken.token),partyFirst);
+  const afterBlockedStep=await tableWorld();
+  assert.deepEqual(afterBlockedStep.seen,firstExplored.seen,'a blocked step does not change exploration');
+  assert.deepEqual(afterBlockedStep.version,firstExplored.version);
+
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  const secondPartyStep=await movePosition({direction:'east',revision:3},secondInvitation.token);
+  assert.equal(secondPartyStep.status,200);
+  const partySecond=await secondPartyStep.json();
   await next;
-  const tableWorld=()=>fetch(worldBase+'/table'+worldGame+'&chunks=0%2C0').then(r=>r.json());
-  assert.deepEqual((await tableWorld()).chunks['0,0'],{});
+  const partyMap=await tableWorld();
+  for(const x of [20,21,23,24,25,29]) assert.equal(tiles.get(partyMap.chunks,x,0),'path');
+  assert.equal(tiles.get(partyMap.chunks,30,0),undefined,'cells outside both heroes’ sight stay hidden');
+  assert.deepEqual(partyMap.tokens,[]);
+  for(const x of [21,25,29]) assert.equal(tiles.get(partyMap.visible,x,0),true,'current sight combines both heroes');
+  assert.deepEqual(partyMap.objects.find(prop=>prop.id==='remembered-torch'),{id:'remembered-torch',kind:'torch',x:29,y:0,turn:0});
+
+  const sceneResponse=await worldWrite('','POST',{name:'Нижняя пещера',parentWorldId:world.id});
+  assert.equal(sceneResponse.status,201);
+  const cave=await sceneResponse.json();
+  tiles.set(cave.chunks,4,4,'caveFloor');
+  tiles.set(cave.chunks,4,5,'water');
+  tiles.set(cave.chunks,5,4,'water');
+  tiles.set(cave.chunks,7,4,'caveFloor');
+  cave.objects.push({id:'cave-bridge',kind:'bridge',x:6,y:4,turn:0},
+    {id:'cave-door',kind:'door',x:6,y:4,turn:0});
+  const caveSaved=await worldWrite('/'+cave.id,'PUT',cave).then(r=>r.json());
+  assert.equal(caveSaved.parentWorldId,world.id);
+  const sceneList=await fetch(worldBase+worldGame,{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(sceneList.worlds.find(item=>item.id===cave.id).parentWorldId,world.id);
+  assert.equal((await worldWrite('','POST',{name:'Недопустимая сцена',parentWorldId:cave.id})).status,404);
+  const linkEndpoint='/'+world.id+'/transitions';
+  const worldLinkBody={x:21,y:0,toMapId:cave.id,toX:4,toY:4};
+  assert.equal((await fetch(worldBase+linkEndpoint+worldGame,{redirect:'manual'})).status,302);
+  assert.equal((await worldWrite(linkEndpoint,'POST',{...worldLinkBody,toMapId:secondWorld.id})).status,400);
+  assert.equal((await worldWrite(linkEndpoint,'POST',{...worldLinkBody,toY:5})).status,409);
+  const createdLink=await worldWrite(linkEndpoint,'POST',worldLinkBody);
+  assert.equal(createdLink.status,201);
+  const {link}=await createdLink.json();
+  const temporaryLink=await worldWrite(linkEndpoint,'POST',{...worldLinkBody,x:20}).then(r=>r.json());
+  const deletedLink=await worldWrite(linkEndpoint+'/'+encodeURIComponent(temporaryLink.link.id),'DELETE');
+  assert.equal(deletedLink.status,200);
+  assert.deepEqual((await deletedLink.json()).links,[link]);
+  assert.deepEqual(link.to,{worldId:world.id,sceneId:cave.id,floorId:'ground',x:4,y:4});
+  assert.equal((await movePosition({direction:'enter',revision:4},secondInvitation.token)).status,409);
+  assert.deepEqual(await readOwnPosition(secondInvitation.token),partySecond);
+  const entered=await movePosition({direction:'enter',revision:6});
+  assert.equal(entered.status,200);
+  assert.deepEqual((await entered.json()).position,{characterId:otherChar.id,...link.to,revision:7});
+  assert.equal((await movePosition({direction:'enter',revision:6})).status,409);
+  assert.equal((await movePosition({direction:'south',revision:7})).status,409);
+  const bridgeStep=await movePosition({direction:'east',revision:7});
+  assert.equal(bridgeStep.status,200);
+  const afterBridge=await bridgeStep.json();
+  assert.deepEqual(afterBridge.position,{characterId:otherChar.id,...link.to,x:5,revision:8});
+  assert.equal(tiles.get((await tableWorld()).chunks,4,4),undefined,'the cave is a separate exploration scope');
+  assert.equal((await worldWrite('/'+cave.id+'/publish','POST',{revision:caveSaved.revision,fog:true})).status,200);
+  const caveTable=await tableWorld();
+  assert.equal(caveTable.id,cave.id);
+  assert.equal(tiles.get(caveTable.chunks,4,4),'caveFloor');
+  assert.equal(tiles.get(caveTable.chunks,5,4),'water');
+  assert.equal(tiles.get(caveTable.chunks,4,5),'water','a visible cell need not be passable');
+  assert.equal(tiles.get(caveTable.chunks,7,4),undefined,'the closed door blocks sight');
+  assert.equal((await movePosition({direction:'east',revision:8})).status,409);
+  const floorResponse=await worldWrite('','POST',{name:'Подвал',sceneMapId:cave.id,elevation:-1});
+  assert.equal(floorResponse.status,201);
+  const lowerFloor=await floorResponse.json();
+  assert.equal(lowerFloor.parentSceneId,cave.id);
+  assert.equal(lowerFloor.parentWorldId,world.id);
+  assert.equal((await worldWrite('','POST',{name:'Дубликат',sceneMapId:cave.id,elevation:-1})).status,409);
+  assert.equal((await worldWrite('','POST',{name:'Нулевой этаж',sceneMapId:cave.id,elevation:0})).status,400);
+  tiles.set(lowerFloor.chunks,7,4,'stone');
+  const floorSaved=await worldWrite('/'+lowerFloor.id,'PUT',lowerFloor).then(r=>r.json());
+  const lowerPosition={...link.to,floorId:lowerFloor.id,x:5};
+  assert.equal((await setPosition(secondHero.id,lowerPosition)).status,200);
+  assert.equal((await setPosition(secondHero.id,{...lowerPosition,sceneId:'overworld'})).status,404);
+  const changeDoor=(open,id=cave.id)=>worldWrite('/live/doors/cave-door','PUT',{id,open});
+  const guestDoor=await fetch(worldBase+'/live/doors/cave-door'+worldGame,{
+    method:'PUT',redirect:'manual',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:cave.id,open:true}),
+  });
+  assert.equal(guestDoor.status,302);
+  assert.equal((await changeDoor(true,world.id)).status,409);
+  next=message(table,m=>m.type==='WORLD_UPDATE'&&m.id===cave.id);
+  assert.deepEqual(await (await changeDoor(true)).json(),{open:true});
+  const openedNotice=await next;
+  const openedCave=await tableWorld();
+  assert.deepEqual(openedCave.version,openedNotice.version);
+  assert.deepEqual(openedCave.version,{...caveTable.version,exploration:caveTable.version.exploration+1});
+  assert.equal((await changeDoor(true)).status,200);
+  assert.deepEqual((await tableStatus()).version,openedCave.version);
+  assert.equal(tiles.get(openedCave.chunks,7,4),'caveFloor','stationary hero sees past the opened door');
+  assert.equal(openedCave.objects.find(prop=>prop.id==='cave-door').open,true);
+  assert.equal(tiles.get(openedCave.visible,7,4),true);
+  assert.equal((await changeDoor(false)).status,200);
+  const rememberedCave=await tableWorld();
+  assert.equal(tiles.get(rememberedCave.chunks,7,4),'caveFloor');
+  assert.equal(tiles.get(rememberedCave.visible,7,4),undefined,'closing the door moves the cell beyond it out of live sight');
+  assert.equal((await changeDoor(true)).status,200);
+  assert.deepEqual(await readOwnPosition(otherToken.token),afterBridge);
+  const doorStep=await movePosition({direction:'east',revision:8});
+  assert.equal(doorStep.status,200);
+  const afterDoor=await doorStep.json();
+  assert.equal(afterDoor.position.x,6);
+  assert.equal((await changeDoor(false)).status,200);
+  const closedCave=await tableWorld();
+  assert.equal(tiles.get(closedCave.chunks,7,4),'caveFloor','closing a door preserves remembered terrain');
+  assert.equal(closedCave.objects.find(prop=>prop.id==='cave-door').open,undefined);
+  assert.equal((await changeDoor(true)).status,200);
+
+  assert.equal((await worldWrite('/'+lowerFloor.id+'/publish','POST',{revision:floorSaved.revision,fog:true})).status,200);
+  const unexploredFloor=await tableWorld();
+  assert.equal(tiles.get(unexploredFloor.chunks,7,4),undefined,'opening a door does not explore another floor');
+  const floorStep=await movePosition({direction:'north',revision:5},secondInvitation.token);
+  assert.equal(floorStep.status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,7,4),'stone');
+  const stairs=await worldWrite('/'+lowerFloor.id+'/transitions','POST',{x:5,y:3,toMapId:cave.id,toX:7,toY:4});
+  assert.equal(stairs.status,201);
+  const stairsStep=await movePosition({direction:'enter',revision:6},secondInvitation.token);
+  assert.equal(stairsStep.status,200);
+  const afterStairs=await stairsStep.json();
+  assert.deepEqual(afterStairs.position,{characterId:secondHero.id,...link.to,x:7,revision:7});
+  assert.equal((await worldWrite('/'+world.id+'/publish','POST',{revision:savedWorld.revision,fog:true})).status,200);
+  const departedWorld=await tableWorld();
+  assert.equal(tiles.get(departedWorld.chunks,21,0),'path');
+  assert.deepEqual(departedWorld.visible,{},'heroes on other maps leave only the party’s memory');
+  assert.ok(departedWorld.version.generation > openedCave.version.generation);
+  assert.equal(departedWorld.version.publication,publishedNotice.version.publication+1);
+
+
   const movement={id:world.id,action:'token',characterId:otherChar.id,x:0,y:0};
   assert.equal((await worldWrite('/live/change','POST',movement)).status,200);
   const firstView=await tableWorld();
   assert.equal(tiles.get(firstView.chunks,0,0),'path');
-  assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door'));
-  tiles.set(savedWorld.chunks,0,0,'water');
-  assert.equal((await worldWrite('/'+world.id,'PUT',savedWorld)).status,200);
+  assert.ok(firstView.objects.every(prop=>prop.id!=='secret-door' && prop.id!=='secret-marker'));
+  assert.equal(tiles.get(firstView.seen,14,12),undefined);
+  const revealSecret=(objectId,body,headers=noteHeaders,query=worldGame)=>fetch(
+    worldBase+'/live/secrets/'+encodeURIComponent(objectId)+query,{
+      method:'PUT',headers,redirect:'manual',body:JSON.stringify(body),
+    });
+  const secretBody={id:world.id,revision:savedWorld.revision};
+  const masterLive=(revision,headers=noteHeaders)=>fetch(
+    worldBase+'/live'+worldGame+'&version='+encodeURIComponent(world.id+':'+revision),{headers,redirect:'manual'},
+  );
+  const guestSecretHeaders={'Content-Type':'application/json'};
+  const playerSecretHeaders={...guestSecretHeaders,Authorization:'Bearer '+otherToken.token};
+  assert.equal((await masterLive(savedWorld.revision,playerSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,guestSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,playerSecretHeaders)).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,noteHeaders,worldGame+'&view=table')).status,302);
+  assert.equal((await revealSecret('secret-marker',secretBody,noteHeaders,'?game='+packedCampaign.id)).status,409);
+  assert.equal((await revealSecret('secret-marker',{...secretBody,revision:savedWorld.revision+1})).status,409);
+  assert.equal((await revealSecret('secret-marker',{...secretBody,characterId:secondHero.id})).status,400);
+  assert.equal((await revealSecret('remembered-torch',secretBody)).status,404);
+  assert.equal((await tableWorld()).objects.some(prop=>prop.id==='secret-marker'),false);
+  assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,[]);
+
+  const shareSecret=(objectId,body,headers=noteHeaders,query=worldGame)=>fetch(
+    worldBase+'/live/secrets/'+encodeURIComponent(objectId)+'/share'+query,{
+      method:'PUT',headers,redirect:'manual',body:JSON.stringify(body),
+    });
+  const discoveryResponse=(token,query=worldGame)=>fetch(base+'/api/player-discoveries'+query,{
+    headers:token ? {Authorization:'Bearer '+token} : {Cookie:cookie},
+  });
+  const readDiscoveries=async(token,query)=>{
+    const response=await discoveryResponse(token,query);
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('cache-control'),'no-store');
+    return response.json();
+  };
+  const shareBody={...secretBody,characterId:otherChar.id};
+  assert.equal((await fetch(base+'/api/player-discoveries'+worldGame)).status,401);
+  assert.equal((await discoveryResponse()).status,401);
+  assert.equal((await discoveryResponse(otherToken.token,worldGame+'&view=table')).status,401);
+  assert.equal((await discoveryResponse(otherToken.token,'?game='+packedCampaign.id)).status,401);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[]});
+  assert.equal((await shareSecret('another-secret',shareBody,guestSecretHeaders)).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,playerSecretHeaders)).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,noteHeaders,worldGame+'&view=table')).status,302);
+  assert.equal((await shareSecret('another-secret',shareBody,noteHeaders,'?game='+packedCampaign.id)).status,409);
+  assert.equal((await shareSecret('another-secret',{...shareBody,characterId:ch.id})).status,404);
+  assert.equal((await shareSecret('another-secret',secretBody)).status,400);
+  assert.equal((await shareSecret('remembered-torch',shareBody)).status,404);
+
+  const discoveryGuest=await open(undefined,campaign.id);sockets.push(discoveryGuest);
+  const leaks=[];
+  for(const socket of [secondSocket,table,discoveryGuest]) socket.on('message',raw=>{
+    const event=JSON.parse(raw);
+    if(event.type==='PLAYER_DISCOVERIES_CHANGED' || JSON.stringify(event).includes('another-secret')) leaks.push(event);
+  });
+  const personalUpdates=[];
+  otherReconnected.on('message',raw=>{
+    const event=JSON.parse(raw);
+    if(event.type==='PLAYER_DISCOVERIES_CHANGED') personalUpdates.push(event);
+  });
+  next=message(otherReconnected,msg=>msg.type==='PLAYER_DISCOVERIES_CHANGED');
+  assert.deepEqual(await (await shareSecret('another-secret',shareBody)).json(),{shared:true});
+  const personalEvent=await next;
+  assert.deepEqual(personalEvent,{type:'PLAYER_DISCOVERIES_CHANGED',characterId:otherChar.id});
+  assert.deepEqual(await (await shareSecret('another-secret',shareBody)).json(),{shared:true});
+  const privateDiscovery={mapId:world.id,mapName:savedWorld.name,object:{id:'another-secret',kind:'torch',x:14,y:12,turn:1}};
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await readDiscoveries(secondInvitation.token,worldGame+'&characterId='+otherChar.id),{discoveries:[]});
+  assert.deepEqual(await tableWorld(),firstView,'a personal disclosure does not alter the TV snapshot or version');
+
+  const secretScreen=await open(undefined,campaign.id,'table');sockets.push(secretScreen);
+  next=message(secretScreen,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id&&
+    msg.version.exploration===firstView.version.exploration+1);
+  const phoneUpdate=message(secondSocket,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  const guestUpdate=message(discoveryGuest,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id&&
+    msg.version.exploration===firstView.version.exploration+1);
+  const sharedScreenUpdate=message(table,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  const recipientUpdate=message(otherReconnected,msg=>msg.type==='WORLD_UPDATE'&&msg.id===world.id);
+  assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true});
+  for(const event of await Promise.all([next,phoneUpdate,guestUpdate,sharedScreenUpdate,recipientUpdate])) {
+    assert.doesNotMatch(JSON.stringify(event),/secret-marker|revealedSecrets/);
+    assert.deepEqual(event.version,{...firstView.version,exploration:firstView.version.exploration+1});
+  }
+  assert.deepEqual(leaks,[]);
+  assert.deepEqual(personalUpdates,[personalEvent],'retrying an identical delivery does not send another invalidation');
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[]},'a TV reveal does not send a personal discovery');
+  assert.deepEqual(await readOwnPosition(secondInvitation.token),afterStairs);
+  assert.deepEqual(await (await revealSecret('secret-marker',secretBody)).json(),{revealed:true},'repeated reveal is idempotent');
+  const firstSecretView=await tableWorld();
+  assert.deepEqual(firstSecretView.version,{...firstView.version,exploration:firstView.version.exploration+1});
+  assert.deepEqual((await tableStatus()).version,firstSecretView.version);
+  const firstMarker={id:'secret-marker',kind:'torch',x:14,y:12,turn:0};
+  assert.deepEqual(firstSecretView.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
+  assert.equal(tiles.get(firstSecretView.chunks,14,12),'grass','the reveal opens exactly its own cell');
+  assert.equal(tiles.get(firstSecretView.seen,14,13),undefined);
+  assert.equal(firstSecretView.objects.some(prop=>prop.id==='secret-door' || prop.id==='another-secret'),false);
+  assert.equal((await tableWorld('0,-1')).objects.some(prop=>prop.id==='secret-marker'),false);
+  assert.deepEqual((await (await masterLive(savedWorld.revision)).json()).revealedSecrets,['secret-marker']);
+  assert.equal((await (await fetch(worldBase+'/'+world.id+worldGame,{headers:noteHeaders})).json())
+    .objects.find(prop=>prop.id==='secret-marker').hidden,true,'the draft remains secret');
+  assert.equal((await shareSecret('secret-marker',{...secretBody,characterId:secondHero.id})).status,200);
+  const secondDiscovery={...privateDiscovery,object:firstMarker};
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[secondDiscovery]});
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await tableWorld(),firstSecretView);
+  const chunkEndpoint='/'+world.id+'/chunks';
+  const chunkUrl=worldBase+chunkEndpoint+worldGame+'&chunks=0%2C0';
+  assert.equal((await fetch(chunkUrl,{redirect:'manual'})).status,302);
+  const [otherChunk]=tiles.address(-70,-41);
+  const manifest=JSON.parse(fs.readFileSync(path.join(worldDir,world.id+'-chunks.json')));
+  const unrelatedFile=path.join(worldDir,world.id+'-chunks',manifest.index[otherChunk].hash+'.json');
+  const editedTerrain={'0,0':{...savedWorld.chunks['0,0'],0:'water'},'7,7':null};
+  tiles.set(editedTerrain,29,0,'dirt');
+  tiles.set(editedTerrain,28,0,null);
+  tiles.set(editedTerrain,28,1,'grass');
+  const chunkPatch={revision:savedWorld.revision,chunks:editedTerrain};
+  fs.renameSync(unrelatedFile,unrelatedFile+'.held');
+  try {
+   const partial=await fetch(chunkUrl,{headers:{Cookie:cookie}});
+   assert.equal(partial.status,200);
+   assert.deepEqual(await partial.json(),{id:world.id,revision:savedWorld.revision,chunks:{'0,0':savedWorld.chunks['0,0']}});
+   const changed=await worldWrite(chunkEndpoint,'PATCH',chunkPatch);
+   assert.equal(changed.status,200);
+   assert.deepEqual(await changed.json(),{revision:savedWorld.revision+1});
+   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
+  } finally {
+   fs.renameSync(unrelatedFile+'.held',unrelatedFile);
+  }
+  assert.equal((await worldWrite(chunkEndpoint,'PATCH',chunkPatch)).status,409);
+  const updatedDraft=await fetch(worldBase+'/'+world.id+worldGame,{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(tiles.get(updatedDraft.chunks,-70,-41),'path');
+  assert.equal(tiles.get(updatedDraft.chunks,0,0),'water');
+  assert.equal(updatedDraft.chunks['7,7'],undefined);
+  assert.deepEqual(updatedDraft.objects,savedWorld.objects);
+  assert.deepEqual(updatedDraft.generators,world.generators,'patching chunks preserves generator metadata');
+  Object.assign(updatedDraft.objects.find(prop=>prop.id==='remembered-torch'),{x:28,turn:1});
+  Object.assign(updatedDraft.objects.find(prop=>prop.id==='secret-marker'),{x:29,y:0});
+  updatedDraft.objects.find(prop=>prop.id==='another-secret').x=13;
+  delete updatedDraft.generators;
+  const editedWorld=await worldWrite('/'+world.id,'PUT',updatedDraft).then(r=>r.json());
+  assert.deepEqual(editedWorld.generators,world.generators,'an older editor may omit generator metadata');
+  assert.equal(editedWorld.revision,savedWorld.revision+2);
+  const roomWorld=await (await worldWrite('','POST',{name:'Комната приёмки'})).json();
+  const roomRecipe={id:'room-recipe',kind:'room',version:1,seed:7,params:{floor:'wood',
+    points:[{x:0,y:0},{x:6,y:0},{x:6,y:6},{x:0,y:6}],entrance:{x:3,y:0}}};
+  const roomChange=generators.generationChange(roomRecipe,roomWorld);
+  const roomDraft={...roomWorld,chunks:roomChange.chunks,objects:roomChange.objects.after,generators:roomChange.generators.after};
+  const interiorObjects=[
+    {id:'room-table',kind:'table',x:1,y:3,turn:0},
+    {id:'room-bed',kind:'bed',x:5,y:4,turn:0},
+    {id:'room-stairs',kind:'stairs',x:4,y:2,turn:0},
+    {id:'room-bench',kind:'bench',x:1,y:5,turn:0},
+    {id:'room-torch',kind:'torch',x:1,y:1,turn:0},
+  ];
+  roomDraft.objects.push(...interiorObjects);
+  tiles.set(roomDraft.chunks,3,-1,'grass');
+  const invalidRoom={...roomDraft,generators:[{...roomRecipe,params:{...roomRecipe.params,entrance:{x:0,y:0}}}]};
+  assert.equal((await worldWrite('/'+roomWorld.id,'PUT',invalidRoom)).status,400);
+  const roomSaveResponse=await worldWrite('/'+roomWorld.id,'PUT',roomDraft);
+  assert.equal(roomSaveResponse.status,200);
+  const roomSaved=await roomSaveResponse.json();
+  const roomDoor=roomSaved.objects.find(prop=>prop.kind==='door');
+  const districtWorld=await (await worldWrite('','POST',{name:'Район · Ядро генератора'})).json();
+  const districtRecipe={id:'district-core',kind:'district',version:1,seed:47,params:{count:8,
+    points:[{x:-16,y:-12},{x:16,y:-12},{x:16,y:12},{x:-16,y:12}]}};
+  const districtChange=generators.generationChange(districtRecipe,districtWorld);
+  const districtDraft={...districtWorld,chunks:districtChange.chunks,objects:districtChange.objects.after,
+    generators:districtChange.generators.after};
+  const districtSave=await worldWrite('/'+districtWorld.id,'PUT',districtDraft);
+  assert.equal(districtSave.status,200);
+  let districtSaved=await districtSave.json();
+  assert.equal(districtSaved.objects.length,8);
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',{...districtSaved,
+    generators:[{...districtRecipe,params:{...districtRecipe.params,count:25}}]})).status,400,
+    'invalid District settings cannot replace a saved draft');
+  const buildingOutside=await (await worldWrite('','POST',{name:'Дом с интерьером'})).json();
+  buildingOutside.objects=[{id:'home-main',kind:'house',x:0,y:0,turn:0},{id:'home-floor',kind:'house',x:10,y:0,turn:0}];
+  for (let x=-1;x<=11;x++) tiles.set(buildingOutside.chunks,x,2,'grass');
+  const buildingOutsideSaved=await (await worldWrite('/'+buildingOutside.id,'PUT',buildingOutside)).json();
+  const buildingInside=await (await worldWrite('','POST',{name:'Внутри дома',parentWorldId:buildingOutside.id})).json();
+  const buildingFloor=await (await worldWrite('','POST',{name:'Подвал дома',sceneMapId:buildingInside.id,elevation:-1})).json();
+  async function prepareInterior(layout,floor) {
+    const change=generators.generationChange({...roomRecipe,id:'room-'+layout.id,params:{...roomRecipe.params,floor}},layout);
+    return (await worldWrite('/'+layout.id,'PUT',{...layout,chunks:change.chunks,objects:change.objects.after,generators:change.generators.after})).json();
+  }
+  const buildingInsideSaved=await prepareInterior(buildingInside,'wood');
+  const buildingFloorSaved=await prepareInterior(buildingFloor,'stone');
+  const bindingEndpoint='/'+buildingOutside.id+'/building-links';
+  const bindingPath=worldBase+bindingEndpoint+worldGame;
+  const bindingListUrl=worldBase+'/'+buildingOutside.id+'/transitions'+worldGame;
+  const readBindingList=headers=>fetch(bindingListUrl,{headers}).then(r=>r.json());
+  const bindingInput={buildingId:'home-main',sourceRevision:buildingOutsideSaved.revision,targetRevision:buildingInsideSaved.revision,
+    linksRevision:(await readBindingList(noteHeaders)).revision,x:0,y:2,toMapId:buildingInside.id,toX:3,toY:1};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(bindingPath+query,{method:'POST',redirect:'manual',headers,body:JSON.stringify(bindingInput)})).status,302);
+  }
+  for (const patch of [{sourceRevision:0},{targetRevision:0},{x:0,y:0},{x:2,y:2},{toMapId:secondWorld.id}]) {
+    const response=await worldWrite(bindingEndpoint,'POST',{...bindingInput,...patch});
+    assert.ok([400,409].includes(response.status));
+  }
+  assert.equal((await worldWrite(bindingEndpoint,'POST',{...bindingInput,extra:true})).status,400);
+  assert.equal((await worldWrite(bindingEndpoint,'POST',{...bindingInput,buildingId:'missing'})).status,404);
+  assert.equal((await fetch(worldBase+bindingEndpoint+'?game='+packedCampaign.id,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify(bindingInput),
+  })).status,404);
+  const bindingResponse=await worldWrite(bindingEndpoint,'POST',bindingInput);
+  assert.equal(bindingResponse.status,201);
+  const bindingPair=await bindingResponse.json();
+  assert.equal(bindingPair.links.length,2);
+  assert.deepEqual(bindingPair.links[1].to,bindingPair.links[0].from);
+  assert.equal((await worldWrite(bindingEndpoint,'POST',bindingInput)).status,409,'stale link writers cannot replace a pair');
+  assert.equal((await worldWrite('/'+buildingOutside.id+'/transitions','POST',{
+    x:0,y:2,toMapId:buildingInside.id,toX:3,toY:1,
+  })).status,409,'a generic transition cannot overwrite one half of a pair');
+  const floorBindingInput={...bindingInput,buildingId:'home-floor',x:10,toMapId:buildingFloor.id,
+    targetRevision:buildingFloorSaved.revision,linksRevision:bindingPair.revision};
+  assert.equal((await worldWrite(bindingEndpoint,'POST',floorBindingInput)).status,201);
+  const districtPreviewPath='/'+districtWorld.id+'/district-preview';
+  const districtRequest={revision:districtSaved.revision,recipe:{...districtRecipe,seed:0,params:{...districtRecipe.params,count:3}}};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+districtPreviewPath+worldGame+query,{
+      method:'POST',redirect:'manual',headers,body:JSON.stringify(districtRequest),
+    })).status,302,'only the master can preview a full district');
+  }
+  assert.equal((await fetch(worldBase+districtPreviewPath+'?game='+packedCampaign.id,{
+    method:'POST',headers:noteHeaders,body:JSON.stringify(districtRequest),
+  })).status,404,'district preview is scoped to the current campaign');
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,extra:true})).status,400);
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,format:'delta-v2'})).status,400);
+  assert.equal((await worldWrite(districtPreviewPath,'POST',{...districtRequest,revision:0})).status,409);
+  const unboundDistrictPreview=await (await worldWrite(districtPreviewPath,'POST',districtRequest)).json();
+  const districtHouse=districtSaved.objects[0], districtBounds=tiles.cellBounds(districtHouse);
+  const [districtX,districtY]=[[districtHouse.x,districtBounds.bottom+1],[districtBounds.left-1,districtHouse.y],
+    [districtHouse.x,districtBounds.top-1],[districtBounds.right+1,districtHouse.y]][districtHouse.turn];
+  const districtInterior=await prepareInterior(await (await worldWrite('','POST',{
+    name:'Интерьер дома района',parentWorldId:districtWorld.id,
+  })).json(),'wood');
+  const districtBinding=await (await worldWrite('/'+districtWorld.id+'/building-links','POST',{
+    buildingId:districtHouse.id,sourceRevision:districtSaved.revision,targetRevision:districtInterior.revision,
+    linksRevision:(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json()).revision,
+    x:districtX,y:districtY,toMapId:districtInterior.id,toX:3,toY:1,
+  })).json();
+  assert.equal(districtBinding.links.length,2);
+  const districtBody=preview=>({...districtSaved,chunks:preview.change.chunks,
+    objects:preview.change.objects?.after||districtSaved.objects,generators:preview.change.generators.after,districtGuard:preview.guard});
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',districtBody(unboundDistrictPreview))).status,409,
+    'a binding created after preview invalidates the old result');
+  const unguardedDistrict=districtBody(unboundDistrictPreview);delete unguardedDistrict.districtGuard;
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',unguardedDistrict)).status,409,
+    'an old caller cannot regenerate linked houses without a guard');
+  const guardedDistrictResponse=await worldWrite(districtPreviewPath,'POST',districtRequest);
+  assert.equal(guardedDistrictResponse.status,200);
+  const legacyDistrict=await guardedDistrictResponse.json();
+  const compactDistrictResponse=await worldWrite(districtPreviewPath,'POST',{...districtRequest,format:'delta-v1'});
+  assert.equal(compactDistrictResponse.status,200);
+  const compactDistrict=await compactDistrictResponse.json();
+  assert.equal(compactDistrict.change.format,'delta-v1');
+  assert.equal(compactDistrict.change.chunks,undefined,'compact responses do not repeat the world');
+  const guardedDistrict={...compactDistrict,change:require('../remote/world-generators').expandGenerationChange(compactDistrict.change,districtSaved)};
+  assert.deepEqual(JSON.parse(JSON.stringify(guardedDistrict)),legacyDistrict,'both wire formats restore the same signed snapshot');
+  const changedDistrictBody=districtBody(guardedDistrict);changedDistrictBody.objects=structuredClone(changedDistrictBody.objects);
+  changedDistrictBody.objects[0].x++;
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',changedDistrictBody)).status,409,
+    'the server recomputes the protected preview instead of trusting changed objects');
+  const districtBeforeGuarded=structuredClone(districtSaved);
+  const districtCommit=await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict));
+  assert.equal(districtCommit.status,200);
+  districtSaved=await districtCommit.json();
+  assert.equal(districtSaved.districtGuard,undefined,'preview guards are not persisted in the map');
+  assert.equal(districtSaved.objects.length,3);
+  assert.deepEqual(districtSaved.objects.find(prop=>prop.id===districtHouse.id),districtHouse);
+  assert.equal((await worldWrite('/'+districtWorld.id,'PUT',districtBody(guardedDistrict))).status,409,
+    'a preview cannot be replayed on a newer map revision');
+  const districtAfterGuarded=structuredClone(districtSaved);
+  const historyRestore=async (snapshot,historyProof)=>worldWrite('/'+districtWorld.id,'PUT',{
+    ...snapshot,revision:districtSaved.revision,districtGuard:{revision:districtSaved.revision,
+      linksRevision:guardedDistrict.guard.linksRevision,historyProof},
+  });
+  const changedHistory=structuredClone(districtBeforeGuarded);tiles.set(changedHistory.chunks,100,100,'water');
+  assert.equal((await historyRestore(changedHistory,guardedDistrict.history.before)).status,409,
+    'history cannot restore a modified snapshot');
+  const districtUndo=await historyRestore(districtBeforeGuarded,guardedDistrict.history.before);
+  assert.equal(districtUndo.status,200);districtSaved=await districtUndo.json();
+  assert.deepEqual(districtSaved.objects,districtBeforeGuarded.objects);
+  const districtRedo=await historyRestore(districtAfterGuarded,guardedDistrict.history.after);
+  assert.equal(districtRedo.status,200);districtSaved=await districtRedo.json();
+  assert.deepEqual(districtSaved.objects,districtAfterGuarded.objects);
+  const districtApplyPath='/'+districtWorld.id+'/district-apply';
+  const applyPreview=await (await worldWrite(districtPreviewPath,'POST',{revision:districtSaved.revision,
+    recipe:{...districtRecipe,seed:47,params:{...districtRecipe.params,count:4}},format:'delta-v1'})).json();
+  const applyBody={districtGuard:applyPreview.guard};
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+districtApplyPath+worldGame+query,{method:'POST',redirect:'manual',
+      headers,body:JSON.stringify(applyBody)})).status,302,'compact apply is master-only, including a master cookie in table view');
+  }
+  assert.equal((await fetch(worldBase+districtApplyPath+'?game='+packedCampaign.id,{method:'POST',
+    headers:noteHeaders,body:JSON.stringify(applyBody)})).status,404,'apply is scoped to the campaign');
+  assert.equal((await worldWrite(districtApplyPath,'POST',{})).status,400);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{...applyBody,chunks:{}})).status,400);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{districtGuard:{...applyPreview.guard,revision:0}})).status,409);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{districtGuard:{...applyPreview.guard,linksRevision:'0'.repeat(64)}})).status,409);
+  assert.equal((await worldWrite(districtApplyPath,'POST',{...applyBody,padding:'x'.repeat(9000)})).status,413);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json(),districtSaved,
+    'failed apply requests leave the map unchanged');
+  const applyBefore=structuredClone(districtSaved);
+  const tableBeforeApply=await tableWorld();
+  const linksBeforeApply=await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json();
+  const applyResponse=await worldWrite(districtApplyPath,'POST',applyBody);
+  assert.equal(applyResponse.status,200);
+  const applied=await applyResponse.json();
+  assert.deepEqual(Object.keys(applied).sort(),['baseRevision','change','history','id','revision']);
+  assert.ok(Buffer.byteLength(JSON.stringify(applyBody))<1024,'the request contains no full map');
+  const appliedChange=require('../remote/world-generators').expandGenerationChange(applied.change,applyBefore);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.equal(districtSaved.revision,applyBefore.revision+1);
+  assert.equal(applied.baseRevision,applyBefore.revision);assert.equal(applied.revision,districtSaved.revision);
+  assert.deepEqual(districtSaved.chunks,appliedChange.chunks);
+  assert.deepEqual(districtSaved.objects,appliedChange.objects?.after||applyBefore.objects);
+  assert.deepEqual(districtSaved.generators,appliedChange.generators.after);
+  assert.equal(districtSaved.objects.length,4);
+  assert.deepEqual(districtSaved.objects.find(prop=>prop.id===districtHouse.id),districtHouse);
+  assert.deepEqual(await tableWorld(),tableBeforeApply,'applying a draft does not publish or change the shared screen');
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json(),linksBeforeApply,
+    'applying a district does not rewrite its entry/return pair');
+  assert.equal((await worldWrite(districtApplyPath,'POST',applyBody)).status,409,'a duplicate cannot apply twice');
+  const applyAfter=structuredClone(districtSaved);
+  const compactHistoryPath='/'+districtWorld.id+'/district-history';
+  const makeHistoryBody=(to,backwards,historyProof)=>({districtGuard:{revision:districtSaved.revision,
+    linksRevision:applyPreview.guard.linksRevision,historyProof},change:require('../remote/world-generators').compactGenerationChange({
+      id:districtRecipe.id,count:applied.change.tiles.length,
+      tiles:applied.change.tiles.map(c=>backwards?{x:c.x,y:c.y,before:c.after,after:c.before}:c),
+      objects:{before:districtSaved.objects,after:to.objects},generators:{before:districtSaved.generators,after:to.generators}})});
+  const compactUndoBody=makeHistoryBody(applyBefore,true,applied.history.before);
+  for(const [headers,query] of [[{'Content-Type':'application/json'},''],
+    [{'Content-Type':'application/json',Authorization:'Bearer '+otherToken.token},''],[noteHeaders,'&view=table']]) {
+    assert.equal((await fetch(worldBase+compactHistoryPath+worldGame+query,{method:'POST',redirect:'manual',headers,
+      body:JSON.stringify(compactUndoBody)})).status,302,'compact history is master-only');
+  }
+  assert.equal((await fetch(worldBase+compactHistoryPath+'?game='+packedCampaign.id,{method:'POST',headers:noteHeaders,
+    body:JSON.stringify(compactUndoBody)})).status,404);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,chunks:{}})).status,400);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,districtGuard:{...compactUndoBody.districtGuard,revision:0}})).status,409);
+  const tamperedUndo=structuredClone(compactUndoBody);tamperedUndo.change.generators.insert[0].value.seed++;
+  assert.equal((await worldWrite(compactHistoryPath,'POST',tamperedUndo)).status,409);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',{...compactUndoBody,padding:'x'.repeat(8*1024*1024)})).status,413);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json(),districtSaved);
+  const compactUndoResponse=await worldWrite(compactHistoryPath,'POST',compactUndoBody);
+  assert.equal(compactUndoResponse.status,200);
+  const compactAck=await compactUndoResponse.json();
+  assert.deepEqual(compactAck,{id:districtWorld.id,baseRevision:districtSaved.revision,revision:districtSaved.revision+1});
+  assert.ok(Buffer.byteLength(JSON.stringify(compactAck))<200);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.deepEqual(districtSaved.objects,applyBefore.objects);assert.deepEqual(districtSaved.generators,applyBefore.generators);
+  assert.equal((await worldWrite(compactHistoryPath,'POST',compactUndoBody)).status,409,'history cannot commit twice');
+  assert.equal((await worldWrite(compactHistoryPath,'POST',makeHistoryBody(applyAfter,false,applied.history.after))).status,200);
+  districtSaved=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:noteHeaders})).json();
+  assert.deepEqual(districtSaved.objects,applyAfter.objects);assert.deepEqual(districtSaved.chunks,applyAfter.chunks);
+  assert.deepEqual(await tableWorld(),tableBeforeApply);
+  assert.deepEqual(await (await fetch(worldBase+'/'+districtWorld.id+'/transitions'+worldGame,{headers:noteHeaders})).json(),linksBeforeApply);
+  const applyUndo=await historyRestore(applyBefore,applied.history.before);
+  assert.equal(applyUndo.status,200);districtSaved=await applyUndo.json();
+  const applyRedo=await historyRestore(applyAfter,applied.history.after);
+  assert.equal(applyRedo.status,200);districtSaved=await applyRedo.json();
+  assert.deepEqual(districtSaved.objects,applyAfter.objects,'new apply history works with the existing PUT');
+
+  const applyLegacyId='10000000-0000-0000-0000-000000000003';
+  const applyLegacyFile=path.join(worldDir,applyLegacyId+'.json');
+  fs.writeFileSync(applyLegacyFile,JSON.stringify({id:applyLegacyId,name:'Legacy District apply',revision:0,chunks:{},objects:[]}));
+  const legacyApplyPreview=await (await worldWrite('/'+applyLegacyId+'/district-preview','POST',{
+    revision:0,recipe:districtRecipe,format:'delta-v1'})).json();
+  const legacyAppliedResponse=await worldWrite('/'+applyLegacyId+'/district-apply','POST',{districtGuard:legacyApplyPreview.guard});
+  assert.equal(legacyAppliedResponse.status,200);
+  const legacyApplied=await legacyAppliedResponse.json(), legacyAfter=JSON.parse(fs.readFileSync(applyLegacyFile));
+  assert.equal(JSON.parse(fs.readFileSync(applyLegacyFile)).revision,1);
+  let legacyCurrent=legacyAfter;
+  for(const backwards of [true,false]) {
+    const target=backwards?{chunks:{},objects:[],generators:[]}:legacyAfter;
+    const delta=generators.compactGenerationChange({id:districtRecipe.id,count:legacyApplied.change.tiles.length,
+      tiles:legacyApplied.change.tiles.map(cell=>backwards?{x:cell.x,y:cell.y,before:cell.after,after:cell.before}:cell),
+      objects:{before:legacyCurrent.objects,after:target.objects},
+      generators:{before:legacyCurrent.generators||[],after:target.generators}});
+    const historyResponse=await worldWrite('/'+applyLegacyId+'/district-history','POST',{
+      districtGuard:{revision:legacyCurrent.revision,linksRevision:legacyApplyPreview.guard.linksRevision,
+        historyProof:legacyApplied.history[backwards?'before':'after']},change:delta});
+    assert.equal(historyResponse.status,200,'legacy history uses the compatible full-save fallback');
+    legacyCurrent=JSON.parse(fs.readFileSync(applyLegacyFile));
+    assert.deepEqual(legacyCurrent.chunks,target.chunks);assert.deepEqual(legacyCurrent.objects,target.objects);
+    assert.deepEqual(legacyCurrent.generators,target.generators);
+  }
+  assert.equal(legacyCurrent.revision,3);
+  assert.equal(fs.existsSync(path.join(worldDir,applyLegacyId+'-chunks.json')),false,'legacy saves are not silently migrated');
+  const legacyId='10000000-0000-0000-0000-000000000000';
+  const legacy={id:legacyId,name:'Legacy',revision:0,chunks:{'0,0':{0:'path'}},objects:[]};
+  const legacyFile=path.join(worldDir,legacyId+'.json');
+  fs.writeFileSync(legacyFile,JSON.stringify(legacy));
+  const legacyChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:cookie}});
+  assert.deepEqual((await legacyChunks.json()).chunks,legacy.chunks);
+  assert.equal((await worldWrite('/'+legacyId+'/chunks','PATCH',{revision:0,chunks:{'0,0':null}})).status,409);
+  assert.equal((await worldWrite('/'+legacyId,'PUT',{...legacy,generators:[roadRecipe]})).status,200);
+  const legacySaved=JSON.parse(fs.readFileSync(legacyFile));
+  assert.equal(legacySaved.revision,1);
+  assert.deepEqual(legacySaved.generators,[roadRecipe]);
   assert.equal(tiles.get((await tableWorld()).chunks,0,0),'path');
   assert.equal((await worldWrite('/live/change','POST',{...movement,x:9})).status,200);
+  const savedWorldStatus=await tableStatus();
+  assert.ok(savedWorldStatus.version.publication > firstSecretView.version.publication);
   for(const socket of sockets) socket.terminate();
   await stop();
+  // Simulate a cell discovered before snapshots existed. Its old published terrain must survive republish.
+  const positionsFile=path.join(worldDir,'..','character-positions.json');
+  const legacyExploration=JSON.parse(fs.readFileSync(positionsFile));
+  delete legacyExploration.memory[JSON.stringify([world.id,'overworld','ground'])].chunks['0,0'][0];
+  fs.writeFileSync(positionsFile,JSON.stringify(legacyExploration));
+  execFileSync(process.execPath,[path.join(root,'import-world.js'),path.dirname(worldDir),legacyId]);
   child=launch();
   await waitForServer();
   const newLogin=await fetch(base+'/dm-login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'password=test-only',redirect:'manual'});
   const newCookie=newLogin.headers.get('set-cookie').split(';')[0];
+  const bindingsAfterRestart=await readBindingList({Cookie:newCookie});
+  assert.equal(bindingsAfterRestart.links.length,2);
+  assert.deepEqual(bindingsAfterRestart.links[0],bindingPair.links[0],'binding metadata survives server restart');
+  assert.deepEqual(await (await readTemplates(templateUrl,{Cookie:newCookie})).json(),savedTemplates,'template settings survive restart');
+  assert.deepEqual(await readOwnPosition(otherToken.token),afterDoor);
+  assert.deepEqual(await readPosition(secondHero.id,newCookie),afterStairs);
+  const restoredLinks=await fetch(worldBase+linkEndpoint+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
+  assert.deepEqual(restoredLinks.links,[link]);
+  const positionAfterRestart=await open(undefined,campaign.id);sockets.push(positionAfterRestart);
+  next=message(positionAfterRestart,m=>m.type==='CHARACTER_POSITION');
+  positionAfterRestart.send(JSON.stringify({action:'player-auth',token:otherToken.token}));
+  assert.deepEqual((await next).position,afterDoor.position);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]});
+  assert.deepEqual(await readDiscoveries(secondInvitation.token),{discoveries:[secondDiscovery]});
   const resumed=await open(newCookie,packedCampaign.id);sockets.push(resumed);
   const display=await open(undefined,packedCampaign.id,'table');sockets.push(display);
   next=message(display,m=>m.type==='SHOW_SCENE_VIEW');
   display.send(JSON.stringify({action:'request-sync'}));
-  assert.equal((await next).mapKey,mine);
+  const restoredView=await next;
+  assert.equal(restoredView.mapKey,mine);
+  assert.equal((await fetch(publicAsset(restoredView.image,'?game='+packedCampaign.id))).status,200);
   const returned=await travel(resumed,farm);
+  assert.equal((await fetch(publicAsset(restoredView.image,'?game='+packedCampaign.id))).status,404);
+  assert.equal((await fetch(publicAsset(farmAsset,'?game='+packedCampaign.id))).status,200);
   assert.deepEqual(returned.fogStates[farm],fog);
   assert.equal(returned.tokens[0].id,'farm-hero');
   assert.equal(returned.featureStates[pendingTrap.id],'triggered');
   assert.equal(returned.objectStates['farm-gate'].currentRotation,90);
   assert.equal((await (await fetch(base+linksPath,{headers:{Cookie:newCookie}})).json()).links.length,2);
+  const importedChunks=await fetch(worldBase+'/'+legacyId+'/chunks'+worldGame+'&chunks=0%2C0',{headers:{Cookie:newCookie}});
+  assert.equal(importedChunks.status,200);
+  assert.deepEqual((await importedChunks.json()).chunks,legacy.chunks);
+  const reopenDraft=id=>fetch(worldBase+'/'+id+worldGame,{headers:{Cookie:newCookie}}).then(r=>r.json());
+  assert.deepEqual((await reopenDraft(legacyId)).generators,[roadRecipe],'import preserves the legacy draft recipe');
+  assert.deepEqual(await reopenDraft(roomWorld.id),roomSaved,'Room floor, walls, door and source metadata survive server restart');
+  const reopenedWorld=await reopenDraft(world.id);
+  assert.deepEqual(reopenedWorld.generators,world.generators,'both recipes survive server restart');
+  assert.equal(tiles.get(reopenedWorld.chunks,-76,-55),'woodland');
+  const forestBefore=structuredClone(reopenedWorld);
+  const forestNext=generators.generationChange({...forestRecipe,seed:40},reopenedWorld);
+  assert.deepEqual(reopenedWorld,forestBefore,'regeneration after a server restart leaves the persisted source untouched');
+  assert.equal(forestNext.generators.after[1].state.version,1);
+  assert.equal(forestNext.generators.after[1].seed,40);
+  assert.deepEqual(reopenedWorld.objects.filter(prop=>prop.id.startsWith('forest-')),forestPlot.plants);
   const resumedWorld=await tableWorld();
+  assert.deepEqual(await tableStatus(),savedWorldStatus,'the projection version persists across server restart');
+  assert.deepEqual(resumedWorld.version,savedWorldStatus.version);
+  const resumedScreen=await open(undefined,campaign.id,'table');sockets.push(resumedScreen);
+  next=message(resumedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  resumedScreen.send(JSON.stringify({action:'request-sync'}));
+  assert.deepEqual((await next).version,resumedWorld.version);
+  for(const x of [20,21,22,23,24,25,29]) assert.equal(tiles.get(resumedWorld.chunks,x,0),'path');
+  assert.equal(tiles.get(resumedWorld.chunks,30,0),undefined);
+  assert.equal(tiles.get((await tableWorld('0,-1')).chunks,20,-1),'grass');
   assert.equal(resumedWorld.tokens[0].x,9);
+  assert.deepEqual(resumedWorld.objects.find(prop=>prop.id==='secret-marker'),firstMarker,'the explicit reveal survives restart');
   assert.equal(tiles.get(resumedWorld.chunks,0,0),'path');
   assert.equal(tiles.get(resumedWorld.chunks,9,0),'path');
+  const resumedWorldWrite=(endpoint,body)=>fetch(worldBase+endpoint+worldGame,{
+    method:'POST',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify(body),
+  });
+  assert.equal(await fetch(worldBase+'/table').then(r=>r.json()),null);
+  assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:true});
+  assert.equal(await tableWorld(),null);
+  const hiddenStatus=await tableStatus();
+  assert.equal(hiddenStatus.id,null);
+  assert.deepEqual(hiddenStatus.version,{generation:resumedWorld.version.generation+1,publication:0,exploration:0});
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(worldDir,'..','active-world.json'))),
+    {id:null,generation:hiddenStatus.version.generation});
+  assert.deepEqual(await (await resumedWorldWrite('/live/hide',{})).json(),{hidden:false});
+  assert.deepEqual(await tableStatus(),hiddenStatus);
+  const republish=await resumedWorldWrite('/'+world.id+'/publish',{revision:editedWorld.revision,fog:true});
+  assert.equal(republish.status,200);
+  const republished=await tableWorld();
+  assert.equal(republished.version.generation,hiddenStatus.version.generation+1);
+  assert.deepEqual(republished.tokens,resumedWorld.tokens);
+  assert.deepEqual(republished.seen,resumedWorld.seen);
+  assert.deepEqual(republished.objects.find(prop=>prop.id==='secret-marker'),firstMarker);
+  const resumedHeaders={...noteHeaders,Cookie:newCookie};
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[privateDiscovery]},'republish does not update a private snapshot');
+  assert.equal((await shareSecret('another-secret',shareBody,resumedHeaders)).status,409);
+  const updatedShareBody={...shareBody,revision:editedWorld.revision};
+  const updatedDiscovery={...privateDiscovery,object:{...privateDiscovery.object,x:13}};
+  next=message(positionAfterRestart,msg=>msg.type==='PLAYER_DISCOVERIES_CHANGED');
+  assert.equal((await shareSecret('another-secret',updatedShareBody,resumedHeaders)).status,200);
+  assert.equal((await next).characterId,otherChar.id);
+  assert.deepEqual(await readDiscoveries(otherToken.token),{discoveries:[updatedDiscovery]});
+  assert.deepEqual(await tableWorld(),republished);
+  assert.deepEqual((await (await masterLive(editedWorld.revision,resumedHeaders)).json()).revealedSecrets,[]);
+  assert.equal((await revealSecret('secret-marker',secretBody,resumedHeaders)).status,409,'an old publication cannot authorize a moved secret');
+  assert.equal(tiles.get(republished.chunks,0,0),'path','legacy discovery keeps the outgoing published tile');
+  assert.equal(tiles.get(republished.chunks,29,0),'path','terrain outside live sight stays as remembered');
+  assert.equal(tiles.get(republished.chunks,28,0),'path','removing unseen terrain stays private');
+  assert.equal(tiles.get(republished.seen,28,1),true);
+  assert.equal(tiles.get(republished.chunks,28,1),undefined,'an observed empty tile stays empty in memory');
+  assert.deepEqual(republished.objects.find(prop=>prop.id==='remembered-torch'),{id:'remembered-torch',kind:'torch',x:29,y:0,turn:0});
+  const restorePublished=(id,revision)=>fetch(worldBase+'/'+id+'/publish'+worldGame,{
+    method:'POST',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify({revision,fog:true}),
+  });
+  assert.equal((await restorePublished(cave.id,caveSaved.revision)).status,200);
+  assert.equal((await tableWorld()).objects.find(prop=>prop.id==='cave-door').open,true);
+  assert.equal((await restorePublished(lowerFloor.id,floorSaved.revision)).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,7,4),'stone');
+  assert.equal((await restorePublished(world.id,editedWorld.revision)).status,200);
+  assert.equal((await resumedWorldWrite('/live/change',{id:world.id,action:'reveal',x:0,y:0})).status,200);
+  const revealedAgain=await tableWorld();
+  assert.equal(tiles.get(revealedAgain.chunks,0,0),'water','an explicit reveal refreshes map memory');
+  assert.equal(tiles.get(revealedAgain.visible,0,0),undefined);
+
+  const returnToWorld=(x,y)=>fetch(base+'/api/character-positions/'+secondHero.id+worldGame,{
+    method:'PUT',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify({...firstPosition,x,y}),
+  });
+  assert.equal((await returnToWorld(25,0)).status,200);
+  assert.equal((await movePosition({direction:'east',revision:8},secondInvitation.token)).status,200);
+  const revisited=await tableWorld();
+  assert.equal(tiles.get(revisited.visible,29,0),true);
+  assert.equal(tiles.get(revisited.chunks,29,0),'dirt');
+  assert.equal(tiles.get(revisited.chunks,28,0),undefined);
+  assert.equal(tiles.get(revisited.chunks,28,1),'grass');
+  assert.deepEqual(revisited.objects.filter(prop=>prop.id==='remembered-torch'),[{id:'remembered-torch',kind:'torch',x:28,y:0,turn:1}]);
+  assert.ok(revisited.objects.every(prop=>prop.id!=='private-party-torch' && prop.id!=='secret-door'));
+  assert.deepEqual(revisited.objects.filter(prop=>prop.id==='secret-marker'),[firstMarker],
+    'seeing the new cell does not disclose the moved secret');
+  const movedSecretBody={id:world.id,revision:editedWorld.revision};
+  assert.equal((await revealSecret('secret-marker',movedSecretBody,resumedHeaders)).status,200);
+  assert.deepEqual((await tableWorld()).objects.filter(prop=>prop.id==='secret-marker'),[{...firstMarker,x:29,y:0}]);
+
+  const revisitedScreen=await open(undefined,campaign.id,'table');sockets.push(revisitedScreen);
+  next=message(revisitedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  assert.equal((await returnToWorld(80,80)).status,200);
+  await next;
+  const leftAgain=await tableWorld();
+  assert.deepEqual(leftAgain.visible,{});
+  assert.equal(tiles.get(leftAgain.chunks,29,0),'dirt','the latest observation remains when heroes leave');
+
+  assert.equal((await returnToWorld(25,0)).status,200);
+  assert.equal((await movePosition({direction:'east',revision:11},secondInvitation.token)).status,200);
+  tiles.set(editedWorld.chunks,29,0,'stone');
+  const liveEdit=await fetch(worldBase+'/'+world.id+worldGame,{
+    method:'PUT',headers:{Cookie:newCookie,'Content-Type':'application/json'},body:JSON.stringify(editedWorld),
+  });
+  assert.equal(liveEdit.status,200);
+  assert.equal((await restorePublished(world.id,(await liveEdit.json()).revision)).status,200);
+  assert.equal(tiles.get((await tableWorld()).chunks,29,0),'stone','a published edit in current sight is visible at once');
+  next=message(revisitedScreen,m=>m.type==='WORLD_UPDATE'&&m.id===world.id);
+  assert.equal((await fetch(base+'/api/characters/'+secondHero.id+worldGame,{
+    method:'DELETE',headers:{Cookie:newCookie},
+  })).status,200);
+  await next;
+  const afterRemoval=await tableWorld();
+  assert.deepEqual(afterRemoval.visible,{});
+  assert.equal((await discoveryResponse(secondInvitation.token)).status,401);
+  assert.equal(tiles.get(afterRemoval.chunks,29,0),'stone','removing a hero ends sight and preserves their last observation');
+
+  const otherMapSecret=await fetch(worldBase+'/'+secondWorld.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify({...secondWorld,objects:[{...firstMarker,x:29,y:0,hidden:true}]}),
+  }).then(r=>r.json());
+  assert.equal((await resumedWorldWrite('/'+secondWorld.id+'/publish',{revision:otherMapSecret.revision,fog:false})).status,200);
+  const withoutFog=await tableWorld();
+  assert.equal(withoutFog.fog,false);
+  assert.equal(withoutFog.objects.some(prop=>prop.id==='secret-marker'),false,
+    'a grant on another map cannot reveal a secret with the same ID and appearance, even without fog');
+  assert.equal((await revealSecret('secret-marker',{id:secondWorld.id,revision:otherMapSecret.revision},resumedHeaders)).status,200);
+  const clearMap=await tableWorld();
+  assert.deepEqual(clearMap.objects.find(prop=>prop.id==='secret-marker'),{...firstMarker,x:29,y:0});
+  assert.deepEqual(clearMap.version,{...withoutFog.version,exploration:withoutFog.version.exploration+1});
+  const placedInClearMap=await (await setPosition(otherChar.id,secondPosition,resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'east',revision:placedInClearMap.position.revision})).status,200);
+  assert.deepEqual((await tableStatus()).version,clearMap.version,'private steps do not change the public version without fog');
+
+  const blackout=()=>fetch(base+'/api/blackout'+worldGame,{method:'POST',headers:resumedHeaders});
+  assert.equal((await blackout()).status,200);
+  assert.equal((await tableStatus()).blackout,true);
+  assert.equal((await blackout()).status,200);
+  assert.equal((await tableStatus()).blackout,false);
+
+  const roomPublication=await resumedWorldWrite('/'+roomWorld.id+'/publish',{revision:roomSaved.revision,fog:true});
+  assert.equal(roomPublication.status,200);
+  assert.equal((await roomPublication.json()).map.generators,undefined,'Room recipes remain private');
+  const roomPosition={worldId:roomWorld.id,sceneId:'overworld',floorId:'ground',x:2,y:1};
+  const roomPlaced=await (await setPosition(otherChar.id,roomPosition,resumedHeaders)).json();
+  const roomStep=await (await movePosition({direction:'east',revision:roomPlaced.position.revision})).json();
+  assert.equal(roomStep.position.x,3);
+  const roomView=await tableWorld('0,0;0,-1');
+  assert.equal(tiles.get(roomView.chunks,3,-1),undefined,'a generated closed entrance blocks sight');
+  assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,409,
+    'a generated closed entrance blocks movement');
+  assert.equal((await fetch(worldBase+'/live/doors/'+roomDoor.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify({id:roomWorld.id,open:true}),
+  })).status,200);
+  const roomOpenView=await tableWorld('0,0;0,-1');
+  assert.equal(tiles.get(roomOpenView.chunks,3,-1),'grass','opening a generated door reveals the exterior');
+  assert.equal(roomOpenView.objects.find(prop=>prop.id===roomDoor.id).open,true);
+  assert.equal((await movePosition({direction:'north',revision:roomStep.position.revision})).status,200);
+  const reopenedInterior=await (await fetch(worldBase+'/'+roomWorld.id+worldGame,{headers:resumedHeaders})).json();
+  assert.deepEqual(reopenedInterior.objects.filter(prop=>interiorObjects.some(item=>item.id===prop.id)),
+    interiorObjects.map(prop=>({...prop,hidden:false})), 'interior props survive the server restart');
+  const interiorPublication=await resumedWorldWrite('/'+roomWorld.id+'/publish',{revision:roomSaved.revision,fog:false});
+  assert.equal(interiorPublication.status,200);
+  const interiorView=await tableWorld('0,0');
+  assert.ok(interiorObjects.every(prop=>interiorView.objects.some(item=>item.id===prop.id && item.kind===prop.kind)),
+    'published furniture and stairs reach the common screen');
+  const furniturePosition={...roomPosition,x:1,y:2};
+  const atFurniture=await (await setPosition(otherChar.id,furniturePosition,resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'south',revision:atFurniture.position.revision})).status,409,
+    'the server rejects walking onto a table');
+  const atStairs=await (await setPosition(otherChar.id,{...roomPosition,x:3,y:2},resumedHeaders)).json();
+  assert.equal((await movePosition({direction:'east',revision:atStairs.position.revision})).status,200,
+    'stairs remain walkable without an implicit scene transfer');
+  async function publishBindingMap(layout) {
+    assert.equal((await resumedWorldWrite('/'+layout.id+'/publish',{revision:layout.revision,fog:true})).status,200);
+  }
+  const districtReopened=await (await fetch(worldBase+'/'+districtWorld.id+worldGame,{headers:resumedHeaders})).json();
+  assert.deepEqual(districtReopened,districtSaved,'District source state and house IDs survive restart');
+  const districtPublication=await resumedWorldWrite('/'+districtWorld.id+'/publish',{revision:districtSaved.revision,fog:false});
+  assert.equal(districtPublication.status,200);
+  const publishedDistrict=await tableWorld('-1,-1;0,-1;-1,0;0,0');
+  assert.equal(publishedDistrict.generators,undefined,'District seed, contour and source state remain private');
+  assert.deepEqual(publishedDistrict.objects.map(prop=>prop.id).sort(),districtSaved.objects.map(prop=>prop.id).sort());
+  assert.equal(tiles.get(publishedDistrict.chunks,0,0),'path');
+  assert.equal((await resumedWorldWrite('/'+districtWorld.id+'/publish',{revision:0,fog:false})).status,409,
+    'District publication uses the existing revision guard');
+  assert.equal((await resumedWorldWrite('/'+districtInterior.id+'/publish',{revision:districtInterior.revision,fog:true})).status,200);
+  const districtLinkedPosition=await (await setPosition(otherChar.id,districtBinding.links[0].from,resumedHeaders)).json();
+  const enterRegeneratedDistrict=await movePosition({direction:'enter',revision:districtLinkedPosition.position.revision});
+  assert.equal(enterRegeneratedDistrict.status,200,'the bound entry works after regeneration and server restart');
+  const inRegeneratedDistrict=await enterRegeneratedDistrict.json();
+  const returnRegeneratedDistrict=await movePosition({direction:'enter',revision:inRegeneratedDistrict.position.revision});
+  assert.equal(returnRegeneratedDistrict.status,200);
+  const returnedDistrict=(await returnRegeneratedDistrict.json()).position;
+  for(const key of ['worldId','sceneId','floorId','x','y'])assert.equal(returnedDistrict[key],districtBinding.links[0].from[key]);
+  await publishBindingMap(buildingOutsideSaved);
+  const exteriorPosition={worldId:buildingOutside.id,sceneId:'overworld',floorId:'ground',x:-1,y:2};
+  const exteriorPlaced=await (await setPosition(otherChar.id,exteriorPosition,resumedHeaders)).json();
+  const atEntrance=await (await movePosition({direction:'east',revision:exteriorPlaced.position.revision})).json();
+  assert.equal((await movePosition({direction:'enter',revision:atEntrance.position.revision})).status,409,'unpublished interior is not accessible');
+  await publishBindingMap(buildingInsideSaved);
+  await publishBindingMap(buildingFloorSaved);
+  await publishBindingMap(buildingOutsideSaved);
+  const enteredBuilding=await movePosition({direction:'enter',revision:atEntrance.position.revision});
+  assert.equal(enteredBuilding.status,200);
+  const inBuilding=await enteredBuilding.json();
+  assert.deepEqual(inBuilding.position,{...bindingPair.links[0].to,characterId:otherChar.id,revision:atEntrance.position.revision+1});
+  const outsideAfterEntry=await tableWorld();
+  assert.equal(outsideAfterEntry.id,buildingOutside.id);
+  assert.notEqual(tiles.get(outsideAfterEntry.chunks,3,1),'wood','interior exploration does not replace the external map');
+  await publishBindingMap(buildingInsideSaved);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'wood');
+  await publishBindingMap(buildingFloorSaved);
+  assert.equal(Object.values((await tableWorld()).chunks).flatMap(chunk=>Object.keys(chunk)).length,0,
+    'the ground-floor exploration does not reveal the basement');
+  const returnedBuilding=await movePosition({direction:'enter',revision:inBuilding.position.revision});
+  assert.equal(returnedBuilding.status,200);
+  const returnedOutside=await returnedBuilding.json();
+  assert.deepEqual({...returnedOutside.position,revision:0},{...bindingPair.links[0].from,characterId:otherChar.id,revision:0});
+  const atFloorEntrance=await (await setPosition(otherChar.id,{...exteriorPosition,x:10},resumedHeaders)).json();
+  const enteredFloor=await movePosition({direction:'enter',revision:atFloorEntrance.position.revision});
+  assert.equal(enteredFloor.status,200);
+  const onFloor=await enteredFloor.json();
+  assert.equal(onFloor.position.floorId,buildingFloor.id);
+  assert.equal(onFloor.position.sceneId,buildingInside.id);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'stone');
+  await publishBindingMap(buildingInsideSaved);
+  assert.equal(tiles.get((await tableWorld()).chunks,3,1),'wood','the basement does not overwrite ground-floor memory');
+  const floorReturn=await movePosition({direction:'enter',revision:onFloor.position.revision});
+  assert.equal(floorReturn.status,200);
+  assert.equal((await floorReturn.json()).position.x,10);
+  const floorLinks=await fetch(worldBase+'/'+buildingFloor.id+'/transitions'+worldGame,{headers:resumedHeaders}).then(r=>r.json());
+  assert.equal(floorLinks.links.length,1);
+  const pairDeleteUrl=worldBase+'/'+buildingFloor.id+'/transitions/'+encodeURIComponent(floorLinks.links[0].id)+worldGame;
+  assert.equal((await fetch(pairDeleteUrl,{method:'DELETE',headers:resumedHeaders})).status,409);
+  assert.equal((await fetch(pairDeleteUrl+'&linksRevision='+floorLinks.revision,{method:'DELETE',headers:resumedHeaders})).status,200);
+  assert.equal((await readBindingList(resumedHeaders)).links.length,1,'deleting the return removes its entire pair');
+  const boundaryWorld=await resumedWorldWrite('',{name:'Граница чанков · HTTP'}).then(r=>r.json());
+  for(let y=0;y<23;y++)for(let x=-4;x<37;x++)tiles.set(boundaryWorld.chunks,x,y,'grass');
+  boundaryWorld.objects=[
+    {id:'boundary-west',kind:'tavern',x:-1,y:2,turn:0},
+    {id:'boundary-east',kind:'tavern',x:32,y:8,turn:1},
+    {id:'boundary-secret',kind:'barn',x:31,y:17,turn:0,hidden:true},
+    {id:'boundary-far',kind:'barn',x:200,y:2,turn:0},
+    {id:'boundary-crown',kind:'tree',x:31,y:22,turn:0},
+    {id:'boundary-roof',kind:'house',x:30,y:2,turn:0},
+    {id:'boundary-negative-crown',kind:'bush',x:-1,y:24,turn:3},
+  ];
+  const boundarySave=await fetch(worldBase+'/'+boundaryWorld.id+worldGame,{
+    method:'PUT',headers:resumedHeaders,body:JSON.stringify(boundaryWorld)}).then(r=>r.json());
+  assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:false})).status,200);
+  const boundaryView=await tableWorld('0,0');
+  const boundaryIds=['boundary-west','boundary-east','boundary-crown','boundary-roof','boundary-negative-crown'];
+  assert.deepEqual(boundaryView.objects.map(p=>p.id),boundaryIds,
+    'real chunk response includes overlapping buildings anchored outside the requested chunk');
+  assert.deepEqual(Object.keys(boundaryView.chunks),['0,0'],'no neighboring terrain is added');
+  assert.equal(boundaryView.generators,undefined);
+  assert.deepEqual((await tableWorld('0,0;1,0;0,0')).objects.map(p=>p.id),boundaryIds);
+  assert.deepEqual((await tableWorld('1,0')).objects.map(p=>p.id),['boundary-east','boundary-crown','boundary-roof'],
+    'a crown and roof are selected even when their occupied cells end in the neighboring chunk');
+  const emptyBoundaryView=await fetch(worldBase+'/table'+worldGame).then(r=>r.json());
+  assert.deepEqual(emptyBoundaryView.objects,[]);
+  assert.equal((await resumedWorldWrite('/'+boundaryWorld.id+'/publish',{revision:boundarySave.revision,fog:true})).status,200);
+  assert.deepEqual((await tableWorld('0,0')).objects,[],'overlap does not reveal unexplored buildings under fog');
+  const revokedDiscovery=message(positionAfterRestart,msg=>msg.type==='ACCESS_REVOKED');
+  const replacementInvite=await fetch(base+'/api/player-access'+worldGame,{
+    method:'POST',headers:resumedHeaders,body:JSON.stringify({characterId:otherChar.id}),
+  }).then(r=>r.json());
+  await revokedDiscovery;
+  assert.equal((await discoveryResponse(otherToken.token)).status,401);
+  assert.deepEqual(await readDiscoveries(replacementInvite.token),{discoveries:[updatedDiscovery]});
+
  }finally{ollama.close();for(const ws of sockets)ws.terminate();await stop();for(const file of catalogImages)fs.rmSync(file,{force:true});fs.rmSync(dir,{recursive:true,force:true});}
 });
