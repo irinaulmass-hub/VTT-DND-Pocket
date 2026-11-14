@@ -96,9 +96,17 @@
         <div class="book-toolbar" data-world-object hidden>
           <span data-world-size></span>
           <button class="book-button" data-world-turn>Повернуть</button>
+          <button class="book-button" data-world-copy>Копировать</button>
           <button class="book-button" data-world-delete>Удалить выбранный</button>
           <button class="book-button" data-world-building-link hidden>Связать с интерьером</button>
           <label><input type="checkbox" data-world-secret> Видно только мастеру</label>
+        </div>
+        <div class="book-toolbar" data-world-placement hidden aria-label="Расстановка объектов">
+          <strong data-world-placement-name></strong>
+          <label><input type="checkbox" data-world-placement-repeat> Ставить несколько</label>
+          <button class="book-button" data-world-placement-turn>Повернуть · R</button>
+          <button class="book-button" data-world-placement-stop>Завершить · Esc</button>
+          <small data-world-placement-info>Нажми на карту, чтобы поставить объект.</small>
         </div>
         <div class="book-toolbar">
           <select class="book-select" data-world-position-hero aria-label="Герой для личной позиции"></select>
@@ -140,6 +148,9 @@
   const json = (method, data) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   let brushStroke = null, brushDraft, strokeError;
+  let copyTemplate = null, placementTurn = 0;
+  const placing = () => tool === 'place-copy' || !!props[tool];
+  const placementSettings = () => copyTemplate || { kind: tool, turn: placementTurn, hidden: false };
   const undo = [], redo = [];
   let availableMaps = [];
   let generatorPoints = [], generatorPreview = null, roomEntrance = null, pickingEntrance = false;
@@ -255,7 +266,18 @@
     } else editorView.data(draft);
     paintGeneratorControls();
     const object = draft.objects.find(item => item.id === selected);
-    e('object').hidden = !object;
+    e('object').hidden = !object || placing();
+    e('copy').disabled = busy || !!brushStroke || draft.objects.length >= window.WorldMap.objectLimit;
+    e('placement').hidden = !placing();
+    for (const name of ['placement-repeat','placement-turn','placement-stop']) e(name).disabled = busy || !!brushStroke;
+    if (placing()) {
+      const settings = placementSettings();
+      e('placement-name').textContent = (copyTemplate ? 'Копия: ' : '') + props[settings.kind][0] +
+        (settings.hidden ? ' · Только мастеру' : '');
+      e('placement-info').textContent = draft.objects.length >= window.WorldMap.objectLimit
+        ? 'Достигнут лимит 3 000 объектов. Отмени лишний объект или заверши расстановку.'
+        : 'Нажми на карту, чтобы поставить объект. Поворот: ' + settings.turn * 90 + '°.';
+    }
     e('building-link').hidden = !object || !buildingKinds.has(object.kind);
     updateBuildings();
     if (object) {
@@ -270,7 +292,7 @@
     for (const name of ['brush-size','brush-shape','rect']) e(name).disabled = busy || !!brushStroke;
     e('brush-size').disabled ||= e('rect').checked;
     e('brush-shape').disabled ||= e('rect').checked;
-    e('canvas').setAttribute('data-brush-active', String(brushTool && !e('rect').checked));
+    e('canvas').setAttribute('data-brush-active', String(placing() || brushTool && !e('rect').checked));
     for (const name of ['path-saved','path-terrain','path-width','forest-density','district-count','room-floor','path-seed',
       'path-clear-points','path-reset','room-entrance','save','publish','select']) e(name).disabled = busy || !!brushStroke;
     editor.querySelectorAll('[data-tool]').forEach(button => {
@@ -296,6 +318,45 @@
     apply(change);
   }
   function objects(after) { edit({ objects: { before: draft.objects, after } }); }
+  function beginCopy() {
+    if (!draft || busy || brushStroke) return;
+    const object = draft.objects.find(item => item.id === selected);
+    if (!object) return;
+    if (draft.objects.length >= window.WorldMap.objectLimit) return status('Достигнут лимит 3 000 объектов');
+    // A detached copy has no generator ownership or building/interior links.
+    copyTemplate = { kind: object.kind, turn: object.turn, hidden: object.hidden === true };
+    tool = 'place-copy'; first = undefined; clearGeneratorPreview(true); paint();
+    e('canvas').focus?.({ preventScroll: true });
+    status('Копия готова. Укажи место на карте. R — повернуть, Esc — закончить.');
+  }
+  function stopPlacement() {
+    if (!placing() || busy) return;
+    copyTemplate = null; placementTurn = 0; tool = 'select'; paint();
+    status('Расстановка завершена');
+  }
+  function turnPlacement() {
+    if (!placing() || busy) return;
+    if (copyTemplate) copyTemplate = { ...copyTemplate, turn: (copyTemplate.turn + 1) % 4 };
+    else placementTurn = (placementTurn + 1) % 4;
+    paint();
+  }
+  function placeObject(x, y) {
+    if (draft.objects.length >= window.WorldMap.objectLimit) return status('Достигнут лимит 3 000 объектов');
+    const settings = placementSettings();
+    let id;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      id = crypto.randomUUID?.() || 'object-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      if (!draft.objects.some(item => item.id === id)) break;
+      id = undefined;
+    }
+    if (!id) return status('Не удалось создать новый ID объекта. Повтори расстановку.');
+    const item = { id, kind: settings.kind, x, y, turn: settings.turn, ...(settings.hidden ? { hidden: true } : {}) };
+    selected = id;
+    if (!e('placement-repeat').checked) { copyTemplate = null; tool = 'select'; }
+    objects([...draft.objects, item]);
+    status(e('placement-repeat').checked ? 'Объект поставлен. Укажи следующее место или нажми Esc.' :
+      'Объект поставлен. Перетащи его или нажми Delete, чтобы убрать.');
+  }
   function updateSelected(patch) {
     if (!draft || busy || !draft.objects.some(item => item.id === selected)) return;
     objects(draft.objects.map(item => item.id === selected ? { ...item, ...patch } : item));
@@ -500,14 +561,7 @@
       selected = item?.id;
       return paint();
     }
-    if (props[tool]) {
-      selected = crypto.randomUUID?.() || 'object-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-      const item = { id: selected, kind: tool, x, y, turn: 0 };
-      tool = 'select';
-      objects([...draft.objects, item]);
-      status('Объект поставлен. Перетащи его или нажми Delete, чтобы убрать.');
-      return;
-    }
+    if (placing()) return placeObject(x, y);
     if (!terrain[tool] && tool !== 'erase') return;
     if (e('rect').checked && !first) {
       first = { x, y };
@@ -530,6 +584,11 @@
   }
   const editorView = createWorldView(e('canvas'), {
     grid: true, click, pan: () => tool === 'pan', selected: () => selected,
+    placementPreview(x, y) {
+      if (!draft || busy || !placing() || !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return null;
+      return { prop: { id: 'placement-preview', ...placementSettings(), x, y },
+        allowed: draft.objects.length < window.WorldMap.objectLimit };
+    },
     brushPreview(x, y) {
       if (!draft || busy || strokeError || e('rect').checked || (!terrain[tool] && tool !== 'erase') ||
           !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return null;
@@ -577,6 +636,13 @@
     },
   });
   e('canvas').addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault(); if (!placing()) beginCopy(); return;
+    }
+    if (placing() && event.key === 'Escape') { event.preventDefault(); stopPlacement(); return; }
+    if (placing() && event.key.toLowerCase() === 'r' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault(); turnPlacement(); return;
+    }
     if (event.key === 'Delete' && tool === 'select' && selected) {
       event.preventDefault();
       removeObject(selected);
@@ -587,6 +653,8 @@
     draft = data;
     dirty = false;
     first = selected = undefined;
+    copyTemplate = null; placementTurn = 0;
+    if (tool === 'place-copy') tool = 'select';
     generatorPoints = [];
     roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
@@ -666,6 +734,7 @@
       clearGeneratorPreview(true);
     }
     tool = button.dataset.tool;
+    copyTemplate = null; placementTurn = 0;
     if (tool === 'generate-room') status('Отметь углы комнаты по порядку, затем выбери вход на прямой стене. Стороны идут по линиям сетки.');
     if (tool === 'generate-district') status('Укажи два противоположных угла района: от 11×11 до 4096 клеток. Затем выбери число домов и seed.');
     if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
@@ -843,6 +912,9 @@
     paint();
   };
   e('rect').onchange = () => { first = undefined; paint(); };
+  e('copy').onclick = beginCopy;
+  e('placement-turn').onclick = turnPlacement;
+  e('placement-stop').onclick = stopPlacement;
   e('brush-size').onchange = e('brush-shape').onchange = () => editorView.draw?.();
   function history(backwards) {
     const from = backwards ? undo : redo, to = backwards ? redo : undo;

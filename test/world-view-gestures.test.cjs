@@ -33,6 +33,24 @@ test('selecting an object does not move it when its inspector shifts the canvas;
   assert.equal(moves.length,1,'a cancelled gesture does not write');
 });
 
+test('placement ghost follows the pointer with temporary opacity and never enters map data',()=>{
+  const handlers=new Map(),painted=[],alpha=[];let frame;
+  const ctx={globalAlpha:1,setTransform(){},translate(){},scale(){},fillRect(){},strokeRect(){},
+    beginPath(){},moveTo(){},lineTo(){},stroke(){},getTransform:()=>({a:1,d:1,e:0,f:0}),
+    save(){alpha.push(this.globalAlpha);},restore(){this.globalAlpha=alpha.pop();}};
+  const canvas={width:400,height:300,getContext:()=>ctx,focus(){},setPointerCapture(){},
+    getBoundingClientRect:()=>({left:0,top:0,width:400,height:300}),addEventListener:(n,fn)=>handlers.set(n,fn)};
+  const window={WorldMap:require('../remote/world-model'),WorldArt:{paintTile(){},paintProp(context,p){painted.push({...p,alpha:context.globalAlpha});}},addEventListener(){}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../remote/world-view.js'),'utf8'),{window,
+    cancelAnimationFrame(){},requestAnimationFrame:fn=>{frame=fn;return 1;},ResizeObserver:class{constructor(cb){this.cb=cb;}observe(){this.cb();}}});
+  const data={chunks:{},objects:[{id:'original',kind:'chest',x:0,y:0,turn:2,hidden:true}]},before=JSON.stringify(data);
+  const view=window.createWorldView(canvas,{click(){},placementPreview:(x,y)=>({prop:{...data.objects[0],id:'ghost',x,y},allowed:true})});
+  view.data(data);handlers.get('pointermove')({pointerId:1,clientX:224,clientY:174});frame();
+  assert.deepEqual(painted.find(p=>p.id==='ghost'),{...data.objects[0],id:'ghost',x:1,y:1,alpha:.55});
+  assert.equal(ctx.globalAlpha,1);assert.equal(JSON.stringify(data),before);
+  painted.length=0;handlers.get('pointerleave')();frame();assert.equal(painted.some(p=>p.id==='ghost'),false);
+});
+
 test('brush gestures commit once, interpolate through callbacks and cancel on Escape or pointer loss',()=>{
   const handlers=new Map(),calls=[];
   const canvas={width:1000,height:480,getContext:()=>({}),focus(){},setPointerCapture(){},

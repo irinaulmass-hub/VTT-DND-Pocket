@@ -558,3 +558,20 @@ npm test
 ```
 
 Живая проверка браузером не пройдена: подключённый и облачный браузеры не смогли открыть локальный стенд (ERR_CONNECTION_REFUSED). Нет новых скриншотов и подтверждения мышью/планшетом. [Точный сценарий приёмки](qa/G1A_TERRAIN_BRUSH.md). FPS/LAN/Windows и сенсорные устройства заново не проверялись.
+
+## Копии и расстановка G1b
+
+Полный npm test — **135/135**, Node.js 24.22.1, без пропусков. Пять новых editor-VM сценариев проверяют реальный dm/world.js: Ctrl+D/кнопку, ghost/поворот/hidden/новый ID, repeat/Escape и историю, лимит/коллизию ID/сброс при открытии, независимость генераторной копии при регенерации, обычную палитру с repeat. Ещё один WorldView-тест исполняет кадр рендера с моделью Canvas: ghost следует за указателем, временная прозрачность восстанавливается, data.objects не меняется и preview исчезает при уходе курсора.
+
+Настоящий HTTP в world-brush-http.test.cjs расширен: создать вход/возврат дома в интерьер, сохранить копию с новым ID, перечитать её; исходные поля дома сохраняются (с прежней нормализацией hidden=false сервером), файл переходов побайтово прежний. Прежние brush/туман/секреты/сохранения проходят.
+
+```sh
+node --check dm/world.js
+node --check remote/world-view.js
+node --check test/world-district-editor.test.cjs
+node --check test/world-view-gestures.test.cjs
+node --check test/world-brush-http.test.cjs
+npm test
+```
+
+Это VM/HTTP, не настоящая мышь и не пиксельный screenshot. Managed-preview не смог установить канал (relay-readiness timeout); рабочие scripts.dev восстановлены после диагностики, стенд остановлен. G1a/G1b требуют живой приёмки после восстановления среды. [Сценарий](qa/G1B_OBJECT_COPIES.md). FPS/Windows/LAN/телефоны не проверялись заново.

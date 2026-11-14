@@ -7,27 +7,28 @@ const world = require('../remote/world-model');
 const copy = value => JSON.parse(JSON.stringify(value));
 
 function editorFixture() {
-  const tools = ['generate-path','generate-forest','generate-room','generate-district','stone','select','pan','water','erase']
+  const tools = ['generate-path','generate-forest','generate-room','generate-district','stone','select','pan','water','erase','house','tree','barrel']
     .map(tool=>({dataset:{tool},setAttribute(){}}));
   class Element {
+    listeners=new Map();
     nodes=new Map(); value=''; checked=false;
     elements={parentMap:{value:''},toMapId:{value:'',replaceChildren(){}},elevation:{},x:{},y:{},toX:{},toY:{}};
     get valueAsNumber(){return this.value===''?NaN:Number(this.value);}
     querySelector(key){if(!this.nodes.has(key))this.nodes.set(key,new Element());return this.nodes.get(key);}
     querySelectorAll(key){return key==='[data-tool]'?tools:[];}
     replaceChildren(...options){this.options=options;this.value=options[0]?.value||'';}
-    setAttribute(){} addEventListener(){} prepend(){} append(){} reset(){}
+    setAttribute(){} addEventListener(name,callback){this.listeners.set(name,callback);} prepend(){} append(){} reset(){}
   }
   const root=new Element(), editor=new Element(), elements=[editor,new Element()];
   const control=name=>editor.querySelector('[data-world-'+name+']');
   let saved={id:'district-map',name:'District UI',revision:1,chunks:{},objects:[],generators:[]};
-  let rendered, canvas, nextId=0, linksRevision='a'.repeat(64), failWrite=false, holdPreview=false, releasePreview;
+  let rendered, canvas, nextId=0, forcedId, linksRevision='a'.repeat(64), failWrite=false, holdPreview=false, releasePreview;
   let loseWrite, failRead=false, corruptReply=false, foreignWrite=false;
   const requests=[];
   const server=require('../world-districts')({districtContext:()=>({pinnedIds:[],reservedCells:[],hasBindings:false,linksRevision})});
   const globals={WorldMap:world,location:{hash:''},
     document:{createElement:()=>elements.shift()||new Element(),getElementById:id=>root.querySelector(id),body:{dataset:{}}},
-    crypto:{randomUUID:()=> 'district-'+(++nextId)},characterRoster:[],MutationObserver:class{observe(){}},
+    crypto:{randomUUID:()=> forcedId||'district-'+(++nextId)},characterRoster:[],MutationObserver:class{observe(){}},
     Option:class{constructor(label,value){Object.assign(this,{label,value});}},confirm:()=>true,addEventListener(){},
     createWorldView:(element,options)=>{
       if(element===control('canvas'))canvas=options;
@@ -75,13 +76,85 @@ function editorFixture() {
   globals.window=globals;
   const context=vm.createContext(globals);
   for(const file of ['remote/world-generators.js','remote/world-brush.js','dm/world.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
-  return {control,tools,requests,seed(value){saved=copy({...saved,...value});},get saved(){return saved;},get rendered(){return rendered;},get canvas(){return canvas;},
+  return {control,tools,requests,seed(value){saved=copy({...saved,...value});},forceId(value){forcedId=value;},get saved(){return saved;},get rendered(){return rendered;},get canvas(){return canvas;},
     async open(){control('select').value='district-map';control('select').onchange();await new Promise(setImmediate);},
     begin(){tools[3].onclick();control('district-count').value='8';control('path-seed').value='47';canvas.click(-16,-12);canvas.click(16,12);},
     hold(){holdPreview=true;},release(){holdPreview=false;releasePreview();},
     changeLinks(){linksRevision='b'.repeat(64);},failWrite(value){failWrite=value;},
     loseNext(kind){loseWrite=kind;},failRead(value){failRead=value;},corruptReply(){corruptReply=true;},foreignWrite(){foreignWrite=true;}};
 }
+
+const keyEvent=(key,extra={})=>({key,preventDefault(){},...extra});
+function selectObject(f,object) {
+  f.tools.find(t=>t.dataset.tool==='select').onclick();const center=world.footprint(object);
+  assert.equal(f.canvas.pickProp(center.x,center.y).id,object.id);
+}
+
+test('copy placement preserves orientation and secrecy with a new ID, one Undo and persisted Redo',async()=>{
+  const f=editorFixture(),c=f.control,source={id:'original-bed',kind:'bed',x:-4,y:-4,turn:1,hidden:true};
+  f.seed({objects:[source]});await f.open();selectObject(f,source);const before=copy(f.rendered);
+  c('copy').onclick();const ghost=f.canvas.placementPreview(-33,31);
+  assert.deepEqual(copy(ghost.prop),{id:'placement-preview',kind:'bed',turn:1,hidden:true,x:-33,y:31});
+  assert.deepEqual(f.rendered,before,'entering copy mode changes neither map nor history');
+  f.canvas.click(-33,31);const duplicate=f.rendered.objects[1];
+  assert.notEqual(duplicate.id,source.id);assert.deepEqual(duplicate,{...source,id:duplicate.id,x:-33,y:31});
+  assert.deepEqual(f.rendered.objects[0],source);assert.equal(f.canvas.placementPreview(0,0),null);
+  await c('undo').onclick();assert.deepEqual(f.rendered,before);
+  await c('redo').onclick();await c('save').onclick();await f.open();
+  assert.deepEqual(f.rendered.objects,[source,duplicate]);
+});
+
+test('repeated copies rotate independently, cancel without an extra history entry and do not inherit bindings',async()=>{
+  const f=editorFixture(),c=f.control,source={id:'bound-house',kind:'house',x:0,y:0,turn:2,hidden:false};
+  f.seed({objects:[source]});await f.open();selectObject(f,source);
+  c('canvas').listeners.get('keydown')(keyEvent('d',{ctrlKey:true}));c('placement-repeat').checked=true;
+  c('canvas').listeners.get('keydown')(keyEvent('r'));assert.equal(f.canvas.placementPreview(8,0).prop.turn,3);
+  f.canvas.click(8,0);f.canvas.click(16,0);const copies=f.rendered.objects.slice(1);
+  assert.equal(new Set(f.rendered.objects.map(p=>p.id)).size,3);assert.ok(copies.every(p=>p.turn===3));
+  assert.deepEqual(f.rendered.objects[0],source);
+  assert.ok(copies.every(p=>Object.keys(p).sort().join(',')==='id,kind,turn,x,y'));
+  assert.equal(f.requests.some(r=>r.url.includes('building-links')),false);
+  c('canvas').listeners.get('keydown')(keyEvent('Escape'));assert.equal(f.canvas.placementPreview(20,0),null);
+  await c('undo').onclick();assert.equal(f.rendered.objects.length,2,'cancel adds no history');
+  await c('undo').onclick();assert.deepEqual(f.rendered.objects,[source]);
+});
+
+test('placement respects object admission, ID collisions and discards templates when opening a map',async()=>{
+  const f=editorFixture(),c=f.control,source={id:'source',kind:'barrel',x:0,y:0,turn:0};
+  f.seed({objects:[source]});await f.open();selectObject(f,source);c('copy').onclick();
+  f.forceId(source.id);f.canvas.click(4,4);assert.deepEqual(f.rendered.objects,[source]);
+  assert.match(c('status').textContent,/ID/);f.forceId(undefined);
+  await f.open();assert.equal(f.canvas.placementPreview(0,0),null,'stale copy cannot cross map opens');
+  f.seed({objects:Array.from({length:world.objectLimit},(_,i)=>({...source,id:'p'+i,x:i,y:0}))});await f.open();
+  selectObject(f,f.rendered.objects[0]);assert.equal(c('copy').disabled,true);
+  c('canvas').listeners.get('keydown')(keyEvent('d',{ctrlKey:true}));assert.equal(f.canvas.placementPreview(0,0),null);
+  f.tools.find(t=>t.dataset.tool==='barrel').onclick();assert.equal(f.canvas.placementPreview(0,0).allowed,false);
+  f.canvas.click(0,0);assert.equal(f.rendered.objects.length,world.objectLimit);
+  assert.equal(c('undo').disabled,true,'rejected placement adds no history');
+});
+
+test('a copied generated object stays detached during regeneration without changing the source recipe',async()=>{
+  const f=editorFixture(),c=f.control,generators=require('../remote/world-generators');
+  const recipe={id:'room',kind:'room',version:1,seed:7,params:{floor:'wood',points:[{x:0,y:0},{x:6,y:0},{x:6,y:6},{x:0,y:6}],entrance:{x:3,y:0}}};
+  const generated=generators.generationChange(recipe,f.saved);
+  f.seed({chunks:generated.chunks,objects:generated.objects.after,generators:generated.generators.after});await f.open();
+  const source=f.rendered.objects.at(-1),recipes=copy(f.rendered.generators);selectObject(f,source);c('copy').onclick();f.canvas.click(-20,-20);
+  const duplicate=f.rendered.objects.at(-1);assert.deepEqual(f.rendered.generators,recipes);
+  assert.equal(f.rendered.generators[0].state.objects.some(p=>p.id===duplicate.id),false);
+  const next=generators.generationChange({...recipe,seed:9},f.rendered);
+  assert.deepEqual(next.objects.after.find(p=>p.id===duplicate.id),duplicate);
+  await c('save').onclick();assert.ok(f.saved.objects.some(p=>p.id===duplicate.id));
+});
+
+test('the object palette supports repeated placement and changes tools without stale copy settings',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();f.tools.find(t=>t.dataset.tool==='tree').onclick();
+  c('placement-repeat').checked=true;c('placement-turn').onclick();f.canvas.click(-2,-2);f.canvas.click(-4,-2);
+  assert.equal(f.rendered.objects.length,2);assert.ok(f.rendered.objects.every(p=>p.kind==='tree'&&p.turn===1));
+  f.tools.find(t=>t.dataset.tool==='water').onclick();assert.equal(f.canvas.placementPreview(0,0),null);
+  f.tools.find(t=>t.dataset.tool==='house').onclick();assert.equal(f.canvas.placementPreview(0,0).prop.turn,0);
+  c('placement-repeat').checked=false;f.canvas.click(10,10);assert.equal(f.canvas.placementPreview(0,0),null);
+  assert.equal(f.rendered.objects.at(-1).kind,'house');
+});
 
 test('terrain brush previews a continuous stroke and saves it with single-step Undo and Redo',async()=>{
   const f=editorFixture(),c=f.control;await f.open();

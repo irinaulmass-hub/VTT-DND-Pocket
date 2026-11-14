@@ -56,6 +56,17 @@
           if (!window.WorldMap.boundsIntersect(window.WorldMap.visualBounds(prop), area)) continue;
           paintProp(ctx, prop, options.selected?.() === prop.id, structures);
         }
+        const placement = hover && options.placementPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        if (placement) {
+          ctx.save(); ctx.globalAlpha = .55;
+          paintProp(ctx, placement.prop, true, window.WorldMap.structures([...objects, placement.prop]));
+          ctx.restore();
+          if (!placement.allowed) {
+            const bounds = window.WorldMap.cellBounds(placement.prop);
+            ctx.strokeStyle = '#bf493d'; ctx.lineWidth = 2 / camera.scale;
+            ctx.strokeRect(bounds.left, bounds.top, bounds.right - bounds.left + 1, bounds.bottom - bounds.top + 1);
+          }
+        }
         if (options.player && data.fog) {
           for (let y = area.top; y < area.bottom; y++) for (let x = area.left; x < area.right; x++) {
             const seen = get(data.seen, x, y);
@@ -117,6 +128,7 @@
       const scale = Math.max(minScale(), Math.min(100, camera.scale * Math.exp(-event.deltaY * .0016)));
       const change = camera.scale / scale;
       setCamera({ x: before.x - (before.x - camera.x) * change, y: before.y - (before.y - camera.y) * change, scale });
+      hover = point(event);
     }, { passive: false });
     canvas.addEventListener('pointerdown', event => {
       if (event.button > 2 || gesture) return;
@@ -140,7 +152,8 @@
         options.strokeTo?.(Math.floor(hover.x), Math.floor(hover.y)); draw(); return;
       }
       if (!gesture) {
-        const active = !!options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        const active = !!(options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y)) ||
+          options.placementPreview?.(Math.floor(hover.x), Math.floor(hover.y)));
         if (active || hoveringBrush) draw();
         hoveringBrush = active; return;
       }
