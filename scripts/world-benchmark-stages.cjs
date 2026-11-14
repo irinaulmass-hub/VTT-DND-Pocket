@@ -49,7 +49,7 @@ function install(current, root) {
   const factories = new Map([
     [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges','readPublished','readPublishedView','readActive'], prefix:'store.' }],
     [path.join(root, 'character-positions.js'), { names:['mapState','projectionRevision'], prefix:'positions.' }],
-    [path.join(root, 'world-movement.js'), { names:['districtContext','visibleCells'], prefix:'movement.' }],
+    [path.join(root, 'world-movement.js'), { names:['districtContext','visibleCells','stepVisibility'], prefix:'movement.' }],
     [path.join(root, 'world-districts.js'), { names:['preview','prepareApply','prepareHistory','verifySave'], prefix:'district.' }],
   ]);
   Module._load = function(request, parent, ...rest) {
@@ -109,7 +109,7 @@ function install(current, root) {
         };
         return cache;
       };
-      if (filename === path.join(root, 'world-exploration.js')) return methods(value, ['project'], 'exploration.');
+      if (filename === path.join(root, 'world-exploration.js')) return methods(value, ['project','remember'], 'exploration.');
       if (config) return function(...args) {
         return methods(value.apply(this, args), config.names, config.prefix);
       };

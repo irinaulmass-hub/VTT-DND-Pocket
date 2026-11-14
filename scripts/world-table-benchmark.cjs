@@ -16,7 +16,7 @@ const queries={status:null,near:['0,0'],adjacent:['0,0','1,0','0,-1','1,-1'],
 const publicProp=({id,kind,x,y,turn})=>({id,kind,x,y,turn});
 
 function optionsFor(args) {
-  const options={profile:'small',samples:5,stages:'on',fog:'on',output:null,ref:null,'state-updates':'off'};
+  const options={profile:'small',samples:5,stages:'on',fog:'on',output:null,ref:null,'state-updates':'off','exploration-updates':'off'};
   for(let i=0;i<args.length;i+=2) {
     const key=args[i].slice(2),value=args[i+1];
     if(!args[i].startsWith('--')||!Object.hasOwn(options,key)||!value)throw Error('Unknown or missing argument');
@@ -24,12 +24,13 @@ function optionsFor(args) {
   }
   options.samples=Number(options.samples);
   if(!Object.hasOwn(profiles,options.profile)||!Number.isInteger(options.samples)||options.samples<1||options.samples>10||
-    !['on','off'].includes(options.stages)||!['on','off'].includes(options.fog)||!['on','off'].includes(options['state-updates'])||
+    !['on','off'].includes(options.stages)||!['on','off'].includes(options.fog)||!['on','off'].includes(options['state-updates'])||!['on','off'].includes(options['exploration-updates'])||
+    options['state-updates']==='on'&&options['exploration-updates']==='on'||
     options.ref&&!/^[a-f0-9]{40}$/.test(options.ref))throw Error('Invalid table benchmark options');
   return options;
 }
 
-function tableFixture(config,file,fog) {
+function tableFixture(config,file,fog,exploring=false) {
   const built=fixture(config,file), layout=built.layout;
   // Replace seven objects, preserving the existing per-profile count and object limit.
   const probes=[
@@ -67,19 +68,22 @@ function tableFixture(config,file,fog) {
   const positions={formatVersion:1,positions:{'bench-hero':position},observing:{'bench-hero':0},
     explored:{[scopeKey]:explored},memory:{[scopeKey]:memory},doors:{},revealedSecrets:{[layout.id]:revealedSecrets},
     projectionRevisions:{[layout.id]:{objects:2,sight:3}}};
+  const walking=exploring?require('./world-table-movement.cjs').scenario(snapshot,positions,scope,scopeKey):null;
+  const querySet={...queries,...walking?.queries};
   fs.writeFileSync(file('character-positions.json'),JSON.stringify(positions));
-  fs.writeFileSync(file('characters.json'),JSON.stringify({characters:[{id:'bench-hero',name:'Benchmark'}]}));
+  fs.writeFileSync(file('characters.json'),JSON.stringify({characters:Object.keys(positions.positions).map(id=>({id,name:'Benchmark'}))}));
   const store=require('../world-store')(file);store.writePublished(layout.id,snapshot);store.writeActiveId(layout.id);
   const movement=require('../world-movement')(store,file);
   const visible=fog?require('../world-exploration').mask(movement.visibleCells(position,objects,new Set())):{};
   const state={explored,memory,visible,openDoors:new Set(),revealedSecrets};
-  const expected=Object.fromEntries(Object.entries(queries).filter(([,keys])=>keys!==null).map(([name,keys])=>[name,{
+  let expected=Object.fromEntries(Object.entries(querySet).filter(([,keys])=>keys!==null).map(([name,keys])=>[name,{
     id:layout.id,revision:1,frame:snapshot.frame,tokens:[],version:{generation:1,publication:1,exploration:fog?5:2},
     fog,...project(snapshot,new Set(keys),state),
   }]));
   expected.status={type:'WORLD_UPDATE',id:layout.id,revision:1,version:{generation:1,publication:1,exploration:fog?5:2},
     frame:snapshot.frame,party:null,blackout:false};
-  return {expected,dimensions:{plots:config.plots,tiles:config.tiles,objects:objects.length,
+  if(walking)expected=walking.expected(querySet,fog);
+  return {expected,walking,querySet,dimensions:{plots:config.plots,tiles:config.tiles,objects:snapshot.map.objects.length,
     chunks:Object.keys(layout.chunks).length,memoryChunks:Object.keys(memory.chunks).length,
     memoryCells:Object.values(memory.chunks).reduce((n,c)=>n+Object.keys(c).length,0),
     memoryObjects:Object.keys(memory.objects).length,
@@ -113,7 +117,8 @@ async function run(options) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'vtt-world-benchmark-'));
   let child;
   try {
-    const fog=options.fog==='on',built=tableFixture(profiles[options.profile],name=>path.join(dir,name),fog);
+    const fog=options.fog==='on',exploring=options['exploration-updates']==='on',
+      built=tableFixture(profiles[options.profile],name=>path.join(dir,name),fog,exploring);
     const port=await freePort(),base='http://127.0.0.1:'+port,password=randomBytes(24).toString('hex');
     child=spawn(process.execPath,['--require',path.join(__dirname,'world-benchmark-probe.cjs'),'server.js'],{
       cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:dir,DM_PASSWORD:password,
@@ -134,13 +139,20 @@ async function run(options) {
       await new Promise(r=>setTimeout(r,50));
     }
     if(!ready)throw Error('Server startup timeout: '+error);
-    let cookie;
-    if(options['state-updates']==='on') {
+    let cookie,token;
+    if(options['state-updates']==='on'||exploring) {
       const login=await fetch(base+'/dm-login',{method:'POST',redirect:'manual',headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body:new URLSearchParams({password}).toString()});
       assert.equal(login.status,302);cookie=login.headers.get('set-cookie').split(';')[0];
     }
-    const rows=[],warmupRows=[],updateRows=[],responseSha256={},sequences={};let seq=0;
+    if(exploring) {
+      const assignment=await fetch(base+'/api/player-access',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},
+        body:JSON.stringify({characterId:built.walking.walker}),signal:AbortSignal.timeout(10000)});
+      assert.equal(assignment.status,201);token=(await assignment.json()).token;
+    }
+    const rows=[],warmupRows=[],updateRows=[],validationRows=[],responseSha256={},sequences={},lastResponses={};
+    const updateSequence=createHash('sha256');let seq=0;
+
     for(let sample=-1;sample<options.samples;sample++) {
       if(sample>=0&&options['state-updates']==='on') {
         const id='frame-'+(++seq),serializeAt=performance.now();
@@ -152,25 +164,60 @@ async function run(options) {
         assert.equal(response.status,200);
         const frame={x:sample+1,y:-sample-1,scale:24,serial:sample+1},revision=sample+2;
         assert.deepEqual(value,{tokens:[],revision,frame});
+        updateSequence.update(Buffer.byteLength(text)+':').update(text);
         updateRows.push({...await metric(id),operation:'frame_update',sample,wallMs,serializeMs,
           responseBytes:Buffer.byteLength(text),requestBytes:Buffer.byteLength(payload)});
         for(const expected of Object.values(built.expected)) {
           expected.frame=frame;expected.revision=revision;expected.version.publication=revision;
         }
       }
-      for(const [name,keys] of Object.entries(queries)) {
+      if(sample>=0&&exploring) {
+        const id='move-'+(++seq),serializeAt=performance.now(),payload=JSON.stringify({direction:'east',revision:sample});
+        const serializeMs=performance.now()-serializeAt,start=performance.now();
+        const response=await fetch(base+'/api/player-position/move',{method:'POST',headers:{Authorization:'Bearer '+token,
+          'Content-Type':'application/json','x-vtt-benchmark-id':id},body:payload,signal:AbortSignal.timeout(30000)});
+        const text=await response.text(),value=JSON.parse(text),wallMs=performance.now()-start;
+        assert.equal(response.status,200,text);
+        const position=built.walking.advance(sample);assert.deepEqual(value,{position});
+        updateSequence.update(Buffer.byteLength(text)+':').update(text);
+        updateRows.push({...await metric(id),operation:'exploration_move',sample,wallMs,serializeMs,
+          responseBytes:Buffer.byteLength(text),requestBytes:Buffer.byteLength(payload)});
+        built.expected=built.walking.expected(built.querySet,fog);
+      }
+      for(const [name,keys] of Object.entries(built.querySet)) {
       const id='table-'+(++seq),start=performance.now();
       const endpoint=keys===null?'/api/worlds/table/status':'/api/worlds/table?chunks='+keys.join(';');
       const response=await fetch(base+endpoint,{
         headers:{'x-vtt-benchmark-id':id},signal:AbortSignal.timeout(30000)});
       const text=await response.text(),value=JSON.parse(text),wallMs=performance.now()-start;
       assert.equal(response.status,200);verify(name,value,built.expected[name],fog);
+      if(name==='walk')built.walking.verify(value,fog,sample);
       const digest=createHash('sha256').update(text).digest('hex');
-      if(options['state-updates']==='off'&&responseSha256[name])assert.equal(digest,responseSha256[name]);
-      responseSha256[name]=digest;
+      if(options['state-updates']==='off'&&!exploring&&responseSha256[name])assert.equal(digest,responseSha256[name]);
+      responseSha256[name]=digest;lastResponses[name]=text;
       (sequences[name] ||= createHash('sha256')).update(Buffer.byteLength(text)+':').update(text);
       const measured=await metric(id);
       (sample>=0?rows:warmupRows).push({...measured,operation:name,sample,responseSha256:digest,wallMs,responseBytes:Buffer.byteLength(text),requestBytes:0,serializeMs:0});
+      }
+    }
+    if(exploring) {
+      for(const [name,authorization,body,status] of [
+        ['unauthorized',null,{direction:'east',revision:options.samples},401],
+        ['stale','Bearer '+token,{direction:'east',revision:options.samples-1},409],
+        ['blocked','Bearer '+token,{direction:'north',revision:options.samples},409],
+      ]) {
+        const id='validation-'+(++seq),response=await fetch(base+'/api/player-position/move',{method:'POST',
+          headers:{...(authorization?{Authorization:authorization}:{}),'Content-Type':'application/json','x-vtt-benchmark-id':id},
+          body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
+        assert.equal(response.status,status);await response.text();
+        const row=await metric(id);assert.equal(row.writes,0);validationRows.push({...row,operation:name});
+      }
+      // Rejected commands must leave every public region and version byte-identical.
+      for(const [name,keys] of Object.entries(built.querySet)) {
+        const id='validation-'+(++seq),endpoint=keys===null?'/api/worlds/table/status':'/api/worlds/table?chunks='+keys.join(';');
+        const response=await fetch(base+endpoint,{headers:{'x-vtt-benchmark-id':id},signal:AbortSignal.timeout(30000)});
+        assert.equal(response.status,200);assert.equal(await response.text(),lastResponses[name]);
+        const row=await metric(id);assert.equal(row.writes,0);validationRows.push({...row,operation:'unchanged_'+name});
       }
     }
     const summaries=aggregate(rows);
@@ -183,26 +230,31 @@ async function run(options) {
     const updateCycles=updateRows.map(update=>{
       const cycle=rows.filter(row=>row.sample===update.sample),status=cycle.find(row=>row.operation==='status'),near=cycle.find(row=>row.operation==='near');
       return {sample:update.sample,updateMs:update.wallMs,firstReadsMs:status.wallMs+near.wallMs,
+        ...(exploring?{walkMs:cycle.find(row=>row.operation==='walk').wallMs}:{}),
         updateAndFirstReadsMs:update.wallMs+status.wallMs+near.wallMs};
     });
     return {schemaVersion:1,applicationRef:options.ref,createdAt:new Date().toISOString(),
       environment:{node:process.version,platform:process.platform,arch:process.arch,cpu:os.cpus()[0]?.model,osRelease:os.release()},
       sourceSha256:Object.fromEntries(['worlds.js','world-store.js','world-exploration.js','character-positions.js',
         'world-movement.js','world-object-index.js','remote/world-model.js','scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs',
-        'scripts/world-benchmark-stages.cjs','scripts/world-table-benchmark.cjs'].map(f=>[f,createHash('sha256').update(fs.readFileSync(path.join(root,f))).digest('hex')])),
+        'scripts/world-benchmark-stages.cjs','scripts/world-table-benchmark.cjs','scripts/world-table-movement.cjs',
+        'test/fixtures/world-exploration-linear.cjs'].map(f=>[f,createHash('sha256').update(fs.readFileSync(path.join(root,f))).digest('hex')])),
       method:{...options,output:undefined,transport:'public loopback HTTP without DM cookie; includes download and JSON parse',
-        cache:'one warm-up per query retained separately in warmupRows; summaries exclude warm-up; warm OS cache; no forced server GC',queries,
+        cache:'one warm-up per query retained separately in warmupRows; summaries exclude warm-up; warm OS cache; no forced server GC',queries:built.querySet,
         stageTiming:'optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times',
         work:'benchmark-only index candidates/lookups/builds/fallbacks; absent means hooks were not called, not zero linear work',
-        stateUpdates:'optional authenticated frame POST before each measured read cycle; updateRows measured separately, GETs remain public; sequence hashes cover warm-up and all revisions',
+        stateUpdates:'optional authenticated frame POST or assigned-player step before each measured read cycle; updates and rejection validation separate, GETs public; sequence hashes cover warm-up and all revisions',
         io:'readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/positions selfMs',
         response:'response.json includes Express serialization, headers and send; not pure JSON.stringify',
         remainder:'server time outside exclusive spans; independent medians need not sum',
-        fixture:'dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign',
+        fixture:exploring?'two observing heroes; 225 transferred terrain cells, cross-chunk walk, old object memory and two secrets; temporary campaign':
+          'dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign',
+        oracle:exploring?'independent pre-index projector/remember fixture plus explicit discovery, memory, secret and rejection assertions':undefined,
         exclusions:'no browser/FPS, Wi-Fi, Windows or physical devices; diagnostic overhead is not production timing'},
       status:'verified',dimensions:built.dimensions,responseSha256,
       responseSequenceSha256:Object.fromEntries(Object.entries(sequences).map(([name,hash])=>[name,hash.digest('hex')])),
-      rows,warmupRows,summary:summaries,updateRows,updateSummary:aggregate(updateRows),updateCycles};
+      rows,warmupRows,summary:summaries,updateRows,updateSummary:aggregate(updateRows),updateCycles,validationRows,
+      updateResponseSequenceSha256:updateSequence.digest('hex')};
   } finally {
     if(child&&child.exitCode===null&&child.signalCode===null){const done=new Promise(r=>child.once('exit',r));child.kill();await done;}
     fs.rmSync(dir,{recursive:true,force:true});

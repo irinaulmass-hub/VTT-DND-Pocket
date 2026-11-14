@@ -519,3 +519,23 @@ node scripts/world-table-benchmark.cjs --profile limit --samples 5 --fog on --st
 --state-updates off по умолчанию сохраняет статический режим. Контролируемый режим использует временный DM-вход только для frame POST; GET остаются публичными. Отдельные updateRows/updateSummary и updateCycles сохраняют цену команды, status + near и полную сумму по каждому циклу. responseSequenceSha256 учитывает сырые тела warm-up и всех меняющихся ревизий; сравнивать между одинаковыми fog-профилями. arrayIndexBuilds/dictionaryIndexBuilds относятся к форме коллекции (в этой сцене живые/память). Первое построение остаётся в warmupRows. Выходной файл должен отсутствовать.
 
 Пять финальных прогонов: 150 GET, 30 первых GET и 25 POST; контролируется точный исходник базы, отличается только world-store.js. Последовательности ответов совпали, после frame живой индекс не перестраивается. [Исходные данные и ограничения](benchmarks/B5B3K_STABLE_OBJECTS.md). Store-тесты покрывают жетоны/seen/fog; HTTP-замеры только кадр. Движение/обновление памяти, холодный запуск, FPS/LAN/Windows этим срезом не объявляются проверенными.
+
+## Шаги и обновление исследования B5b3l
+
+Полный npm test — **120/120**, Node.js 24.22.1, без пропусков. Новый сценарий world-table-benchmark.test.cjs делает по пять подтверждённых шагов для fog on/off и stages on/off, сравнивает последовательности сырых GET/команд и I/O, свежее исследование, перестроения и место загрузки positions. Отдельно проверяются отказ без приглашения/старая ревизия/вода, ноль записей и побайтовая неизменность всех регионов после отказов. Обновлена проверка несовместимых/невалидных CLI опций.
+
+```sh
+node --check scripts/world-table-benchmark.cjs
+node --check scripts/world-table-movement.cjs
+node --check scripts/world-benchmark-stages.cjs
+node --check scripts/world-benchmark-probe.cjs
+node --check test/world-table-benchmark.test.cjs
+npm test
+node scripts/world-table-benchmark.cjs --profile limit --samples 5 --fog on --exploration-updates on --stages on --output /tmp/exploration-step.json
+```
+
+--exploration-updates on и --state-updates on нельзя смешивать. Оба по умолчанию off. Новый режим получает настоящее временное приглашение; семь GET по-прежнему публичны. Ответы проверяются независимыми remember/project из test/fixtures/world-exploration-linear.cjs и явными утверждениями про неизвестную клетку/старый объект/пол/секреты; полный checkout с этой fixture обязателен. Эталон LOS остаётся общим с приложением.
+
+updateRows — команды, rows — измеренные GET, warmupRows — первые семь GET; validationRows — три отклонённых команды и семь GET сохранности после замеров. Они не входят в summary. updateResponseSequenceSha256 — хеш пяти тел подтверждённых позиций; responseSequenceSha256 включает первые/измеренные GET. firstReadsMs — status + near, walkMs отдельно. Стадии io.write охватывают только writeFileSync, не предшествующий JSON.stringify/последующий rename; не суммировать inclusive spans. stages off сохраняет IPC/I/O-probe и проверяет прозрачность обёрток.
+
+Пять финальных прогонов: 25 шагов, 175 измеренных/35 первых GET и 50 проверочных запросов. При fog on внутри команды два чтения positions и пять readPublished; в первом near одно построение памяти, ноль живого. При fog off одно чтение positions в команде и одно в status, шесть readPublished, без индекса памяти. Прежние static/frame тесты сохранены. [Сырые данные, профиль и следующий контракт](benchmarks/B5B3L_EXPLORATION_STEPS.md). Ускорение/Windows/LAN/FPS этим срезом не заявляются.

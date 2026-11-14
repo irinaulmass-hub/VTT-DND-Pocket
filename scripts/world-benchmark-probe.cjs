@@ -33,7 +33,8 @@ fs.readFileSync = function(file, ...args) {
   return result;
 };
 fs.writeFileSync = function(file, value, ...args) {
-  const result = write.call(this, file, value, ...args);
+  const action = () => write.call(this, file, value, ...args);
+  const result = active && inside(file) && stages ? stages.measure('io.write', action) : action();
   if (active && inside(file)) { active.writes++; active.writeBytes += bytes(value); }
   return result;
 };

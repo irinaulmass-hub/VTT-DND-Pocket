@@ -71,7 +71,8 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
 
 test('table benchmark rejects invalid options before starting a server',()=>{
   for(const args of [['--profile','missing'],['--samples','0'],['--samples','11'],['--ref','main'],
-    ['--fog','missing'],['--stages','missing'],['--state-updates','missing'],['--unknown','x'],['--samples']])assert.throws(()=>optionsFor(args));
+    ['--fog','missing'],['--stages','missing'],['--state-updates','missing'],['--exploration-updates','missing'],
+    ['--state-updates','on','--exploration-updates','on'],['--unknown','x'],['--samples']])assert.throws(()=>optionsFor(args));
   assert.equal(optionsFor([]).stages,'on');
 });
 
@@ -96,4 +97,45 @@ test('controlled frame updates keep live indices while fresh revisions remain by
   assert.ok(measured.updateRows.every(row=>row.status===200&&row.writes>0));
   assert.ok(measured.updateCycles.every(row=>row.firstReadsMs>=0&&row.updateAndFirstReadsMs>=row.firstReadsMs));
   assert.ok(control.rows.every(row=>Object.keys(row.work).length===0));
+});
+
+test('assigned-player steps profile fresh exploration, memory and rejected commands transparently',()=>{
+  const run=(fog,stages)=>{
+    const result=spawnSync(process.execPath,[script,'--samples','5','--exploration-updates','on','--fog',fog,'--stages',stages],
+      {cwd:root,encoding:'utf8',timeout:20000});
+    assert.equal(result.status,0,result.stderr);return JSON.parse(result.stdout);
+  };
+  for(const fog of ['on','off']) {
+    const measured=run(fog,'on'),control=run(fog,'off');
+    assert.deepEqual(measured.responseSequenceSha256,control.responseSequenceSha256);
+    assert.equal(measured.updateResponseSequenceSha256,control.updateResponseSequenceSha256);
+    assert.equal(measured.rows.length,35);assert.equal(measured.warmupRows.length,7);
+    assert.equal(measured.dimensions.tiles,2048);assert.equal(measured.updateRows.length,5);
+    assert.deepEqual(measured.rows.map(r=>[r.operation,r.readBytes,r.writeBytes]),
+      control.rows.map(r=>[r.operation,r.readBytes,r.writeBytes]));
+    for(const row of measured.rows) {
+      assert.equal(row.writes,0);assert.equal(row.work.arrayIndexBuilds||0,0);
+      assert.equal(row.work.indexFallbacks||0,0);
+      assert.equal(row.work.dictionaryIndexBuilds||0,row.operation==='near'&&fog==='on'?1:0);
+      assert.equal(row.readCategories.publishedManifest,undefined,'steps do not invalidate the publication');
+      if(row.operation==='status')assert.equal(row.readCategories.positions?.calls||0,fog==='on'?0:1,
+        'fog-on notification already parsed new state inside the step; fog-off defers it to polling');
+      else assert.equal(row.readCategories.positions,undefined);
+    }
+    for(const row of measured.updateRows) {
+      assert.equal(row.operation,'exploration_move');assert.equal(row.status,200);assert.equal(row.writes,1);
+      assert.equal(row.stages['movement.stepVisibility'].calls,1);assert.equal(row.stages['exploration.remember'].calls,2);
+      assert.equal(row.stages['io.write'].calls,1);
+      assert.equal(row.readCategories.positions.calls,fog==='on'?2:1);
+      const exclusive=Object.values(row.stages).reduce((sum,s)=>sum+s.selfMs,0);
+      assert.ok(Math.abs(row.serverMs-exclusive-row.unmeasuredMs)<.001);
+    }
+    const statuses=measured.rows.filter(r=>r.operation==='status').map(r=>r.responseSha256);
+    assert.equal(new Set(statuses).size,fog==='on'?5:1,'only fog exposes changes to party sight');
+    assert.equal(measured.validationRows.length,10);
+    assert.deepEqual(measured.validationRows.slice(0,3).map(r=>[r.operation,r.status]),
+      [['unauthorized',401],['stale',409],['blocked',409]]);
+    assert.ok(measured.validationRows.every(r=>r.writes===0));
+    assert.ok(control.rows.every(r=>r.stages===undefined&&Object.keys(r.work).length===0));
+  }
 });
