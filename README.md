@@ -8,6 +8,8 @@
 
 Мосты: исправлены пропорции настила, перил и теней. Новая тестовая сцена показывает оба направления между сухими берегами; сохранённые размеры прохода прежние. [Свежие кадры и проверка](docs/qa/BRIDGE_PROPORTIONS_ACCEPTANCE.md).
 
+Для диагностики большого мира добавлен `npm run benchmark:table`: чтение участков с туманом и насыщенной памятью исследования. [Измерения и следующий шаг](docs/benchmarks/B5B3F_TABLE_READS.md). Текущий полный набор — 99 тестов.
+
 ## Запуск на Windows
 
 1. [Скачайте ZIP](https://github.com/irinaulmass-hub/VTT-DND-Pocket/archive/refs/heads/codex/audit-and-stabilization.zip), войдя в GitHub под аккаунтом с доступом, и распакуйте его.

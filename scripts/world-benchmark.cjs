@@ -246,4 +246,4 @@ async function main() {
   else process.stdout.write(json);
 }
 if(require.main===module)main().catch(error=>{console.error(error.message);process.exitCode=1;});
-module.exports={snapshotFingerprint};
+module.exports={snapshotFingerprint,fixture,profiles,summary,aggregate,freePort};

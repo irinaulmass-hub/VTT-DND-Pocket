@@ -13,15 +13,23 @@ if (process.env.VTT_WORLD_BENCHMARK !== '1' || path.dirname(dataDir) !== os.tmpd
 }
 let active;
 const stageTiming = process.env.VTT_WORLD_BENCHMARK_STAGES === 'on';
-if (stageTiming) {
-  require('./world-benchmark-stages.cjs').install(() => active, path.resolve(__dirname, '..'));
-}
+const stages = stageTiming ? require('./world-benchmark-stages.cjs').install(() => active, path.resolve(__dirname, '..')) : null;
 const inside = file => typeof file === 'string' && path.resolve(file).startsWith(dataDir + path.sep);
 const bytes = value => typeof value === 'string' ? Buffer.byteLength(value) : value?.byteLength || 0;
 const read = fs.readFileSync, write = fs.writeFileSync;
 fs.readFileSync = function(file, ...args) {
-  const result = read.call(this, file, ...args);
-  if (active && inside(file)) { active.reads++; active.readBytes += bytes(result); active.files.add(path.resolve(file)); }
+  if (!active || !inside(file)) return read.call(this, file, ...args);
+  const name = path.basename(file);
+  const category = name.endsWith('-live-chunks.json') ? 'publishedManifest' :
+    /^[a-f0-9]{64}\.json$/.test(name) ? 'terrainChunk' :
+    name === 'character-positions.json' ? 'positions' : name === 'active-world.json' ? 'active' : 'other';
+  const start = performance.now();
+  const action = () => read.call(this, file, ...args);
+  const result = stages ? stages.measure('io.' + category, action) : action();
+  const elapsed = performance.now() - start, length = bytes(result);
+  const row = (active.readCategories ||= {})[category] ||= { calls:0, bytes:0, readMs:0 };
+  row.calls++; row.bytes += length; row.readMs += elapsed;
+  active.reads++; active.readBytes += length; active.files.add(path.resolve(file));
   return result;
 };
 fs.writeFileSync = function(file, value, ...args) {
@@ -44,7 +52,7 @@ http.Server.prototype.emit = function(event, ...args) {
         if (active === item) active = undefined;
         process.send({ type:'world-benchmark', id, status:res.statusCode,
           serverMs, cpuMs:(cpu.user+cpu.system)/1000,
-          reads:item.reads, uniqueReadFiles:item.files.size, readBytes:item.readBytes,
+          reads:item.reads, uniqueReadFiles:item.files.size, readBytes:item.readBytes, readCategories:item.readCategories || {},
           writes:item.writes, writeBytes:item.writeBytes,
           ...(item.stages ? { stages:item.stages,
             unmeasuredMs:Math.max(0, serverMs-Object.values(item.stages).reduce((sum, row) => sum+row.selfMs, 0)) } : {}),

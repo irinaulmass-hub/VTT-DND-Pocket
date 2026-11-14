@@ -47,8 +47,9 @@ function install(current, root) {
     return object;
   }
   const factories = new Map([
-    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges'], prefix:'store.' }],
-    [path.join(root, 'world-movement.js'), { names:['districtContext'], prefix:'movement.' }],
+    [path.join(root, 'world-store.js'), { names:['readDraft','writeDraft','writeDraftChanges','readPublished','readActive'], prefix:'store.' }],
+    [path.join(root, 'character-positions.js'), { names:['mapState'], prefix:'positions.' }],
+    [path.join(root, 'world-movement.js'), { names:['districtContext','visibleCells'], prefix:'movement.' }],
     [path.join(root, 'world-districts.js'), { names:['preview','prepareApply','prepareHistory','verifySave'], prefix:'district.' }],
   ]);
   Module._load = function(request, parent, ...rest) {
@@ -88,14 +89,17 @@ function install(current, root) {
         return stages.measure('generation', () => value.generationChange.apply(this, args));
       } };
     }
+    if (request === 'express' && value.response) methods(value.response, ['json'], 'response.');
     if (request.startsWith('.')) {
       const filename = Module._resolveFilename(request, parent), config = factories.get(filename);
+      if (filename === path.join(root, 'world-exploration.js')) return methods(value, ['project'], 'exploration.');
       if (config) return function(...args) {
         return methods(value.apply(this, args), config.names, config.prefix);
       };
     }
     return value;
   };
+  return stages;
 }
 
 module.exports = { createStages, install };

@@ -411,3 +411,20 @@ node scripts/browser-qa.cjs
 ```
 
 Выбрать новый черновик «Мосты · Берега и масштаб», отключить туман и нажать «Показать игрокам». На /tv проверить горизонтальный и вертикальный переходы и приблизить настил. При включённом тумане без исследованных клеток сцена полностью скрыта; выключение тумана и повторная публикация восстанавливают её. Стенд использует одноразовый DATA_DIR, не существующие кампании.
+
+
+## Чтение общего экрана B5b3f
+
+Полный npm test — **99/99**, Node.js 24.22.1, без пропусков. Новый test/world-table-benchmark.test.cjs содержит два сценария: настоящий публичный HTTP с насыщенной памятью, равенство ответов stages on/off, туман on/off, геометрия/секреты/память, согласованность эксклюзивных стадий и категорий I/O, отсутствие записей, изоляция внешнего DATA_DIR и запрет перезаписи отчёта; неверные параметры до запуска сервера. Прежние stage/HMAC/District/HTTP/VM проверки проходят.
+
+```bash
+npm test
+node --check scripts/world-table-benchmark.cjs
+node --check scripts/world-benchmark.cjs
+node --check scripts/world-benchmark-probe.cjs
+node --check scripts/world-benchmark-stages.cjs
+node --check test/world-table-benchmark.test.cjs
+npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --output /tmp/table-new.json
+```
+
+Тесты выполнить до последовательных замеров. Для контроля повторить с --stages off, для отсутствия тумана --fog off; использовать новый output. Сравнивать sourceSha256 и responseSha256; хранить исходные rows. readMs исключает подсчёт байтов, но включает чтение/декодирование и возможные паузы GC. mapState self не является чистым JSON.parse, response.json включает Express send. Пять финальных прогонов и методика: [B5B3F_TABLE_READS.md](benchmarks/B5B3F_TABLE_READS.md). Это диагностика с overhead, без измерений браузера/FPS/LAN/Windows и без изменения рабочего сервера.
