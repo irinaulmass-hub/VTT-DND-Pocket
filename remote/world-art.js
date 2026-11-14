@@ -4,7 +4,7 @@
   const { get, terrain, props } = WorldMap;
   const sides = [[0,-1],[1,0],[0,1],[-1,0]];
   const corners = [[-1,-1],[1,-1],[1,1],[-1,1]];
-  const colors = { grass: '#848d62', dirt: '#aa8b60', stone: '#8a8577', wood: '#98704c', water: '#426c71' };
+  const colors = { grass: '#848d62', dirt: '#aa8b60', stone: '#8a8577', wood: '#98704c', woodland: '#707650', water: '#426c71' };
   const cache = new Map();
   function ellipse(ctx, x, y, rx, ry, color) {
     ctx.fillStyle = color;
@@ -60,93 +60,151 @@
     }
   }
   const surrounding = [...sides, ...corners];
-  const sand = [173, 148, 104];
-  const shallow = [110, 150, 138];
-  const baseMaterial = type => ['forest','denseForest','woodland','path'].includes(type) ? 'grass' : type;
+  const shallow = [105, 143, 128];
+  const baseMaterial = type => ['forest','denseForest'].includes(type) ? 'woodland' : type === 'path' ? 'grass' : type;
+  const natural = new Set(['grass','dirt','woodland','mud']);
   function smooth(x) {
     x = Math.max(0, Math.min(1, x));
     return x*x*(3-2*x);
   }
   function shoreColor(type) {
-    if (!type) return sand;
     const ground = baseMaterial(type);
-    if (ground === 'stone') return [129,125,112];
-    const hex = colors[ground] || terrain[ground][1];
+    const hex = colors[ground] || terrain[ground]?.[1] || colors.grass;
     return [1,3,5].map(start => parseInt(hex.slice(start,start+2),16));
   }
-  function shore(ctx, neighbors) {
-    const dry = [];
-    neighbors.forEach((type, i) => {
-      if (type !== 'water') dry.push({ offset: surrounding[i], color: shoreColor(type) });
-    });
-    if (!dry.length) return;
-    const size = 64;
-    const image = ctx.getImageData(0,0,size,size);
-    for (let row=0;row<size;row++) for (let col=0;col<size;col++) {
-      const x=(col+.5)/size,y=(row+.5)/size;
-      let distance=Infinity, total=0, edgeX=1, edgeY=1;
-      const land=[0,0,0];
-      for (const {offset:[dx,dy], color} of dry) {
-        const a=dx<0?x:dx>0?1-x:0, b=dy<0?y:dy>0?1-y:0;
-        const squared=a*a+b*b;
-        if (squared >= .35**2) continue;
-        if (dy===0) edgeX=Math.min(edgeX,a);
-        if (dx===0) edgeY=Math.min(edgeY,b);
-        distance=Math.min(distance,squared);
-        const weight=(.35-Math.sqrt(squared))**3/(.012+squared);
-        for(let i=0;i<3;i++) land[i]+=color[i]*weight;
-        total+=weight;
-      }
-      if (!total) continue;
-      const ripple=.024*Math.sin(x*Math.PI*4)*Math.sin(y*Math.PI*2);
-      const round=Math.max(0,.18-Math.abs(edgeX-edgeY));
-      const roundedEdge=Math.min(edgeX,edgeY)-round*round/.72;
-      const depth=Math.min(Math.sqrt(distance),roundedEdge)+ripple;
-      const wet = smooth((depth - .025) / .13), deep = smooth((depth - .11) / .22);
-      const foam = Math.max(0, 1 - Math.abs(depth - .14) / .023) * .16;
-      const offset=(row*size+col)*4;
-      for(let i=0;i<3;i++) {
-        const shore=land[i]/total*(1-wet)+shallow[i]*wet;
-        image.data[offset+i]=(shore*(1-deep)+image.data[offset+i]*deep)*(1-foam)+197*foam;
-      }
-    }
+  // Four-cell periodic world-space fields meet on every tile edge, including -1/0
+  // and chunk boundaries. Phase is independent of the random texture variant.
+  function waviness(x, y) {
+    return Math.sin((x+y)*Math.PI/2)*.018 + Math.sin((x-y)*Math.PI)*.009;
+  }
+  function pixels(ctx, paint) {
+    const image = ctx.getImageData(0,0,64,64);
+    paint(image.data);
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.putImageData(image, 0, 0);
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.putImageData(image,0,0);
     ctx.restore();
   }
-  function blendLand(ctx, type, neighbors) {
-    const own = baseMaterial(type);
-    const nearby = [];
-    neighbors.forEach((material, i) => {
-      if (material) nearby.push({ offset: surrounding[i], material, color: shoreColor(material) });
-    });
-    if (nearby.every(entry => entry.material === own)) return;
-
-    const size = 64;
-    const image = ctx.getImageData(0,0,size,size);
-    const base = shoreColor(own);
-    for (let row=0;row<size;row++) for (let col=0;col<size;col++) {
-      const x=(col+.5)/size, y=(row+.5)/size;
-      const mixed = [...base];
-      let total = 1, blend = 0;
-      for (const {offset:[dx,dy], material, color} of nearby) {
-        const a=dx<0?x:dx>0?1-x:0, b=dy<0?y:dy>0?1-y:0;
-        const squared=a*a+b*b;
-        if (squared >= .23**2) continue;
-        const weight=smooth(1-Math.sqrt(squared)/.23);
-        for (let c=0;c<3;c++) mixed[c]+=weight*color[c];
-        total+=weight;
-        if (material !== own) blend=Math.max(blend,weight);
-      }
-      if (!blend) continue;
-      const index=(row*size+col)*4;
-      for(let c=0;c<3;c++) image.data[index+c]=image.data[index+c]*(1-blend)+mixed[c]/total*blend;
+  function roundedDepth(x,y,mask,distance) {
+    // Quarter-circle cuts only the tips of a cell, leaving its physical center intact.
+    const radius=.42;
+    for(const [dx,dy] of corners) {
+      const horizontal=dx>0?2:8,vertical=dy>0?4:1;
+      const a=dx<0?x:1-x,b=dy<0?y:1-y;
+      if((mask&horizontal)&&(mask&vertical)&&a<radius&&b<radius)
+        distance=Math.min(distance,radius-Math.hypot(radius-a,radius-b));
     }
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.putImageData(image, 0, 0);
-    ctx.restore();
+    return distance;
+  }
+  // At most 16 phase fields (~896 KiB) and 32 geometry fields (512 KiB).
+  const fields = new Map(), edgeFields = new Map();
+  function field(phase) {
+    const key=phase[0]+phase[1]*4;
+    if(fields.has(key))return fields.get(key);
+    const noise=new Float32Array(4096),ripple=new Int8Array(4096),index=new Uint8Array(4096);
+    const tx=new Float32Array(4096),ty=new Float32Array(4096);
+    for(let row=0;row<64;row++)for(let col=0;col<64;col++) {
+      const i=row*64+col,x=(col+.5)/64,y=(row+.5)/64,wx=x+phase[0],wy=y+phase[1];
+      noise[i]=waviness(wx,wy);
+      const current=Math.sin(wy*Math.PI*6+Math.sin(wx*Math.PI/2)*.7);
+      ripple[i]=current>.96?2:current<-.98?-2:0;
+      const u=x+noise[i]*2-.5,v=y+waviness(wy+1,wx)*2-.5,ix=Math.floor(u),iy=Math.floor(v);
+      index[i]=(iy+1)*3+ix+1;tx[i]=smooth((u-ix-.28)/.44);ty[i]=smooth((v-iy-.28)/.44);
+    }
+    const result={noise,ripple,index,tx,ty};fields.set(key,result);return result;
+  }
+  function edgeField(mask) {
+    if(edgeFields.has(mask))return edgeFields.get(mask);
+    const distances=new Float32Array(4096);
+    const offsets=surrounding.filter((_,i)=>mask&(1<<i));
+    for(let row=0;row<64;row++)for(let col=0;col<64;col++) {
+      const x=(col+.5)/64,y=(row+.5)/64;
+      let distance=Infinity;
+      for(const [dx,dy] of offsets) {
+        const a=dx<0?x:dx>0?1-x:0,b=dy<0?y:dy>0?1-y:0;
+        distance=Math.min(distance,Math.hypot(a,b));
+      }
+      distances[row*64+col]=roundedDepth(x,y,mask,distance);
+    }
+    if(edgeFields.size>=32)edgeFields.delete(edgeFields.keys().next().value);
+    edgeFields.set(mask,distances);return distances;
+  }
+  function shore(ctx, neighbors, phase) {
+    const dry=[];
+    let mask=0;
+    neighbors.forEach((type,i)=>{
+      // Missing/filtered chunks cannot invent a bank on the public screen.
+      if(type && type!=='water') {dry.push({offset:surrounding[i],color:shoreColor(type)});mask|=1<<i;}
+    });
+    const {noise,ripple}=field(phase),distances=edgeField(mask);
+    const uniform=dry.length && dry.every(entry=>entry.color.every((value,i)=>value===dry[0].color[i]));
+    pixels(ctx,data=>{
+      for(let row=0;row<64;row++)for(let col=0;col<64;col++) {
+        const i=row*64+col,offset=i*4;
+        if(distances[i]>=.38) {
+          for(let c=0;c<3;c++)data[offset+c]+=ripple[i];
+          continue;
+        }
+        let land;
+        if(uniform) land=dry[0].color;
+        else {
+          land=[0,0,0];let total=0;
+          const x=(col+.5)/64,y=(row+.5)/64;
+          for(const {offset:[dx,dy],color} of dry) {
+            const a=dx<0?x:dx>0?1-x:0,b=dy<0?y:dy>0?1-y:0,squared=a*a+b*b;
+            if(squared>=.38**2)continue;
+            const weight=(.38-Math.sqrt(squared))**2/(.012+squared);
+            for(let c=0;c<3;c++)land[c]+=color[c]*weight;
+            total+=weight;
+          }
+          land=total ? land.map(value=>value/total) : dry[0].color;
+        }
+        const depth=distances[i]+noise[i],wet=smooth((depth+.015)/.09),deep=smooth((depth-.09)/.27);
+        const foam=Math.max(0,1-Math.abs(depth-.105)/.018)*.10,cut=1-smooth((depth+.065)/.065);
+        for(let c=0;c<3;c++) {
+          const bank=land[c]*.38+shallow[c]*.62,shoal=bank*(1-wet)+shallow[c]*wet;
+          const color=(shoal*(1-deep)+(data[offset+c]+ripple[i])*deep)*(1-foam)+191*foam;
+          data[offset+c]=color*(1-cut)+land[c]*cut;
+        }
+      }
+    });
+  }
+  function bank(ctx,type,coast,phase) {
+    if(!coast || !natural.has(baseMaterial(type)))return;
+    const base=shoreColor(type),{noise}=field(phase),distances=edgeField(coast),water=[66,108,113];
+    pixels(ctx,data=>{
+      for(let i=0;i<4096;i++) {
+        if(distances[i]>=.18)continue;
+        const depth=distances[i]-noise[i],wet=1-smooth(depth/.14),cut=1-smooth((depth+.08)/.08);
+        for(let c=0;c<3;c++) {
+          const bank=(base[c]*.38+shallow[c]*.62)*(1-cut)+water[c]*cut;
+          data[i*4+c]=data[i*4+c]*(1-wet)+bank*wet;
+        }
+      }
+    });
+  }
+  function blendLand(ctx, type, neighbors, phase) {
+    const own=baseMaterial(type);
+    if (!natural.has(own) || !neighbors.some(value=>value && natural.has(value) && value!==own)) return;
+    const base=shoreColor(own);
+    const at=(dx,dy)=> {
+      if (!dx && !dy) return base;
+      const i=surrounding.findIndex(([x,y])=>x===dx&&y===dy),material=neighbors[i];
+      return material && natural.has(material) ? shoreColor(material) : base;
+    };
+    const samples = Array.from({length:9},(_,i)=>at(i%3-1,Math.floor(i/3)-1));
+    const weights=field(phase);
+    pixels(ctx, data=> {
+      for(let row=0;row<64;row++)for(let col=0;col<64;col++) {
+        const i=row*64+col,k=weights.index[i],tx=weights.tx[i],ty=weights.ty[i];
+        const a=samples[k],b=samples[k+1],c=samples[k+3],d=samples[k+4];
+        const offset=(row*64+col)*4;
+        for(let i=0;i<3;i++) {
+          const color=(a[i]*(1-tx)+b[i]*tx)*(1-ty)+(c[i]*(1-tx)+d[i]*tx)*ty;
+          data[offset+i]+=color-base[i];
+        }
+      }
+    });
   }
   function leaf(ctx, x, y, angle, length, color) {
     ctx.save();
@@ -273,23 +331,35 @@
     ],
   };
 
-  function roofSlope(ctx, shape, w, from, to, palette, lit, rnd, kind) {
+  function roofSlope(ctx, shape, w, from, to, palette, lit, rnd, material) {
     polygon(ctx, shape, palette[lit ? 2 : 1]);
     ctx.save();
     ctx.clip();
-    const step = kind === 'barn' ? .22 : .16;
-    for (let y = from, row = 0; y < to; y += step, row++) {
-      for (let x = -w - .30 + (row % 2) * .14; x < w; x += .29) {
-        const accent = rnd() < (lit ? .28 : .31);
-        const tone = palette[lit ? (accent ? 3 : 2) : (accent ? 0 : 1)];
-        ctx.globalAlpha = accent ? .60 : 1;
-        const drift = (rnd() - .5) * .044;
-        polygon(ctx, [[x, y], [x + .275, y + drift], [x + .283, y + step - .014],
-          [x + .037, y + step + drift]], tone);
-        ctx.globalAlpha = 1;
-        if (rnd() < .35) {
-          ctx.fillStyle = lit ? '#f2d59a40' : '#edc8872b';
-          ctx.fillRect(x + .045, y + .025, .11 + rnd() * .08, .016);
+    if (material === 'thatch') {
+      // Bundles run down the slope; tie courses break the uniform rectangular grid.
+      for(let x=-w;x<w;x+=.045) {
+        ctx.strokeStyle=rnd()<.4?palette[0]:palette[3];
+        ctx.globalAlpha=lit?.43:.26;ctx.lineWidth=.012+rnd()*.013;
+        ctx.beginPath();ctx.moveTo(x,from);ctx.lineTo(x+(rnd()-.5)*.08,to);ctx.stroke();
+      }
+      for(let y=from+.25;y<to;y+=.32) {
+        ctx.strokeStyle=palette[0];ctx.globalAlpha=.28;ctx.lineWidth=.026;
+        ctx.beginPath();ctx.moveTo(-w,y);ctx.quadraticCurveTo(0,y+.06,w,y);ctx.stroke();
+      }
+    } else {
+      const step=material==='slate'?.145:.18;
+      for(let y=from,row=0;y<to;y+=step,row++)for(let x=-w-.30+(row%2)*.135;x<w;x+=.27) {
+        const accent=rnd()<.24;
+        const tone=palette[lit?(accent?3:2):(accent?0:1)];
+        const drift=(rnd()-.5)*.025;
+        ctx.globalAlpha=accent?.28:.85;
+        polygon(ctx,[[x,y],[x+.258,y+drift],[x+.25,y+step-.018],[x+.025,y+step]],tone);
+        ctx.globalAlpha=1;
+        ctx.strokeStyle=lit?'#f2d6ab65':'#3e332755';ctx.lineWidth=.012;
+        ctx.beginPath();ctx.moveTo(x+.025,y+step-.017);ctx.lineTo(x+.246,y+step-.028);ctx.stroke();
+        if(material==='tile') {
+          ctx.strokeStyle=palette[0]+'65';ctx.lineWidth=.009;
+          ctx.beginPath();ctx.moveTo(x+.15,y+.025);ctx.lineTo(x+.15,y+step-.03);ctx.stroke();
         }
       }
     }
@@ -297,64 +367,91 @@
   }
 
   function paintBuilding(ctx, prop, width, height) {
-    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107)) >>> 0) % 3;
-    const northLit = prop.turn === 0 || prop.turn === 3;
-    const key = prop.kind + ':' + variant + ':' + northLit;
-    let sprite = roofSprites.get(key);
-    if (!sprite) {
-      const w = width / 2, h = height / 2;
-      const rnd = random(31 + variant * 89 + width * 17);
-      const palette = roofColors[prop.kind][variant];
-      const barn = prop.kind === 'barn';
-      sprite = document.createElement('canvas');
-      sprite.width = (width + .6) * 50;
-      sprite.height = (height + .6) * 50;
-      const art = sprite.getContext('2d');
-      art.setTransform(50, 0, 0, 50, sprite.width / 2, sprite.height / 2);
-      const left = -w + .07, right = w - .07, top = -h + .07, bottom = h - .24;
-      const ridge = -.1 + variant * .05;
-      polygon(art, [[left + .12, top + .12], [right - .09, top + .12], [right, h - .09], [left + .10, h - .03]], '#554237');
-      polygon(art, [[left + .17, bottom - .09], [right - .14, bottom - .08], [right - .16, h - .12], [left + .19, h - .10]], '#ab8d62');
-      polygon(art, [[left, top + .04], [right - .09, top], [right, bottom + .04],
-        [left + .08, bottom]], '#41382f');
-
-      roofSlope(art, [[left + .055, top + .082], [right - .12, top + .063],
-        [right - .058, ridge], [left + .086, ridge + .027]], w, top + .04, ridge + .035, palette, northLit, rnd, prop.kind);
-      roofSlope(art, [[left + .086, ridge + .022], [right - .058, ridge],
-        [right - .058, bottom - .019], [left + .121, bottom - .057]], w, ridge, bottom, palette, !northLit, rnd, prop.kind);
-      polygon(art, [[left + .027, ridge + .002], [right + .003, ridge - .026], [right + .002, ridge + .025],
-        [left + .037, ridge + .058]], palette[0]);
-      art.fillStyle = palette[3];
-      art.fillRect(left + .12, ridge + .013, width - .26, .025);
-
-      const doorWidth = barn ? .45 : .25;
-      art.fillStyle = '#483829';
-      art.fillRect(-doorWidth, bottom + .025, doorWidth * 2, .28);
-      art.fillStyle = '#866345';
-      art.fillRect(-doorWidth + .035, bottom + .053, doorWidth * 2 - .07, .18);
-      art.fillStyle = '#ba9b6d';
-      art.fillRect(-doorWidth - .07, h + .02, doorWidth * 2 + .14, .08);
-      if (!barn) {
-        const x = w * .46, y = top + .32;
-        art.fillStyle = '#403b35aa';
-        art.fillRect(x + .07, y + .11, .42, .41);
-        art.fillStyle = '#53483e';
-        art.fillRect(x, y, .39, .40);
-        art.fillStyle = '#a49a86';
-        art.fillRect(x + .027, y + .027, .33, .31);
-        art.fillStyle = '#504940';
-        art.fillRect(x + .085, y + .09, .22, .18);
+    const variant=((Math.imul(prop.x,53)^Math.imul(prop.y,107))>>>0)%3;
+    const northLit=prop.turn===0||prop.turn===3;
+    const key=prop.kind+':'+variant+':'+northLit;
+    let sprite=roofSprites.get(key);
+    if(!sprite) {
+      const w=width/2,h=height/2,rnd=random(31+variant*89+width*17);
+      const palette=roofColors[prop.kind][variant],barn=prop.kind==='barn';
+      const material=prop.kind==='tavern'?'tile':variant===1?'slate':'thatch';
+      const hip=variant===1,inset=hip?.40:.055;
+      sprite=document.createElement('canvas');
+      sprite.width=(width+.6)*64;sprite.height=(height+.6)*64;
+      const art=sprite.getContext('2d');
+      art.setTransform(64,0,0,64,sprite.width/2,sprite.height/2);
+      const left=-w+.05,right=w-.05,top=-h+.06,bottom=h-.26,ridge=-.04;
+      polygon(art,[[left+.13,top+.15],[right-.06,top+.15],[right-.03,h-.05],[left+.10,h-.05]],'#4d3f32');
+      // A narrow facade carries plaster, timber framing, shutters and the entrance.
+      art.fillStyle=barn?'#8b704d':'#c3ad84';
+      art.fillRect(left+.12,bottom-.05,width-.24,.29);
+      art.strokeStyle='#5e4935';art.lineWidth=.035;
+      for(let x=left+.15;x<right;x+=barn?.35:.68) {
+        art.beginPath();art.moveTo(x,bottom);art.lineTo(x,h-.075);art.stroke();
       }
-      if (prop.kind === 'tavern') {
-        art.fillStyle = '#544029';
-        art.fillRect(.55, bottom + .06, .47, .19);
-        art.fillStyle = '#d4ab5e';
-        art.fillRect(.59, bottom + .095, .38, .11);
-        ellipse(art, .78, bottom + .15, .055, .035, '#775535');
+      polygon(art,[[left-.025,top+.015],[right,top],[right+.035,bottom+.055],[left+.025,bottom+.055]],'#443c31');
+      roofSlope(art,[[left+.03,top+.045],[right-.03,top+.045],[right-inset,ridge],[left+inset,ridge]],w,top,ridge+.01,palette,northLit,rnd,material);
+      roofSlope(art,[[left+inset,ridge],[right-inset,ridge],[right-.005,bottom],[left+.05,bottom]],w,ridge,bottom+.02,palette,!northLit,rnd,material);
+      if(hip) {
+        polygon(art,[[left+.03,top+.045],[left+inset,ridge],[left+.05,bottom]],palette[northLit?2:1]);
+        polygon(art,[[right-.03,top+.045],[right-.005,bottom],[right-inset,ridge]],palette[northLit?0:1]);
+        art.strokeStyle=palette[3];art.lineWidth=.026;
+        art.beginPath();art.moveTo(left+.04,top+.05);art.lineTo(left+inset,ridge);art.lineTo(left+.05,bottom);art.stroke();
       }
-      roofSprites.set(key, sprite);
+      // Carved fascia and a segmented raised ridge, all within the existing envelope.
+      art.strokeStyle='#4c3a2b';art.lineWidth=.055;
+      art.beginPath();art.moveTo(left+.04,bottom+.022);art.lineTo(right+.01,bottom+.022);art.stroke();
+      art.strokeStyle=palette[3];art.lineWidth=.022;
+      art.beginPath();art.moveTo(left+.07,top+.035);art.lineTo(right-.04,top+.035);art.stroke();
+      for(let x=left+inset-.025;x<right-inset;x+=.19) {
+        art.fillStyle=palette[0];art.fillRect(x,ridge-.035,Math.min(.185,right-inset-x),.082);
+        art.fillStyle=palette[3];art.fillRect(x+.008,ridge-.026,Math.min(.167,right-inset-x),.021);
+      }
+      const doorWidth=barn?.43:.22;
+      art.fillStyle='#46382b';art.fillRect(-doorWidth,bottom+.035,doorWidth*2,.26);
+      art.fillStyle='#92704c';art.fillRect(-doorWidth+.025,bottom+.055,doorWidth*2-.05,.19);
+      art.strokeStyle='#493a2d';art.lineWidth=.025;
+      art.beginPath();art.moveTo(-doorWidth+.035,bottom+.065);art.lineTo(doorWidth-.035,h-.03);
+      if(barn){art.moveTo(doorWidth-.035,bottom+.065);art.lineTo(-doorWidth+.035,h-.03);}art.stroke();
+      art.fillStyle='#c5ad81';art.fillRect(-doorWidth-.065,h+.015,doorWidth*2+.13,.075);
+      if(!barn) {
+        for(const x of [left+.30,right-.55]) {
+          art.fillStyle='#554a36';art.fillRect(x,bottom+.07,.23,.11);
+          art.fillStyle='#d3bb77';art.fillRect(x+.035,bottom+.085,.16,.055);
+          art.fillStyle='#735e43';art.fillRect(x-.035,bottom+.06,.04,.13);art.fillRect(x+.23,bottom+.06,.04,.13);
+        }
+        const x=w*.43,y=top+.32;
+        polygon(art,[[x+.07,y+.10],[x+.46,y+.10],[x+.49,y+.48],[x+.08,y+.44]],'#2e302b66');
+        art.fillStyle='#7c7465';art.fillRect(x,y,.35,.39);
+        art.fillStyle='#b6a68a';art.fillRect(x-.02,y-.02,.39,.10);
+        art.fillStyle='#3a3931';art.fillRect(x+.065,y+.012,.22,.055);
+        art.strokeStyle='#5c5549';art.lineWidth=.016;
+        for(let row=0;row<3;row++) {art.beginPath();art.moveTo(x,y+.12+row*.08);art.lineTo(x+.35,y+.12+row*.08);art.stroke();}
+        // A small dormer changes the silhouette of the roof without extending its bounds.
+        if(variant!==2) {
+          const dx=-w*.37,dy=bottom-.48;
+          polygon(art,[[dx-.26,dy+.32],[dx,dy-.08],[dx+.26,dy+.32]],'#493d31');
+          polygon(art,[[dx-.22,dy+.29],[dx,dy-.035],[dx+.22,dy+.29]],palette[northLit?1:2]);
+          art.fillStyle='#b69d76';art.fillRect(dx-.13,dy+.24,.26,.20);
+          art.fillStyle='#514b3c';art.fillRect(dx-.075,dy+.27,.15,.12);
+          art.fillStyle='#dcc28a';art.fillRect(dx-.01,dy+.27,.02,.12);
+        }
+      } else {
+        // Barn ventilation and cross bracing distinguish it from an enlarged house.
+        for(let x=left+.32;x<right-.2;x+=.65) {
+          art.strokeStyle='#594633';art.lineWidth=.028;
+          art.beginPath();art.moveTo(x,bottom+.055);art.lineTo(x+.18,h-.09);art.stroke();
+        }
+      }
+      if(prop.kind==='tavern') {
+        art.fillStyle='#4a3c2d';art.fillRect(.56,bottom+.04,.05,.25);
+        art.fillStyle='#80613d';art.fillRect(.56,bottom+.08,.43,.18);
+        art.fillStyle='#d8b86f';art.fillRect(.60,bottom+.10,.35,.13);
+        ellipse(art,.77,bottom+.165,.065,.038,'#6a4d32');
+      }
+      roofSprites.set(key,sprite);
     }
-    ctx.drawImage(sprite, -(width + .6) / 2, -(height + .6) / 2, width + .6, height + .6);
+    ctx.drawImage(sprite,-(width+.6)/2,-(height+.6)/2,width+.6,height+.6);
   }
 
   function paintBridge(ctx, prop, width, height) {
@@ -393,10 +490,7 @@
 
   function meadow(ctx, seed, woodland) {
     const rnd = random(seed * 157 + 37);
-    if (woodland) {
-      ctx.fillStyle = '#3e50382b';
-      ctx.fillRect(0, 0, 1, 1);
-    }
+
     for (let i = 0; i < 8; i++) {
       const x = rnd(), y = rnd();
       ellipse(ctx, x, y, .035 + rnd() * .13, .025 + rnd() * .065, i % 3 ? '#4d633b20' : '#c7b77427');
@@ -408,28 +502,25 @@
     }
   }
 
-  function tile(type, mask, neighbors, seed) {
-    const key = [type,mask,neighbors?.join(','),seed].join(':');
+  function tile(type, mask, neighbors, seed, phase, coast) {
+    const key = [type,mask,neighbors?.join(','),seed,phase.join(','),coast].join(':');
     if (cache.has(key)) return cache.get(key);
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 64;
     const ctx = canvas.getContext('2d');
     ctx.scale(64,64);
     const forest = type === 'forest' || type === 'denseForest';
-    ctx.fillStyle = colors[type === 'path' || type === 'woodland' || forest ? 'grass' : type] || terrain[type][1];
+    ctx.fillStyle = colors[baseMaterial(type)] || terrain[type][1];
     ctx.fillRect(0,0,1,1);
 
+    if (neighbors && type !== 'water') blendLand(ctx,type,neighbors,phase);
+    if (coast) bank(ctx,type,coast,phase);
     if (type !== 'water') grain(ctx, seed, ['#e4d5a32c','#3033222e','#b5b38325']);
     if (type === 'path') {
       path(ctx,mask);
       for (let i=0;i<7;i++) ellipse(ctx,.25+(i*13%31)/60,.26+((i+seed)*7%29)/60,.012,.009,'#63533c70');
     } else if (type === 'water') {
-      const rnd = random(seed * 71);
-      for (let i = 0; i < 6; i++) {
-        const x = .04 + rnd() * .69, y = .10 + rnd() * .8;
-        ellipse(ctx, x, y, .045 + rnd() * .11, .007 + rnd() * .008, i % 2 ? '#b2cdc66a' : '#3760668a');
-      }
-      shore(ctx, neighbors);
+      shore(ctx, neighbors || [], phase);
     } else if (forest) {
       const layouts = [
         [[.36,.39,.38],[.69,.71,.26]], [[.64,.35,.34],[.31,.67,.29]],
@@ -485,15 +576,16 @@
     } else if (type === 'grass' || type === 'woodland') {
       meadow(ctx, seed, type === 'woodland');
     }
-    if (type !== 'water' && neighbors) blendLand(ctx,type,neighbors);
-    if (cache.size >= 384) cache.delete(cache.keys().next().value);
+    // Up to 16 MiB of RGBA tile pixels, excluding browser Canvas overhead.
+    if (cache.size >= 1024) cache.delete(cache.keys().next().value);
     cache.set(key,canvas);
     return canvas;
   }
   function paintTile(ctx,chunks,x,y,type,destination=[x,y,1,1]) {
-    let mask=0;
+    let mask=0, coast=0;
     const rawNeighbors = surrounding.map(([dx,dy]) => get(chunks,x+dx,y+dy));
-    // Water owns its shoreline. Dry ground only blends with other dry surfaces.
+    rawNeighbors.forEach((value,i)=>{if(value==='water')coast|=1<<i;});
+    // Keep water out of ground-material blending; bank() handles the wet edge separately.
     const neighbors = type === 'water' ? rawNeighbors : rawNeighbors.map(value =>
       value && value !== 'water' ? baseMaterial(value) : null);
     if (type === 'path') {
@@ -505,9 +597,13 @@
     }
     const hash = (Math.imul(x, 374761393) ^ Math.imul(y, 668265263)) >>> 0;
     const variants = type === 'grass' || type === 'woodland' || type === 'water' ? 17 : 5;
-    const seed = hash % variants;
+    const seed = type === 'water' ? 0 : hash % variants;
     const different = type === 'water' || neighbors.some(value => value && value !== baseMaterial(type));
-    ctx.drawImage(tile(type,mask,different ? neighbors : null,seed),...destination);
+    // Interior textures do not depend on world phase. Keep their small shared cache;
+    // phase only differentiates pixels actually using a boundary or current field.
+    const phased = type === 'water' || coast || neighbors.some(value =>
+      value && natural.has(value) && value !== baseMaterial(type));
+    ctx.drawImage(tile(type,mask,different ? neighbors : null,seed,phased ? [x & 3,y & 3] : [0,0],coast),...destination);
   }
   function stoneWall(ctx, prop, selected, layout) {
     for (const [x,y] of WorldMap.wallCells(prop)) {
