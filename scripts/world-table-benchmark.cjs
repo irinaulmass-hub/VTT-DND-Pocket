@@ -134,7 +134,7 @@ async function run(options) {
       await new Promise(r=>setTimeout(r,50));
     }
     if(!ready)throw Error('Server startup timeout: '+error);
-    const rows=[],responseSha256={};let seq=0;
+    const rows=[],warmupRows=[],responseSha256={};let seq=0;
     for(let sample=-1;sample<options.samples;sample++)for(const [name,keys] of Object.entries(queries)) {
       const id='table-'+(++seq),start=performance.now();
       const endpoint=keys===null?'/api/worlds/table/status':'/api/worlds/table?chunks='+keys.join(';');
@@ -145,26 +145,30 @@ async function run(options) {
       const digest=createHash('sha256').update(text).digest('hex');
       if(responseSha256[name])assert.equal(digest,responseSha256[name]);else responseSha256[name]=digest;
       const measured=await metric(id);
-      if(sample>=0)rows.push({...measured,operation:name,wallMs,responseBytes:Buffer.byteLength(text),requestBytes:0,serializeMs:0});
+      (sample>=0?rows:warmupRows).push({...measured,operation:name,wallMs,responseBytes:Buffer.byteLength(text),requestBytes:0,serializeMs:0});
     }
     const summaries=aggregate(rows);
     for(const [name,item] of Object.entries(summaries))item.readCategories=Object.fromEntries(
       [...new Set(rows.filter(r=>r.operation===name).flatMap(r=>Object.keys(r.readCategories)))].map(category=>[category,
         Object.fromEntries(['calls','bytes','readMs'].map(key=>[key,summary(rows.filter(r=>r.operation===name).map(r=>r.readCategories[category]?.[key]||0))]))]));
+    for(const [name,item] of Object.entries(summaries))item.work=Object.fromEntries(
+      [...new Set(rows.filter(r=>r.operation===name).flatMap(r=>Object.keys(r.work||{})))].map(key=>
+        [key,summary(rows.filter(r=>r.operation===name).map(r=>r.work?.[key]||0))]));
     return {schemaVersion:1,applicationRef:options.ref,createdAt:new Date().toISOString(),
       environment:{node:process.version,platform:process.platform,arch:process.arch,cpu:os.cpus()[0]?.model,osRelease:os.release()},
       sourceSha256:Object.fromEntries(['worlds.js','world-store.js','world-exploration.js','character-positions.js',
-        'world-movement.js','remote/world-model.js','scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs',
+        'world-movement.js','world-object-index.js','remote/world-model.js','scripts/world-benchmark.cjs','scripts/world-benchmark-probe.cjs',
         'scripts/world-benchmark-stages.cjs','scripts/world-table-benchmark.cjs'].map(f=>[f,createHash('sha256').update(fs.readFileSync(path.join(root,f))).digest('hex')])),
       method:{...options,output:undefined,transport:'public loopback HTTP without DM cookie; includes download and JSON parse',
-        cache:'one unrecorded warm-up per query; warm OS cache; no forced server GC',queries,
+        cache:'one warm-up per query retained separately in warmupRows; summaries exclude warm-up; warm OS cache; no forced server GC',queries,
         stageTiming:'optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times',
+        work:'benchmark-only index candidates/lookups/builds/fallbacks; absent means hooks were not called, not zero linear work',
         io:'readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/positions selfMs',
         response:'response.json includes Express serialization, headers and send; not pure JSON.stringify',
         remainder:'server time outside exclusive spans; independent medians need not sum',
         fixture:'dense remembered terrain and objects; one observing hero; seeded via existing store in a temporary campaign',
         exclusions:'no browser/FPS, Wi-Fi, Windows or physical devices; diagnostic overhead is not production timing'},
-      status:'verified',dimensions:built.dimensions,responseSha256,rows,summary:summaries};
+      status:'verified',dimensions:built.dimensions,responseSha256,rows,warmupRows,summary:summaries};
   } finally {
     if(child&&child.exitCode===null&&child.signalCode===null){const done=new Promise(r=>child.once('exit',r));child.kill();await done;}
     fs.rmSync(dir,{recursive:true,force:true});

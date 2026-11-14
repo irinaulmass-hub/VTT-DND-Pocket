@@ -480,3 +480,24 @@ npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --ou
 ```
 
 HTTP-стенд проверяет readPublishedView, отсутствие тёплых positions/manifest-чтений, 60 JSON-байт активного мира у status и прежние публичные ответы. Полные sync/VM сценарии доступа/тумана/секретов/состояния карты/старых ответов/перезапуска проходят. Контроль до изменения и два повтора/туман off тем же стендом: пять прогонов/150 измеренных ответов, хеши соответствующих ответов совпадают. [Отчёт и исходные выборки](benchmarks/B5B3I_PUBLISHED_VIEWS.md). readBytes исключает stat/exists, холодное чтение/замораживание и браузер/FPS/LAN/Windows не измерены. 8 MiB допуска не является пределом heap/мира.
+
+
+## Индекс объектов B5b3j
+
+Полный npm test — **115/115**, Node.js 24.22.1, без пропусков. Пять новых сценариев world-object-index.test.cjs проверяют геометрию/порядок/допуск/вытеснение, 448 сравнений с независимым линейным проектором 4ff46f7 (оба смешанных fallback включены), глобальную память/секреты/маски/двери, Proxy-счётчик 3 000 объектов и все ветки отказа (mutable/accessor/iterator/дубли/лимиты). Референс хранится в test/fixtures/world-exploration-linear.cjs и не импортируется сервером; не заменять его новым индексированным кодом.
+
+```bash
+npm test
+node --test test/world-object-index.test.cjs test/world-table-benchmark.test.cjs
+node --check world-object-index.js
+node --check world-exploration.js
+node --check scripts/world-benchmark-stages.cjs
+node --check scripts/world-benchmark-probe.cjs
+node --check scripts/world-table-benchmark.cjs
+node --check test/world-object-index.test.cjs
+node --check test/fixtures/world-exploration-linear.cjs
+node --check test/world-table-benchmark.test.cjs
+npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --output /tmp/object-index-new.json
+```
+
+HTTP-стенд проверяет ноль тёплых построений/отказов и ноль кандидатов для пустой/дальней геометрии, первый near строит два индекса с туманом/один без. work-счётчики устанавливаются только guarded hooks; отсутствие счётчика у линейного контроля не означает отсутствие работы. Первые шесть запросов теперь сохранены в warmupRows и исключены из summary. Пять финальных прогонов, соответствующие хеши ответов прежние. [Отчёт с ценой первого построения](benchmarks/B5B3J_OBJECT_INDEX.md). Первый near медленнее (39.83/67.94 против 14.77 мс); тёплый empty быстрее (1.04/1.08 против 3.62 мс). Изменения снимков/камеры могут снова вызвать построение; FPS/LAN/Windows/браузер этим срезом не измерялись.

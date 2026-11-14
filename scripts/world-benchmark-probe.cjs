@@ -51,7 +51,7 @@ http.Server.prototype.emit = function(event, ...args) {
         const serverMs = performance.now()-item.start;
         if (active === item) active = undefined;
         process.send({ type:'world-benchmark', id, status:res.statusCode,
-          serverMs, cpuMs:(cpu.user+cpu.system)/1000,
+          serverMs, cpuMs:(cpu.user+cpu.system)/1000, work:item.work || {},
           reads:item.reads, uniqueReadFiles:item.files.size, readBytes:item.readBytes, readCategories:item.readCategories || {},
           writes:item.writes, writeBytes:item.writeBytes,
           ...(item.stages ? { stages:item.stages,

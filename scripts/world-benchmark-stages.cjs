@@ -92,6 +92,23 @@ function install(current, root) {
     if (request === 'express' && value.response) methods(value.response, ['json'], 'response.');
     if (request.startsWith('.')) {
       const filename = Module._resolveFilename(request, parent), config = factories.get(filename);
+      if (filename === path.join(root, 'world-object-index.js')) return function(...args) {
+        const cache=value.apply(this,args),get=cache.get,clear=cache.clear;
+        let lastIndex;
+        const count=(name,n=1)=>{ const item=current(); if(item)(item.work ||= {})[name]=((item.work||{})[name]||0)+n; };
+        cache.clear=function(...args) {lastIndex=undefined;return clear.apply(this,args);};
+        cache.get=function(...args) {
+          const index=stages.measure('index.get',()=>get.apply(this,args));
+          if (!index) { lastIndex=undefined;count('indexFallbacks');return index; }
+          if (lastIndex!==index)count('indexBuilds');
+          lastIndex=index;
+          return {
+            select(...args) { const selected=stages.measure('index.select',()=>index.select(...args));count('indexCandidates',selected.length);return selected; },
+            find(...args) { count('indexLookups');return stages.measure('index.find',()=>index.find(...args)); },
+          };
+        };
+        return cache;
+      };
       if (filename === path.join(root, 'world-exploration.js')) return methods(value, ['project'], 'exploration.');
       if (config) return function(...args) {
         return methods(value.apply(this, args), config.names, config.prefix);

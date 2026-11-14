@@ -29,10 +29,20 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
     control.rows.map(r=>[r.operation,r.responseBytes,r.readBytes]));
   assert.deepEqual(Object.keys(instrumented.summary).sort(),['adjacent','distant','empty','live','near','status']);
   assert.equal(instrumented.rows.length,6,'one warm-up per region is excluded');
+  assert.equal(instrumented.warmupRows.length,6);
+  assert.equal(instrumented.warmupRows.find(r=>r.operation==='near').work.indexBuilds,2,'first query builds live and memory indices');
+  assert.equal(clear.warmupRows.find(r=>r.operation==='near').work.indexBuilds,1,'fog off does not build a memory index');
   for(const report of [instrumented,clear])for(const row of report.rows) {
     assert.equal(row.status,200);assert.equal(row.writes,0);
     for(const stage of ['store.readPublishedView','response.json',...(row.operation==='status'?['positions.projectionRevision']:['positions.mapState','exploration.project'])])
       assert.equal(row.stages[stage].calls,1,stage);
+    if(row.operation==='status')assert.deepEqual(row.work,{});
+    else {
+      assert.equal(row.work.indexBuilds||0,0,'unchanged indices are reused after warm-up');
+      assert.equal(row.work.indexFallbacks||0,0,'fixture is eligible for both immutable indices');
+      assert.ok(row.work.indexCandidates>=0);
+      if(['empty','distant'].includes(row.operation))assert.equal(row.work.indexCandidates,0,'empty geometry does not scan remote objects');
+    }
     const categories=Object.values(row.readCategories);
     assert.equal(categories.reduce((n,c)=>n+c.calls,0),row.reads);
     assert.equal(categories.reduce((n,c)=>n+c.bytes,0),row.readBytes);

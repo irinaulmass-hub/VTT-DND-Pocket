@@ -1,6 +1,8 @@
 'use strict';
 
 const { address, get, set, visualBounds, size, props } = require('./remote/world-model');
+const createObjectIndexCache = require('./world-object-index');
+const liveObjects = createObjectIndexCache(), rememberedObjects = createObjectIndexCache();
 
 function mask(cells) {
   const result = {};
@@ -81,6 +83,9 @@ function project(data, keys, { explored, openDoors, memory, visible, revealedSec
   const objects = [];
   const liveIds = new Set();
   const selectedIds = new Set();
+  const liveIndex = liveObjects.get(Array.isArray(data.map.objects) ? data.map.objects : null);
+  const memoryIndex = data.fog ? rememberedObjects.get(memory.objects) : null;
+  if (!data.fog) rememberedObjects.clear();
   // Authorization is global to the anchor, independent of which chunks were requested.
   // Preserve the same mask precedence as the merged seen cells above.
   const knownAnchor = (key, offset) => {
@@ -89,10 +94,10 @@ function project(data, keys, { explored, openDoors, memory, visible, revealedSec
     }
     return false;
   };
-  for (const prop of data.map.objects) {
+  for (const prop of liveIndex ? liveIndex.select(keys) : data.map.objects) {
     if (prop.hidden && !isRevealedSecret(prop, revealedSecrets)) continue;
     const [key, offset] = address(prop.x, prop.y);
-    if (data.fog && visible[key]?.[offset]) liveIds.add(prop.id);
+    if (!liveIndex && data.fog && visible[key]?.[offset]) liveIds.add(prop.id);
     if (intersects(prop, keys) && (!data.fog || visible[key]?.[offset] ||
         (knownAnchor(key, offset) && !Object.hasOwn(memory.chunks[key] || {}, offset)))) {
       objects.push(publicProp(prop, openDoors));
@@ -100,9 +105,16 @@ function project(data, keys, { explored, openDoors, memory, visible, revealedSec
     }
   }
   if (data.fog) {
-    for (const prop of Object.values(memory.objects)) {
+    const currentlyVisible = id => {
+      if (!liveIndex) return liveIds.has(id);
+      const live = liveIndex.find(id);
+      if (!live || live.hidden && !isRevealedSecret(live, revealedSecrets)) return false;
+      const [key, offset] = address(live.x, live.y);
+      return !!visible[key]?.[offset];
+    };
+    for (const prop of memoryIndex ? memoryIndex.select(keys) : Object.values(memory.objects)) {
       const [key, offset] = address(prop.x, prop.y);
-      if (intersects(prop, keys) && !visible[key]?.[offset] && !liveIds.has(prop.id) && !selectedIds.has(prop.id)) {
+      if (intersects(prop, keys) && !visible[key]?.[offset] && !currentlyVisible(prop.id) && !selectedIds.has(prop.id)) {
         const snapshot = publicProp(prop);
         if (prop.kind === 'door' && prop.open === true) snapshot.open = true;
         objects.push(snapshot);
