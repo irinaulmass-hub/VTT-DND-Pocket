@@ -24,7 +24,7 @@
         <select class="book-select" data-world-select aria-label="Открыть черновик карты"></select>
       </div>
       <div data-world-editor hidden>
-        <p>Выбери тайл и нажми на клетку. Колёсико меняет масштаб, правая кнопка сдвигает карту.</p>
+        <p>Выбери покрытие и рисуй, удерживая левую кнопку. Колёсико меняет масштаб, правая кнопка сдвигает карту.</p>
         <div class="world-palette" role="group" aria-label="Местность">
           <strong>Местность</strong>
           ${Object.entries(terrain).map(tileButton).join('')}
@@ -51,6 +51,15 @@
           <label><input type="checkbox" data-world-rect> Заполнить прямоугольник</label>
           <button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
+        </div>
+        <div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
+          <label>Размер кисти <select class="book-select" data-world-brush-size>
+            ${[1, 3, 5, 9, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
+          </select></label>
+          <label>Форма кисти <select class="book-select" data-world-brush-shape>
+            <option value="circle">Круг</option><option value="square">Квадрат</option>
+          </select></label>
+          <small>Один мазок — одна отмена. Escape отменяет незавершённый мазок.</small>
         </div>
         <section data-world-path hidden aria-label="Параметры генератора">
           <div class="book-toolbar">
@@ -130,6 +139,7 @@
   const status = text => { e('status').textContent = text; };
   const json = (method, data) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
+  let brushStroke = null, brushDraft, strokeError;
   const undo = [], redo = [];
   let availableMaps = [];
   let generatorPoints = [], generatorPreview = null, roomEntrance = null, pickingEntrance = false;
@@ -239,7 +249,8 @@
 
   function paint() {
     if (!draft) return;
-    if (generatorPreview) {
+    if (brushStroke && !strokeError) editorView.data({ ...draft, chunks: brushStroke.chunks });
+    else if (generatorPreview) {
       editorView.data({ ...draft, chunks: generatorPreview.chunks, objects: generatorPreview.objects?.after || draft.objects });
     } else editorView.data(draft);
     paintGeneratorControls();
@@ -252,12 +263,18 @@
       e('size').textContent = props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
     }
     e('secret').checked = !!object?.hidden;
-    e('undo').disabled = busy || !undo.length;
-    e('redo').disabled = busy || !redo.length;
+    e('undo').disabled = busy || !!brushStroke || !undo.length;
+    e('redo').disabled = busy || !!brushStroke || !redo.length;
+    const brushTool = !!terrain[tool] || tool === 'erase';
+    e('brush-controls').hidden = !brushTool;
+    for (const name of ['brush-size','brush-shape','rect']) e(name).disabled = busy || !!brushStroke;
+    e('brush-size').disabled ||= e('rect').checked;
+    e('brush-shape').disabled ||= e('rect').checked;
+    e('canvas').setAttribute('data-brush-active', String(brushTool && !e('rect').checked));
     for (const name of ['path-saved','path-terrain','path-width','forest-density','district-count','room-floor','path-seed',
-      'path-clear-points','path-reset','room-entrance','save','publish','select']) e(name).disabled = busy;
+      'path-clear-points','path-reset','room-entrance','save','publish','select']) e(name).disabled = busy || !!brushStroke;
     editor.querySelectorAll('[data-tool]').forEach(button => {
-      button.disabled = busy;
+      button.disabled = busy || !!brushStroke;
       button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
     });
   }
@@ -513,6 +530,38 @@
   }
   const editorView = createWorldView(e('canvas'), {
     grid: true, click, pan: () => tool === 'pan', selected: () => selected,
+    brushPreview(x, y) {
+      if (!draft || busy || strokeError || e('rect').checked || (!terrain[tool] && tool !== 'erase') ||
+          !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return null;
+      return window.WorldBrush.cells(x, y, Number(e('brush-size').value || 1), e('brush-shape').value || 'circle');
+    },
+    startStroke(x, y) {
+      if (!draft || busy || e('rect').checked || (!terrain[tool] && tool !== 'erase') ||
+          !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return false;
+      brushDraft = draft; strokeError = null;
+      brushStroke = window.WorldBrush.start(draft.chunks, { width: Number(e('brush-size').value || 1),
+        shape: e('brush-shape').value || 'circle', type: tool === 'erase' ? undefined : tool });
+      this.strokeTo(x, y);
+      paint();
+      return true;
+    },
+    strokeTo(x, y) {
+      if (!brushStroke || strokeError) return;
+      try { brushStroke.add(x, y); }
+      catch (error) { strokeError = error; status(error.message); paint(); return; }
+      // During a drag refresh only the map, not every inspector and building selector.
+      editorView.data({ ...draft, chunks: brushStroke.chunks });
+    },
+    endStroke(commit) {
+      if (!brushStroke) return;
+      const stroke = brushStroke, source = brushDraft, error = strokeError;
+      brushStroke = brushDraft = strokeError = null;
+      if (commit && !error && source === draft && !busy) {
+        const change = stroke.finish();
+        if (change.tiles.length) return edit(change);
+      }
+      paint(); status(error ? error.message : commit ? 'Покрытие уже совпадает с кистью' : 'Мазок отменён');
+    },
     marks: () => generatorTool() ? [...generatorPoints, ...(tool === 'generate-room' && roomEntrance ? [roomEntrance] : [])] : first ? [first] : [],
     outline: () => ['generate-forest','generate-room','generate-district'].includes(tool) ? generatorPoints : null,
     pickProp(x, y) {
@@ -794,6 +843,7 @@
     paint();
   };
   e('rect').onchange = () => { first = undefined; paint(); };
+  e('brush-size').onchange = e('brush-shape').onchange = () => editorView.draw?.();
   function history(backwards) {
     const from = backwards ? undo : redo, to = backwards ? redo : undo;
     if (busy || !from.length) return;

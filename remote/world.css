@@ -1,4 +1,5 @@
 .world-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab;background:#e8dec5}
+.book-world-editor .world-canvas[data-brush-active="true"]{cursor:crosshair}
 .book-world-editor{grid-column:1/-1}
 .book-world-editor h2{margin:0 0 12px;color:var(--book-green);font:24px Georgia,serif}
 .book-world-editor .world-canvas{height:clamp(290px,52vh,640px);border:1px solid var(--book-line);border-radius:7px;margin:10px 0}

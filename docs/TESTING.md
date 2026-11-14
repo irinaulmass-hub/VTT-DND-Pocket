@@ -539,3 +539,22 @@ node scripts/world-table-benchmark.cjs --profile limit --samples 5 --fog on --ex
 updateRows — команды, rows — измеренные GET, warmupRows — первые семь GET; validationRows — три отклонённых команды и семь GET сохранности после замеров. Они не входят в summary. updateResponseSequenceSha256 — хеш пяти тел подтверждённых позиций; responseSequenceSha256 включает первые/измеренные GET. firstReadsMs — status + near, walkMs отдельно. Стадии io.write охватывают только writeFileSync, не предшествующий JSON.stringify/последующий rename; не суммировать inclusive spans. stages off сохраняет IPC/I/O-probe и проверяет прозрачность обёрток.
 
 Пять финальных прогонов: 25 шагов, 175 измеренных/35 первых GET и 50 проверочных запросов. При fog on внутри команды два чтения positions и пять readPublished; в первом near одно построение памяти, ноль живого. При fog off одно чтение positions в команде и одно в status, шесть readPublished, без индекса памяти. Прежние static/frame тесты сохранены. [Сырые данные, профиль и следующий контракт](benchmarks/B5B3L_EXPLORATION_STEPS.md). Ускорение/Windows/LAN/FPS этим срезом не заявляются.
+
+## Кисть местности G1a
+
+Полный npm test — **129/129**, Node.js 24.22.1, без пропусков. Новые world-brush.test.cjs (4) проверяют геометрию/границы, быструю интерполяцию/дедупликацию/независимый слой, ластик/no-op, лимиты. WorldView-gesture тест (1) проверяет commit ровно один раз, Escape/потерю указателя/чужой ID и прежние click/pan. В world-district-editor.test.cjs добавлены 3 сценария настоящего dm/world.js в VM: предпросмотр/Undo/Redo/save/reload, защищённые правки после регенерации, ластик/прямоугольник и полный rollback слишком длинного мазка.
+
+world-brush-http.test.cjs (1) поднимает одноразовый настоящий сервер через browser-qa, проверяет подключение нового скрипта в HTML, PUT/GET черновика, публикацию и публичный GET без cookie. Секреты/туман фильтруются прежним сервером; Undo сохранённого черновика не меняет опубликованную карту, Redo сохраняется. Все данные временные. Сервер и HTTP-клиент запускаются дочерними процессами внутри одного теста, чтобы не зависеть от сетевой изоляции отдельных команд.
+
+```sh
+node --check remote/world-brush.js
+node --check remote/world-view.js
+node --check dm/world.js
+node --check test/world-brush.test.cjs
+node --check test/world-brush-http.test.cjs
+node --check test/world-view-gestures.test.cjs
+node --check test/world-district-editor.test.cjs
+npm test
+```
+
+Живая проверка браузером не пройдена: подключённый и облачный браузеры не смогли открыть локальный стенд (ERR_CONNECTION_REFUSED). Нет новых скриншотов и подтверждения мышью/планшетом. [Точный сценарий приёмки](qa/G1A_TERRAIN_BRUSH.md). FPS/LAN/Windows и сенсорные устройства заново не проверялись.

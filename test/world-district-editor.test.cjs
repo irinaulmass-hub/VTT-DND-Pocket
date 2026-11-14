@@ -7,7 +7,7 @@ const world = require('../remote/world-model');
 const copy = value => JSON.parse(JSON.stringify(value));
 
 function editorFixture() {
-  const tools = ['generate-path','generate-forest','generate-room','generate-district','stone','select','pan']
+  const tools = ['generate-path','generate-forest','generate-room','generate-district','stone','select','pan','water','erase']
     .map(tool=>({dataset:{tool},setAttribute(){}}));
   class Element {
     nodes=new Map(); value=''; checked=false;
@@ -74,14 +74,62 @@ function editorFixture() {
     }}};
   globals.window=globals;
   const context=vm.createContext(globals);
-  for(const file of ['remote/world-generators.js','dm/world.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
-  return {control,tools,requests,get saved(){return saved;},get rendered(){return rendered;},get canvas(){return canvas;},
+  for(const file of ['remote/world-generators.js','remote/world-brush.js','dm/world.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'..',file),'utf8'),context);
+  return {control,tools,requests,seed(value){saved=copy({...saved,...value});},get saved(){return saved;},get rendered(){return rendered;},get canvas(){return canvas;},
     async open(){control('select').value='district-map';control('select').onchange();await new Promise(setImmediate);},
     begin(){tools[3].onclick();control('district-count').value='8';control('path-seed').value='47';canvas.click(-16,-12);canvas.click(16,12);},
     hold(){holdPreview=true;},release(){holdPreview=false;releasePreview();},
     changeLinks(){linksRevision='b'.repeat(64);},failWrite(value){failWrite=value;},
     loseNext(kind){loseWrite=kind;},failRead(value){failRead=value;},corruptReply(){corruptReply=true;},foreignWrite(){foreignWrite=true;}};
 }
+
+test('terrain brush previews a continuous stroke and saves it with single-step Undo and Redo',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();
+  f.tools.find(t=>t.dataset.tool==='water').onclick();c('brush-size').value='5';c('brush-shape').value='circle';
+  const original=copy(f.rendered);
+  assert.equal(f.canvas.brushPreview(-1,-1).length,21);
+  assert.equal(f.canvas.startStroke(-34,-1),true);f.canvas.strokeTo(34,-1);
+  assert.equal(c('undo').disabled,true,'history is locked until the gesture ends');
+  assert.equal(world.get(f.rendered.chunks,0,-1),'water','actual terrain is visible while dragging');
+  assert.deepEqual(f.saved.chunks,original.chunks,'no implicit server write');
+  f.canvas.endStroke(true);const painted=copy(f.rendered);
+  await c('undo').onclick();assert.deepEqual(f.rendered,original,'one undo removes the entire drag');
+  await c('redo').onclick();assert.deepEqual(f.rendered,painted);
+  await c('save').onclick();assert.deepEqual(f.saved.chunks,painted.chunks);
+  await f.open();assert.deepEqual(f.rendered.chunks,painted.chunks,'saved strokes survive reload');
+  f.canvas.startStroke(0,10);f.canvas.strokeTo(10,10);f.canvas.endStroke(false);
+  assert.deepEqual(f.rendered.chunks,painted.chunks,'cancel restores every preview cell');
+  assert.equal(c('undo').disabled,true,'cancel adds no history');
+});
+
+test('brush manual edits survive regeneration while cancelled, erased and rectangle gestures remain independent',async()=>{
+  const f=editorFixture(),c=f.control,generators=require('../remote/world-generators');
+  const recipe={id:'manual-road',kind:'path',version:1,seed:12,params:{terrain:'path',width:3,points:[{x:-8,y:0},{x:8,y:0}]}};
+  const generated=generators.generationChange(recipe,f.saved);
+  f.seed({chunks:generated.chunks,generators:generated.generators.after});await f.open();
+  f.tools.find(t=>t.dataset.tool==='stone').onclick();c('brush-size').value='3';c('brush-shape').value='square';
+  f.canvas.startStroke(0,0);f.canvas.strokeTo(2,0);f.canvas.endStroke(true);
+  assert.ok(f.rendered.generators[0].state.protectedTiles.some(p=>p.x===0&&p.y===0));
+  const next=generators.generationChange({...recipe,params:{...recipe.params,width:5}},f.rendered);
+  assert.equal(world.get(next.chunks,0,0),'stone');
+  await c('undo').onclick();assert.equal(f.rendered.generators[0].state.protectedTiles.length,0);
+  await c('redo').onclick();await c('save').onclick();
+  f.tools.find(t=>t.dataset.tool==='erase').onclick();f.canvas.startStroke(0,0);f.canvas.endStroke(true);
+  assert.equal(world.get(f.rendered.chunks,0,0),undefined);await c('undo').onclick();
+  assert.equal(world.get(f.rendered.chunks,0,0),'stone');
+  c('rect').checked=true;assert.equal(f.canvas.startStroke(0,0),false);
+  assert.equal(f.canvas.brushPreview(0,0),null);
+});
+
+test('an oversized brush gesture rolls back its visible preview without adding history',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();f.tools.find(t=>t.dataset.tool==='water').onclick();
+  c('brush-size').value='15';c('brush-shape').value='square';const original=copy(f.rendered);
+  f.canvas.startStroke(-8000,0);f.canvas.strokeTo(8000,0);
+  assert.deepEqual(f.rendered,original,'failed preview disappears before pointer release');
+  assert.match(c('status').textContent,/16 384/);f.canvas.endStroke(true);
+  assert.deepEqual(f.rendered,original);assert.equal(c('undo').disabled,true);
+  assert.equal(c('save').disabled,false,'controls unlock after rollback');
+});
 
 test('District editor saves manual work before preview, applies with guard and persists exact Undo/Redo', async () => {
   const f=editorFixture(), c=f.control;

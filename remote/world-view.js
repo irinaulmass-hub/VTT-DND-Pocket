@@ -8,7 +8,7 @@
     const ctx = canvas.getContext('2d');
     let camera = { x: 0, y: 0, scale: 24 };
     let data = { chunks: {}, objects: [], tokens: [] };
-    let width = 1, height = 1, frame, gesture;
+    let width = 1, height = 1, frame, gesture, hover, hoveringBrush = false;
     const minScale = () => Math.max(7, width / (size * 8), height / (size * 8));
     function bounds() {
       return {
@@ -75,6 +75,11 @@
           ctx.strokeStyle = '#ffe09b'; ctx.lineWidth = .12;
           ctx.strokeRect(mark.x + .04, mark.y + .04, .92, .92);
         }
+        const brush = hover && options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        if (brush) {
+          ctx.fillStyle = '#eacb6940'; ctx.strokeStyle = '#fff0b5'; ctx.lineWidth = 1 / camera.scale;
+          for (const cell of brush) { ctx.fillRect(cell.x, cell.y, 1, 1); ctx.strokeRect(cell.x, cell.y, 1, 1); }
+        }
       });
     }
     function setCamera(next, notify = true) {
@@ -107,22 +112,38 @@
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     canvas.addEventListener('wheel', event => {
       event.preventDefault();
+      if (gesture?.stroke) return;
       const before = point(event);
       const scale = Math.max(minScale(), Math.min(100, camera.scale * Math.exp(-event.deltaY * .0016)));
       const change = camera.scale / scale;
       setCamera({ x: before.x - (before.x - camera.x) * change, y: before.y - (before.y - camera.y) * change, scale });
     }, { passive: false });
     canvas.addEventListener('pointerdown', event => {
-      if (event.button > 2) return;
+      if (event.button > 2 || gesture) return;
       canvas.setPointerCapture(event.pointerId);
       if (options.pickProp && event.button === 0) canvas.focus({ preventScroll: true });
       const p = point(event);
+      hover = p;
+      if (event.button === 0 && options.startStroke?.(Math.floor(p.x), Math.floor(p.y))) {
+        gesture = { id: event.pointerId, stroke: true };
+        canvas.focus({ preventScroll: true });
+        draw(); return;
+      }
       gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, camera: { ...camera },
         point: p, prop: event.button === 0 ? options.pickProp?.(p.x, p.y) : null,
         pan: event.button !== 0 || options.pan?.() || !options.click,
         token: event.button === 0 && options.moveToken && (data.tokens || []).find(t => t.x === Math.floor(p.x) && t.y === Math.floor(p.y)) };
     });
     canvas.addEventListener('pointermove', event => {
+      hover = point(event);
+      if (gesture?.stroke && gesture.id === event.pointerId) {
+        options.strokeTo?.(Math.floor(hover.x), Math.floor(hover.y)); draw(); return;
+      }
+      if (!gesture) {
+        const active = !!options.brushPreview?.(Math.floor(hover.x), Math.floor(hover.y));
+        if (active || hoveringBrush) draw();
+        hoveringBrush = active; return;
+      }
       if (gesture?.id !== event.pointerId || gesture.token) return;
       if (gesture.prop) {
         const { x, y } = propDestination(gesture, event);
@@ -135,12 +156,27 @@
       setCamera({ x: start.x - (event.clientX - gesture.x) / start.scale,
         y: start.y - (event.clientY - gesture.y) / start.scale, scale: start.scale });
     });
-    canvas.addEventListener('lostpointercapture', () => { gesture = null; draw(); });
+    function cancelGesture(event) {
+      if (event?.pointerId !== undefined && gesture?.id !== event.pointerId) return;
+      const cancelled = gesture; gesture = null;
+      if (cancelled?.stroke) options.endStroke?.(false);
+      draw();
+    }
+    canvas.addEventListener('lostpointercapture', cancelGesture);
+    canvas.addEventListener('pointercancel', cancelGesture);
+    canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; hoveringBrush = false; draw(); } });
+    canvas.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && gesture?.stroke) { event.preventDefault(); cancelGesture(); }
+    });
     canvas.addEventListener('pointerup', event => {
       if (gesture?.id !== event.pointerId) return;
       const start = gesture;
       gesture = null;
       const p = point(event);
+      if (start.stroke) {
+        options.strokeTo?.(Math.floor(p.x), Math.floor(p.y));
+        options.endStroke?.(true); draw(); return;
+      }
       if (start.prop) {
         draw();
         const prop = start.prop;
