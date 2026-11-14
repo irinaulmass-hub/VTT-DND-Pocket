@@ -37,13 +37,14 @@ test('table benchmark verifies public HTTP, dense memory and stage transparency 
     assert.equal(categories.reduce((n,c)=>n+c.calls,0),row.reads);
     assert.equal(categories.reduce((n,c)=>n+c.bytes,0),row.readBytes);
     assert.equal(row.readCategories.publishedManifest.calls,1);
-    assert.equal(row.readCategories.positions.calls,1);
+    assert.equal(row.readCategories.positions,undefined,'warm projection reuses the unchanged state document');
     const exclusive=Object.values(row.stages).reduce((n,s)=>n+s.selfMs,0);
     assert.ok(Math.abs(row.serverMs-exclusive-row.unmeasuredMs)<.001,'exclusive time partitions the request');
     assert.ok(Object.values(row.stages).every(s=>s.selfMs>=0&&s.totalMs>=s.selfMs));
   }
   assert.equal(instrumented.summary.empty.readCategories.terrainChunk,undefined,'empty viewport loads no terrain files');
-  assert.equal(instrumented.summary.empty.readCategories.positions.bytes.median,instrumented.dimensions.positionsBytes);
+  assert.equal(instrumented.summary.empty.readCategories.positions,undefined);
+  assert.ok(instrumented.summary.empty.readBytes.median<instrumented.dimensions.positionsBytes,'warm reads exclude the state file');
   assert.equal(instrumented.summary.empty.readCategories.publishedManifest.bytes.median,instrumented.dimensions.publishedManifestBytes);
   assert.ok(control.rows.every(r=>r.stages===undefined));
   assert.notDeepEqual(clear.responseSha256,instrumented.responseSha256,'fog/memory actually affect the fixture');

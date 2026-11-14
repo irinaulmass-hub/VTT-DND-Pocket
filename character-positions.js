@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
 const { valid, set, sceneScope, locationMapId } = require('./remote/world-model');
 const { mask, remember, isRevealedSecret } = require('./world-exploration');
 
@@ -16,10 +17,46 @@ module.exports = function registerCharacterPositions(app, {
   stepVisibility, findTransition, explorationNotice, doorVisibility, visibleCells, readPublishedMap,
 }) {
   const stateFile = () => gameFile('character-positions.json');
+  const cacheLimit = 8 * 1024 * 1024; // Admission limit for input JSON, not decoded JS heap.
+  let projectionState;
+
+  const normalizeState = saved => saved.formatVersion === 1 ? saved : { formatVersion: 1, positions: saved, explored: {} };
 
   function readState(file = stateFile()) {
     const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-    return saved.formatVersion === 1 ? saved : { formatVersion: 1, positions: saved, explored: {} };
+    return normalizeState(saved);
+  }
+
+  const identity = stat => [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
+
+  function readProjectionState() {
+    const file = path.resolve(stateFile());
+    let before;
+    try { before = fs.statSync(file, { bigint: true }); }
+    catch { projectionState = undefined; return readState(file); }
+    if (!before.isFile() || before.size > BigInt(cacheLimit)) {
+      projectionState = undefined;
+      return readState(file);
+    }
+    const stamp = identity(before);
+    if (projectionState?.file === file && projectionState.stamp === stamp) return projectionState.state;
+    // Evict before reading: errors or a campaign switch must not retain an older document.
+    projectionState = undefined;
+    const text = fs.readFileSync(file, 'utf8'), state = normalizeState(JSON.parse(text));
+    let after;
+    try { after = fs.statSync(file, { bigint: true }); }
+    catch { return readState(file); }
+    if (identity(after) !== stamp) return readState(file);
+    if (Buffer.byteLength(text) > cacheLimit) return state;
+    // Only projection readers share this immutable tree; mutators always use readState().
+    const stack = [state];
+    while (stack.length) {
+      const item = stack.pop();
+      for (const value of Object.values(item)) if (value && typeof value === 'object') stack.push(value);
+      Object.freeze(item);
+    }
+    projectionState = { file, stamp, state };
+    return state;
   }
 
   function getPosition(characterId, positions = readState().positions) {
@@ -66,7 +103,7 @@ module.exports = function registerCharacterPositions(app, {
   }
 
   function mapState(layout, includeVisibility = false) {
-    const state = readState();
+    const state = readProjectionState();
     const key = explorationKey(sceneScope(layout));
     const openDoors = openDoorsAt(state, layout.id);
     return {
@@ -162,6 +199,7 @@ module.exports = function registerCharacterPositions(app, {
   }
 
   function writeState(file, state) {
+    projectionState = undefined;
     fs.writeFileSync(file + '.tmp', JSON.stringify(state));
     fs.renameSync(file + '.tmp', file);
   }

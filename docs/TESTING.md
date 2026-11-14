@@ -428,3 +428,19 @@ npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --ou
 ```
 
 Тесты выполнить до последовательных замеров. Для контроля повторить с --stages off, для отсутствия тумана --fog off; использовать новый output. Сравнивать sourceSha256 и responseSha256; хранить исходные rows. readMs исключает подсчёт байтов, но включает чтение/декодирование и возможные паузы GC. mapState self не является чистым JSON.parse, response.json включает Express send. Пять финальных прогонов и методика: [B5B3F_TABLE_READS.md](benchmarks/B5B3F_TABLE_READS.md). Это диагностика с overhead, без измерений браузера/FPS/LAN/Windows и без изменения рабочего сервера.
+
+
+## Read-only состояние B5b3g
+
+Полный npm test — **104/104**, Node.js 24.22.1, без пропусков. Пять новых сценариев test/character-projection-cache.test.cjs проверяют одно чтение неизменённого документа и глубокую неизменяемость, свежие Set/visible/ростер/геометрию, вытеснение кампании/рестарт; same-size внешнюю замену и in-place ctime при фиксированном mtime; удаление/повреждение/stat/read/oversize/legacy; замену при чтении и обе проверки метаданных; движение/двери/секреты/ошибку rename и явное инвалидирование даже при совпадении метаданных. test/world-table-benchmark.test.cjs после прогрева ожидает ноль positions-чтений с сохранением прежних проверок ответа/секретов/I/O.
+
+```bash
+npm test
+node --test test/character-projection-cache.test.cjs test/world-table-benchmark.test.cjs
+node --check character-positions.js
+node --check test/character-projection-cache.test.cjs
+node --check test/world-table-benchmark.test.cjs
+npm run benchmark:table -- --profile limit --samples 5 --fog on --stages on --output /tmp/projection-cache-new.json
+```
+
+Контроль выполнен до изменения, после тестов сохранены два повтора с туманом и один без; исходники отличаются только character-positions.js, соответствующие ответы совпадают. [Протокол, цифры и исходные выборки](benchmarks/B5B3G_PROJECTION_CACHE.md). Это тёплые loopback-запросы, без замера первого замораживания, браузера/FPS/LAN/Windows. 8 MiB допуска — размер входа, не heap. /table/status ещё читает состояние прежним путём и относится к B5b3h.
