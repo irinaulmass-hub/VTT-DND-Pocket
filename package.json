@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "benchmark:world": "node scripts/world-benchmark.cjs",
+    "benchmark:table": "node scripts/world-table-benchmark.cjs"
   },
   "dependencies": {
     "express": "^4.19.0",

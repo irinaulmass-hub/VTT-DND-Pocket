@@ -3,10 +3,12 @@
 ((root) => {
   const size = 32;
   const limit = 8192;
+  const tileLimit = 150000;
+  const objectLimit = 3000;
   const terrain = {
     grass: ['Трава', '#7e9b55'], dirt: ['Земля', '#aa875c'], path: ['Тропа', '#c8a371'],
     forest: ['Лес', '#3e6340'], water: ['Вода', '#477f89'], stone: ['Камень', '#909289'], wood: ['Доски', '#a06e47'],
-    denseForest: ['Густой лес', '#435537'],
+    denseForest: ['Густой лес', '#435537'], woodland: ['Лесная подстилка', '#737d54'],
     caveFloor: ['Пещерный пол', '#625e56'], mud: ['Грязь', '#705740'],
   };
   const props = {
@@ -16,7 +18,8 @@
     campfire: ['Костёр', 1, 1], barrel: ['Бочка', 1, 1], vineBarrel: ['Бочка (особая)', 1, 1],
     chest: ['Сундук', 1, 1], openChest: ['Сундук (приоткрытый)', 1, 1],
     palisade: ['Частокол', 2, 1], ruinedHouse: ['Разрушенный дом', 3, 3],
-    table: ['Стол', 2, 1], bench: ['Скамейка', 2, 1], bearTrap: ['Капкан', 1, 1],
+    table: ['Стол', 2, 1], bench: ['Скамейка', 2, 1], bed: ['Кровать', 1, 2],
+    stairs: ['Лестница', 2, 3], bearTrap: ['Капкан', 1, 1],
     brazier: ['Жаровня', 1, 1], goblinTotems: ['Тотемы гоблинов', 2, 1],
     barn: ['Амбар', 6, 4], well: ['Колодец', 1, 1], cart: ['Телега', 3, 1],
     pole: ['Столб', 1, 1], pumpkin: ['Тыква', 1, 1], smallPumpkin: ['Тыква (маленькая)', 1, 1],
@@ -26,12 +29,15 @@
     goblinArcher: ['Гоблин-лучник', 1, 1], goblinShield: ['Гоблин со щитом', 1, 1],
     goblinAxes: ['Гоблин с топорами', 1, 1],
   };
+  const buildingKinds = new Set(['house', 'tavern', 'barn']);
+  // Low furniture blocks occupied cells, but does not block sight like a wall.
+  const furnitureKinds = new Set(['table', 'bench', 'bed']);
   const linkedSections = new Set(['wall','palisade','fence']);
   const propGroups = {
     'Существа': ['goblinArcher','goblinShield','goblinAxes'],
     'Постройки и природа': ['house','tavern','barn','bridge','well','tree','bush','wall','door','fence','palisade','ruinedHouse','burningRoof','boulder'],
     'Деревня и лагерь': ['wagon','wreckedWagon','cart','campfire','pole','pumpkin','smallPumpkin','garland'],
-    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
+    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','bed','stairs','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
   };
   const directions = [[0,-1],[1,0],[0,1],[-1,0]];
   function wallCells(prop) {
@@ -48,6 +54,45 @@
     }
     return { x: prop.x + (width%2 ? .5 : 1), y: prop.y + (height%2 ? .5 : 1), width, height };
   }
+  function cellBounds(prop) {
+    const { x, y, width, height } = footprint(prop);
+    return {
+      left: Math.ceil(x - width / 2 - .5),
+      right: Math.ceil(x + width / 2 - .5) - 1,
+      top: Math.ceil(y - height / 2 - .5),
+      bottom: Math.ceil(y + height / 2 - .5) - 1,
+    };
+  }
+  // Render metadata only: never use these envelopes for movement, sight or exploration.
+  function crownFrame(prop) {
+    const variant = ((Math.imul(prop.x, 53) ^ Math.imul(prop.y, 107) ^ (prop.turn << 3)) >>> 0) % 32;
+    return { variant, left: -1.2 + ((variant % 7) - 3) * .038,
+      top: -1.1 + ((variant % 5) - 2) * .045, width: 2.4, height: 2.4 };
+  }
+  function visualBounds(prop) {
+    const center = footprint(prop);
+    if (prop.kind === 'tree' || prop.kind === 'bush') {
+      const frame = crownFrame(prop);
+      return { left: center.x + frame.left, right: center.x + frame.left + frame.width,
+        top: center.y + frame.top, bottom: center.y + frame.top + frame.height };
+    }
+    let halfWidth, halfHeight;
+    if (prop.kind === 'wall') {
+      // Connected wall fills reach .501 from each occupied cell's center.
+      halfWidth = center.width / 2 + .002; halfHeight = center.height / 2 + .002;
+    } else if (buildingKinds.has(prop.kind) || prop.kind === 'bridge') {
+      // Roof canvas adds .3 per side; fixed southeast shadows extend at most .29.
+      halfWidth = center.width / 2 + .3; halfHeight = center.height / 2 + .3;
+    } else {
+      // Normalized decor includes round caps and the tilted broken wagon. Also cover
+      // the fallback shadow (.10/.16), sprites and the selected outline (.06).
+      halfWidth = Math.max(center.width * .6, center.width / 2 + .2);
+      halfHeight = Math.max(center.height * .6, center.height / 2 + .2);
+    }
+    return { left: center.x - halfWidth, right: center.x + halfWidth,
+      top: center.y - halfHeight, bottom: center.y + halfHeight };
+  }
+  const boundsIntersect = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   function structures(objects) {
     const walls = new Set();
     const doors = new Map();
@@ -109,7 +154,20 @@
       { id: 'roadside-shrub', kind: 'bush', x: 6, y: -1, turn: 0 },
     ] };
   }
-  const api = { size, limit, terrain, props, valid, address, get, set, sample, wallCells, structures, linkedSections, propGroups, footprint };
+  function sceneScope(layout) {
+    return {
+      worldId: layout.parentWorldId || layout.id,
+      sceneId: layout.parentSceneId || (layout.parentWorldId ? layout.id : 'overworld'),
+      floorId: layout.parentSceneId ? layout.id : 'ground',
+    };
+  }
+
+  function locationMapId({ worldId, sceneId, floorId }) {
+    if (floorId !== 'ground') return floorId;
+    return sceneId === 'overworld' ? worldId : sceneId;
+  }
+
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

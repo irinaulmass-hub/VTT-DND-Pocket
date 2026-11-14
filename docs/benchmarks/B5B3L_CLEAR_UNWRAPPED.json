@@ -1,0 +1,3007 @@
+{
+  "schemaVersion": 1,
+  "applicationRef": "4316e17134a7526371889eaceffbffc54ebf06c4",
+  "createdAt": "2026-11-14T08:46:36.238Z",
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "osRelease": "6.18.57"
+  },
+  "sourceSha256": {
+    "worlds.js": "0eceb6214ac4f1e0934b9a3fc27e07ec3847aabeb8b9e82e4aeb3605bdeb03a8",
+    "world-store.js": "97b7759324607a04268cf54da009791695118d00cc86d7852b4bb69cddb3bdb1",
+    "world-exploration.js": "3afd923457b08ea7399204644908e63146fceb2e91c747c9f502e4e2329c97dd",
+    "character-positions.js": "ec0b910bd67021e27a0f770220cfcba197a2618b022f7833f83368214e1ef621",
+    "world-movement.js": "7bd6455b7853f24ebf4f17405a3fc5d1a8094ae4ab5ca5f4e76c73a673cafef7",
+    "world-object-index.js": "772ca2f5ef470811133dfa2ada1c25b472e9a33c134f15755ab61eda869e64b9",
+    "remote/world-model.js": "accd9ea49c63b936c717c654677d2b887b6a921188680078558d415c228c29ba",
+    "scripts/world-benchmark.cjs": "06b33f0e0ed475f98474658c6f02d42dfd7ae4f8aa3710fdd1bcb68066cfceaf",
+    "scripts/world-benchmark-probe.cjs": "2f7a1588dbc14c3f59555b2c04e22741e980f88b68b7292c85af87f1642d6e48",
+    "scripts/world-benchmark-stages.cjs": "eb4bf9c378baeeb41061fa6561c21147b6a1e36282e961f11e358dcb872ab454",
+    "scripts/world-table-benchmark.cjs": "c783f08cc3e0f703a7a2052af92f5c772270b49b9a681ece24797c82a25ee2ef",
+    "scripts/world-table-movement.cjs": "5f7bf6f71ac6a0e977a131678501e5d1ef1950ce00c266b82f1ce0e368ace0e2",
+    "test/fixtures/world-exploration-linear.cjs": "f8a307703b6fd05226dd4fa32cd26af609b3510c89cda1ee977c5eee71f18345"
+  },
+  "method": {
+    "profile": "limit",
+    "samples": 5,
+    "stages": "off",
+    "fog": "off",
+    "ref": "4316e17134a7526371889eaceffbffc54ebf06c4",
+    "state-updates": "off",
+    "exploration-updates": "on",
+    "transport": "public loopback HTTP without DM cookie; includes download and JSON parse",
+    "cache": "one warm-up per query retained separately in warmupRows; summaries exclude warm-up; warm OS cache; no forced server GC",
+    "queries": {
+      "status": null,
+      "near": [
+        "0,0"
+      ],
+      "adjacent": [
+        "0,0",
+        "1,0",
+        "0,-1",
+        "1,-1"
+      ],
+      "distant": [
+        "-16,32",
+        "-15,32",
+        "-16,33",
+        "-15,33"
+      ],
+      "live": [
+        "31,-2"
+      ],
+      "empty": [
+        "100,100"
+      ],
+      "walk": [
+        "40,0",
+        "41,0"
+      ]
+    },
+    "stageTiming": "optional synchronous wrappers: inclusive totalMs, exclusive selfMs; do not sum inclusive times",
+    "work": "benchmark-only index candidates/lookups/builds/fallbacks; absent means hooks were not called, not zero linear work",
+    "stateUpdates": "optional authenticated frame POST or assigned-player step before each measured read cycle; updates and rejection validation separate, GETs public; sequence hashes cover warm-up and all revisions",
+    "io": "readFileSync only, categorized bytes/calls/readMs; JSON parsing stays in store/positions selfMs",
+    "response": "response.json includes Express serialization, headers and send; not pure JSON.stringify",
+    "remainder": "server time outside exclusive spans; independent medians need not sum",
+    "fixture": "two observing heroes; 225 transferred terrain cells, cross-chunk walk, old object memory and two secrets; temporary campaign",
+    "oracle": "independent pre-index projector/remember fixture plus explicit discovery, memory, secret and rejection assertions",
+    "exclusions": "no browser/FPS, Wi-Fi, Windows or physical devices; diagnostic overhead is not production timing"
+  },
+  "status": "verified",
+  "dimensions": {
+    "plots": 125,
+    "tiles": 150000,
+    "objects": 3000,
+    "chunks": 601,
+    "memoryChunks": 601,
+    "memoryCells": 149822,
+    "memoryObjects": 2995,
+    "publishedManifestBytes": 392674,
+    "positionsBytes": 4018012
+  },
+  "responseSha256": {
+    "status": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+    "near": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+    "adjacent": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+    "distant": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+    "live": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+    "empty": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+    "walk": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991"
+  },
+  "responseSequenceSha256": {
+    "status": "47cae7120643a35b553f998397ad637c4d98e793af75020fab8f17cf6729c6f3",
+    "near": "ec98824e8d7a46d63480763fe5ad578b5ae05680c11703a04c7a10a2ee14f194",
+    "adjacent": "1ceb979cfae747493830c495ec651897cc97a713e1fcf852dc6bf745613f820a",
+    "distant": "946e7a575480e386ce9a68689b46c5ab1a74db7c61d3e49f6296381cce458bbc",
+    "live": "ac59087441026460149dec6fcdcb129884e02769193362762f85f7b20bc14831",
+    "empty": "ccd19cb30fe209dc206ec864c98c621d4cdd3ed6b60352ca4f28770e6caa3f7d",
+    "walk": "6b70f7a91858cb12579b7be2a396bfedf5196481cdeb09b069429efb6734147e"
+  },
+  "rows": [
+    {
+      "type": "world-benchmark",
+      "id": "table-9",
+      "status": 200,
+      "serverMs": 30.642336,
+      "cpuMs": 34.419,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 4018820,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01803699999999253
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018760,
+          "readMs": 2.4284850000000233
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 32011608,
+      "heapAfterBytes": 58808808,
+      "rssBytes": 139845632,
+      "processPeakRssBytes": 139845632,
+      "operation": "status",
+      "sample": 0,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 32.41927899999973,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-10",
+      "status": 200,
+      "serverMs": 0.8850019999999859,
+      "cpuMs": 0.995,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.018197000000043317
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.009003000000006978
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 58833168,
+      "heapAfterBytes": 59129336,
+      "rssBytes": 139845632,
+      "processPeakRssBytes": 139845632,
+      "operation": "near",
+      "sample": 0,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 1.5779349999993428,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-11",
+      "status": 200,
+      "serverMs": 0.5176289999999995,
+      "cpuMs": 0.499,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010486000000014428
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.01179899999999634
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 58925672,
+      "heapAfterBytes": 59029552,
+      "rssBytes": 139976704,
+      "processPeakRssBytes": 139976704,
+      "operation": "adjacent",
+      "sample": 0,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 1.0600850000000719,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-12",
+      "status": 200,
+      "serverMs": 1.631586000000027,
+      "cpuMs": 2.257,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009463999999979933
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.08154299999995374
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 59038872,
+      "heapAfterBytes": 59298112,
+      "rssBytes": 140238848,
+      "processPeakRssBytes": 140238848,
+      "operation": "distant",
+      "sample": 0,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 2.334122999999636,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-13",
+      "status": 200,
+      "serverMs": 0.550689000000034,
+      "cpuMs": 0.771,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009734999999977845
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 59306712,
+      "heapAfterBytes": 59347112,
+      "rssBytes": 140238848,
+      "processPeakRssBytes": 140238848,
+      "operation": "live",
+      "sample": 0,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 1.0281370000002426,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-14",
+      "status": 200,
+      "serverMs": 0.32871500000004517,
+      "cpuMs": 0.311,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008663000000012744
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 59361136,
+      "heapAfterBytes": 59397136,
+      "rssBytes": 140369920,
+      "processPeakRssBytes": 140369920,
+      "operation": "empty",
+      "sample": 0,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 0.7378109999999651,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-15",
+      "status": 200,
+      "serverMs": 0.4121509999999944,
+      "cpuMs": 0.394,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008522999999968306
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.010585999999989326
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 59405608,
+      "heapAfterBytes": 59473824,
+      "rssBytes": 140369920,
+      "processPeakRssBytes": 140369920,
+      "operation": "walk",
+      "sample": 0,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 0.8692780000001221,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-17",
+      "status": 200,
+      "serverMs": 23.404263000000014,
+      "cpuMs": 23.345,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 4019037,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.014271999999891705
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018977,
+          "readMs": 2.1640770000000202
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 50680048,
+      "heapAfterBytes": 72828736,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "status",
+      "sample": 1,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 24.652686000000358,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-18",
+      "status": 200,
+      "serverMs": 0.6121110000000272,
+      "cpuMs": 0.593,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.014271000000007916
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.007872000000020307
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 72837368,
+      "heapAfterBytes": 72907704,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "near",
+      "sample": 1,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 1.2620990000004895,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-19",
+      "status": 200,
+      "serverMs": 0.4464619999999968,
+      "cpuMs": 0.428,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008312000000046282
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.008694000000105007
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 72916336,
+      "heapAfterBytes": 73020216,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "adjacent",
+      "sample": 1,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 0.8737049999999726,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-20",
+      "status": 200,
+      "serverMs": 1.058473000000049,
+      "cpuMs": 1.509,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008723999999915577
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.04057099999999991
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 73028856,
+      "heapAfterBytes": 73265632,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "distant",
+      "sample": 1,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 1.690824000000248,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-21",
+      "status": 200,
+      "serverMs": 0.40316699999993943,
+      "cpuMs": 0.404,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009073000000057618
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 73292984,
+      "heapAfterBytes": 73329368,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "live",
+      "sample": 1,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 0.8734540000004927,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-22",
+      "status": 200,
+      "serverMs": 0.5511089999999967,
+      "cpuMs": 0.533,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.007772000000045409
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 73337848,
+      "heapAfterBytes": 73373424,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "empty",
+      "sample": 1,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 1.2414289999996981,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-23",
+      "status": 200,
+      "serverMs": 0.5665729999999485,
+      "cpuMs": 0.567,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.00971500000002834
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.013510999999880369
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 73383096,
+      "heapAfterBytes": 73451168,
+      "rssBytes": 167796736,
+      "processPeakRssBytes": 167796736,
+      "operation": "walk",
+      "sample": 1,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 0.9816970000001675,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-25",
+      "status": 200,
+      "serverMs": 27.63260600000001,
+      "cpuMs": 27.557,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 4019254,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01310000000000855
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019194,
+          "readMs": 1.9679619999999431
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 82221656,
+      "heapAfterBytes": 104370624,
+      "rssBytes": 190095360,
+      "processPeakRssBytes": 190095360,
+      "operation": "status",
+      "sample": 2,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 28.728801000000203,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-26",
+      "status": 200,
+      "serverMs": 0.5774490000000014,
+      "cpuMs": 0.559,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.016345000000001164
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.008172000000058688
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104379248,
+      "heapAfterBytes": 104449520,
+      "rssBytes": 190226432,
+      "processPeakRssBytes": 190226432,
+      "operation": "near",
+      "sample": 2,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 1.3300160000007963,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-27",
+      "status": 200,
+      "serverMs": 0.523356999999919,
+      "cpuMs": 0.506,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008963999999991756
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.008983999999827574
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104458168,
+      "heapAfterBytes": 104561496,
+      "rssBytes": 190226432,
+      "processPeakRssBytes": 190226432,
+      "operation": "adjacent",
+      "sample": 2,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 0.947570999999698,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-28",
+      "status": 200,
+      "serverMs": 1.0295889999999872,
+      "cpuMs": 1.042,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.00831299999993007
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.04968400000007023
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104577560,
+      "heapAfterBytes": 104808632,
+      "rssBytes": 190488576,
+      "processPeakRssBytes": 190488576,
+      "operation": "distant",
+      "sample": 2,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 1.7177810000002864,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-29",
+      "status": 200,
+      "serverMs": 0.3121200000000499,
+      "cpuMs": 0.295,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008322000000021035
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104817264,
+      "heapAfterBytes": 104853672,
+      "rssBytes": 190619648,
+      "processPeakRssBytes": 190619648,
+      "operation": "live",
+      "sample": 2,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 0.7980609999995067,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-30",
+      "status": 200,
+      "serverMs": 0.2965560000000096,
+      "cpuMs": 0.274,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008183000000030916
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104862160,
+      "heapAfterBytes": 104897992,
+      "rssBytes": 190619648,
+      "processPeakRssBytes": 190619648,
+      "operation": "empty",
+      "sample": 2,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 0.6846709999999803,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-31",
+      "status": 200,
+      "serverMs": 0.44113399999992,
+      "cpuMs": 0.423,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.00806199999999535
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.012247999999999593
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 104906488,
+      "heapAfterBytes": 104974560,
+      "rssBytes": 190619648,
+      "processPeakRssBytes": 190619648,
+      "operation": "walk",
+      "sample": 2,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 0.8838900000000649,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-33",
+      "status": 200,
+      "serverMs": 52.458827999999926,
+      "cpuMs": 52.4,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 4019471,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011647999999922831
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019411,
+          "readMs": 1.90371499999992
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 79573000,
+      "heapAfterBytes": 101805384,
+      "rssBytes": 224116736,
+      "processPeakRssBytes": 224116736,
+      "operation": "status",
+      "sample": 3,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 53.575488000000405,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-34",
+      "status": 200,
+      "serverMs": 0.8731639999999743,
+      "cpuMs": 0.853,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01559399999996458
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.01800700000001143
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 101815184,
+      "heapAfterBytes": 101886056,
+      "rssBytes": 224247808,
+      "processPeakRssBytes": 224247808,
+      "operation": "near",
+      "sample": 3,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 1.5455459999993764,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-35",
+      "status": 200,
+      "serverMs": 0.8169599999999946,
+      "cpuMs": 0.797,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009063999999966654
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.03094599999997172
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 101894688,
+      "heapAfterBytes": 101998872,
+      "rssBytes": 224247808,
+      "processPeakRssBytes": 224247808,
+      "operation": "adjacent",
+      "sample": 3,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 1.2265459999998711,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-36",
+      "status": 200,
+      "serverMs": 1.5535679999999275,
+      "cpuMs": 1.534,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008842999999956191
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.1825659999999516
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 102014928,
+      "heapAfterBytes": 102248784,
+      "rssBytes": 224509952,
+      "processPeakRssBytes": 224509952,
+      "operation": "distant",
+      "sample": 3,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 2.25768700000026,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-37",
+      "status": 200,
+      "serverMs": 0.451940000000036,
+      "cpuMs": 0.418,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008522999999968306
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 102257416,
+      "heapAfterBytes": 102598784,
+      "rssBytes": 224641024,
+      "processPeakRssBytes": 224641024,
+      "operation": "live",
+      "sample": 3,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 0.8225179999999455,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-38",
+      "status": 200,
+      "serverMs": 0.391159000000016,
+      "cpuMs": 0.373,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008422999999993408
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 102306040,
+      "heapAfterBytes": 102341648,
+      "rssBytes": 224641024,
+      "processPeakRssBytes": 224641024,
+      "operation": "empty",
+      "sample": 3,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 0.793945000000349,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-39",
+      "status": 200,
+      "serverMs": 0.5550550000000385,
+      "cpuMs": 0.537,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.02148299999998926
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.019839999999931024
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 102350136,
+      "heapAfterBytes": 102418224,
+      "rssBytes": 224641024,
+      "processPeakRssBytes": 224641024,
+      "operation": "walk",
+      "sample": 3,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 0.9741460000004736,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-41",
+      "status": 200,
+      "serverMs": 24.58102400000007,
+      "cpuMs": 24.486,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 4019688,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.014582000000018525
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019628,
+          "readMs": 2.4150539999998273
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 66616416,
+      "heapAfterBytes": 88796000,
+      "rssBytes": 239767552,
+      "processPeakRssBytes": 249413632,
+      "operation": "status",
+      "sample": 4,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 25.735611000000063,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-42",
+      "status": 200,
+      "serverMs": 0.5041790000000219,
+      "cpuMs": 0.486,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.01421200000004319
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.005988999999999578
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 88804624,
+      "heapAfterBytes": 88874768,
+      "rssBytes": 239767552,
+      "processPeakRssBytes": 249413632,
+      "operation": "near",
+      "sample": 4,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 1.0832299999992756,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-43",
+      "status": 200,
+      "serverMs": 0.41436399999997775,
+      "cpuMs": 0.396,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.007882000000108746
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.009945999999899868
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 88883400,
+      "heapAfterBytes": 88986736,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "adjacent",
+      "sample": 4,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 0.908317000000352,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-44",
+      "status": 200,
+      "serverMs": 1.2918240000001333,
+      "cpuMs": 1.273,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.0077519999999822176
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.04222399999980553
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 88995384,
+      "heapAfterBytes": 89226224,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "distant",
+      "sample": 4,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 1.9242659999999887,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-45",
+      "status": 200,
+      "serverMs": 0.35428300000012314,
+      "cpuMs": 0.336,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.009394000000156666
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 89235784,
+      "heapAfterBytes": 89272216,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "live",
+      "sample": 4,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 0.7129830000003494,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-46",
+      "status": 200,
+      "serverMs": 0.27486400000020694,
+      "cpuMs": 0.257,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.0076719999999568245
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 89280696,
+      "heapAfterBytes": 89316288,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "empty",
+      "sample": 4,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 0.6285159999997632,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-47",
+      "status": 200,
+      "serverMs": 0.34869400000002315,
+      "cpuMs": 0.332,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.007610999999997148
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.009122999999817694
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 89324784,
+      "heapAfterBytes": 89392872,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "walk",
+      "sample": 4,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 0.7159679999995205,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    }
+  ],
+  "warmupRows": [
+    {
+      "type": "world-benchmark",
+      "id": "table-1",
+      "status": 200,
+      "serverMs": 54.81477799999999,
+      "cpuMs": 102.378,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4410746,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.02415600000000495
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392674,
+          "readMs": 0.3566759999999931
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018012,
+          "readMs": 4.361142999999998
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 14265152,
+      "heapAfterBytes": 41078904,
+      "rssBytes": 88993792,
+      "processPeakRssBytes": 88993792,
+      "operation": "status",
+      "sample": -1,
+      "responseSha256": "8461d74f29db6955ef9dc5670117deffb46a0c51d4e40a65833e4b9e79411a02",
+      "wallMs": 57.31381499999952,
+      "responseBytes": 213,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-2",
+      "status": 200,
+      "serverMs": 13.56831900000003,
+      "cpuMs": 23.873,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.02533800000003339
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.012599000000022897
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 26985192,
+      "heapAfterBytes": 35937392,
+      "rssBytes": 93188096,
+      "processPeakRssBytes": 93188096,
+      "operation": "near",
+      "sample": -1,
+      "responseSha256": "a56d1fd573952a44403f734c25bad07a872943d15b7091f48fd9134c90f1248d",
+      "wallMs": 14.953137999999853,
+      "responseBytes": 3036,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-3",
+      "status": 200,
+      "serverMs": 1.3778439999999819,
+      "cpuMs": 3.833,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.014993000000004031
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.02389600000003611
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 36080712,
+      "heapAfterBytes": 36127256,
+      "rssBytes": 93843456,
+      "processPeakRssBytes": 93843456,
+      "operation": "adjacent",
+      "sample": -1,
+      "responseSha256": "9fc2936d92513508f81d769ff8eac3dedb9729f9e37201afd2cc9be130eb3f0c",
+      "wallMs": 2.8227090000000317,
+      "responseBytes": 5650,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-4",
+      "status": 200,
+      "serverMs": 1.3429209999999898,
+      "cpuMs": 1.462,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011908000000005359
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.06164300000000367
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 36244688,
+      "heapAfterBytes": 36484120,
+      "rssBytes": 94498816,
+      "processPeakRssBytes": 94498816,
+      "operation": "distant",
+      "sample": -1,
+      "responseSha256": "f51757f870bb80c1e4f6e6c21d1fbca6bc43f1d8ccb15613f81c47db1dc61b4b",
+      "wallMs": 2.645010000000184,
+      "responseBytes": 53712,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-5",
+      "status": 200,
+      "serverMs": 0.6099480000000312,
+      "cpuMs": 0.727,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.011726999999950749
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 36401832,
+      "heapAfterBytes": 36453208,
+      "rssBytes": 95285248,
+      "processPeakRssBytes": 95285248,
+      "operation": "live",
+      "sample": -1,
+      "responseSha256": "af537284c1db319327e22c6528fa1430711abbd19b1d1163d343d478c28a0ffc",
+      "wallMs": 1.3441630000006626,
+      "responseBytes": 295,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-6",
+      "status": 200,
+      "serverMs": 0.590377999999987,
+      "cpuMs": 0.762,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008952999999962685
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 36544432,
+      "heapAfterBytes": 36600880,
+      "rssBytes": 95940608,
+      "processPeakRssBytes": 95940608,
+      "operation": "empty",
+      "sample": -1,
+      "responseSha256": "85cc80b38c7dc0d9446b8aa5b196bf19d6574c00ff6ee76af8210f216816f906",
+      "wallMs": 1.2767320000002655,
+      "responseBytes": 233,
+      "requestBytes": 0,
+      "serializeMs": 0
+    },
+    {
+      "type": "world-benchmark",
+      "id": "table-7",
+      "status": 200,
+      "serverMs": 0.7319920000000479,
+      "cpuMs": 1.519,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008884000000023207
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.01371000000000322
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 36651416,
+      "heapAfterBytes": 37006320,
+      "rssBytes": 96333824,
+      "processPeakRssBytes": 96333824,
+      "operation": "walk",
+      "sample": -1,
+      "responseSha256": "230fe1145376fd917a85ff6bfbf06a1a43daabb7b3cea831ad3e7a6769d69991",
+      "wallMs": 1.5444240000006175,
+      "responseBytes": 3324,
+      "requestBytes": 0,
+      "serializeMs": 0
+    }
+  ],
+  "summary": {
+    "status": {
+      "samples": 5,
+      "wallMs": {
+        "min": 24.652686000000358,
+        "median": 28.728801000000203,
+        "p95": 53.575488000000405,
+        "max": 53.575488000000405
+      },
+      "serverMs": {
+        "min": 23.404263000000014,
+        "median": 27.63260600000001,
+        "p95": 52.458827999999926,
+        "max": 52.458827999999926
+      },
+      "cpuMs": {
+        "min": 23.345,
+        "median": 27.557,
+        "p95": 52.4,
+        "max": 52.4
+      },
+      "responseBytes": {
+        "min": 213,
+        "median": 213,
+        "p95": 213,
+        "max": 213
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 2,
+        "median": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "readBytes": {
+        "min": 4018820,
+        "median": 4019254,
+        "p95": 4019688,
+        "max": 4019688
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 58808808,
+        "median": 88796000,
+        "p95": 104370624,
+        "max": 104370624
+      },
+      "rssBytes": {
+        "min": 139845632,
+        "median": 190095360,
+        "p95": 239767552,
+        "max": 239767552
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.011647999999922831,
+            "median": 0.014271999999891705,
+            "p95": 0.01803699999999253,
+            "max": 0.01803699999999253
+          }
+        },
+        "positions": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 4018760,
+            "median": 4019194,
+            "p95": 4019628,
+            "max": 4019628
+          },
+          "readMs": {
+            "min": 1.90371499999992,
+            "median": 2.1640770000000202,
+            "p95": 2.4284850000000233,
+            "max": 2.4284850000000233
+          }
+        }
+      },
+      "work": {}
+    },
+    "near": {
+      "samples": 5,
+      "wallMs": {
+        "min": 1.0832299999992756,
+        "median": 1.3300160000007963,
+        "p95": 1.5779349999993428,
+        "max": 1.5779349999993428
+      },
+      "serverMs": {
+        "min": 0.5041790000000219,
+        "median": 0.6121110000000272,
+        "p95": 0.8850019999999859,
+        "max": 0.8850019999999859
+      },
+      "cpuMs": {
+        "min": 0.486,
+        "median": 0.593,
+        "p95": 0.995,
+        "max": 0.995
+      },
+      "responseBytes": {
+        "min": 3036,
+        "median": 3036,
+        "p95": 3036,
+        "max": 3036
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 2,
+        "median": 2,
+        "p95": 2,
+        "max": 2
+      },
+      "readBytes": {
+        "min": 2276,
+        "median": 2276,
+        "p95": 2276,
+        "max": 2276
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59129336,
+        "median": 88874768,
+        "p95": 104449520,
+        "max": 104449520
+      },
+      "rssBytes": {
+        "min": 139845632,
+        "median": 190226432,
+        "p95": 239767552,
+        "max": 239767552
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.01421200000004319,
+            "median": 0.01559399999996458,
+            "p95": 0.018197000000043317,
+            "max": 0.018197000000043317
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 2216,
+            "median": 2216,
+            "p95": 2216,
+            "max": 2216
+          },
+          "readMs": {
+            "min": 0.005988999999999578,
+            "median": 0.008172000000058688,
+            "p95": 0.01800700000001143,
+            "max": 0.01800700000001143
+          }
+        }
+      },
+      "work": {}
+    },
+    "adjacent": {
+      "samples": 5,
+      "wallMs": {
+        "min": 0.8737049999999726,
+        "median": 0.947570999999698,
+        "p95": 1.2265459999998711,
+        "max": 1.2265459999998711
+      },
+      "serverMs": {
+        "min": 0.41436399999997775,
+        "median": 0.5176289999999995,
+        "p95": 0.8169599999999946,
+        "max": 0.8169599999999946
+      },
+      "cpuMs": {
+        "min": 0.396,
+        "median": 0.499,
+        "p95": 0.797,
+        "max": 0.797
+      },
+      "responseBytes": {
+        "min": 5650,
+        "median": 5650,
+        "p95": 5650,
+        "max": 5650
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 3,
+        "median": 3,
+        "p95": 3,
+        "max": 3
+      },
+      "readBytes": {
+        "min": 4337,
+        "median": 4337,
+        "p95": 4337,
+        "max": 4337
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59029552,
+        "median": 88986736,
+        "p95": 104561496,
+        "max": 104561496
+      },
+      "rssBytes": {
+        "min": 139976704,
+        "median": 190226432,
+        "p95": 239898624,
+        "max": 239898624
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.007882000000108746,
+            "median": 0.008963999999991756,
+            "p95": 0.010486000000014428,
+            "max": 0.010486000000014428
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 2,
+            "median": 2,
+            "p95": 2,
+            "max": 2
+          },
+          "bytes": {
+            "min": 4277,
+            "median": 4277,
+            "p95": 4277,
+            "max": 4277
+          },
+          "readMs": {
+            "min": 0.008694000000105007,
+            "median": 0.009945999999899868,
+            "p95": 0.03094599999997172,
+            "max": 0.03094599999997172
+          }
+        }
+      },
+      "work": {}
+    },
+    "distant": {
+      "samples": 5,
+      "wallMs": {
+        "min": 1.690824000000248,
+        "median": 1.9242659999999887,
+        "p95": 2.334122999999636,
+        "max": 2.334122999999636
+      },
+      "serverMs": {
+        "min": 1.0295889999999872,
+        "median": 1.2918240000001333,
+        "p95": 1.631586000000027,
+        "max": 1.631586000000027
+      },
+      "cpuMs": {
+        "min": 1.042,
+        "median": 1.509,
+        "p95": 2.257,
+        "max": 2.257
+      },
+      "responseBytes": {
+        "min": 53712,
+        "median": 53712,
+        "p95": 53712,
+        "max": 53712
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 5,
+        "median": 5,
+        "p95": 5,
+        "max": 5
+      },
+      "readBytes": {
+        "min": 53500,
+        "median": 53500,
+        "p95": 53500,
+        "max": 53500
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59298112,
+        "median": 89226224,
+        "p95": 104808632,
+        "max": 104808632
+      },
+      "rssBytes": {
+        "min": 140238848,
+        "median": 190488576,
+        "p95": 239898624,
+        "max": 239898624
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.0077519999999822176,
+            "median": 0.008723999999915577,
+            "p95": 0.009463999999979933,
+            "max": 0.009463999999979933
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 4,
+            "median": 4,
+            "p95": 4,
+            "max": 4
+          },
+          "bytes": {
+            "min": 53440,
+            "median": 53440,
+            "p95": 53440,
+            "max": 53440
+          },
+          "readMs": {
+            "min": 0.04057099999999991,
+            "median": 0.04968400000007023,
+            "p95": 0.1825659999999516,
+            "max": 0.1825659999999516
+          }
+        }
+      },
+      "work": {}
+    },
+    "live": {
+      "samples": 5,
+      "wallMs": {
+        "min": 0.7129830000003494,
+        "median": 0.8225179999999455,
+        "p95": 1.0281370000002426,
+        "max": 1.0281370000002426
+      },
+      "serverMs": {
+        "min": 0.3121200000000499,
+        "median": 0.40316699999993943,
+        "p95": 0.550689000000034,
+        "max": 0.550689000000034
+      },
+      "cpuMs": {
+        "min": 0.295,
+        "median": 0.404,
+        "p95": 0.771,
+        "max": 0.771
+      },
+      "responseBytes": {
+        "min": 295,
+        "median": 295,
+        "p95": 295,
+        "max": 295
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 1,
+        "median": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "readBytes": {
+        "min": 60,
+        "median": 60,
+        "p95": 60,
+        "max": 60
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59347112,
+        "median": 89272216,
+        "p95": 104853672,
+        "max": 104853672
+      },
+      "rssBytes": {
+        "min": 140238848,
+        "median": 190619648,
+        "p95": 239898624,
+        "max": 239898624
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.008322000000021035,
+            "median": 0.009073000000057618,
+            "p95": 0.009734999999977845,
+            "max": 0.009734999999977845
+          }
+        }
+      },
+      "work": {}
+    },
+    "empty": {
+      "samples": 5,
+      "wallMs": {
+        "min": 0.6285159999997632,
+        "median": 0.7378109999999651,
+        "p95": 1.2414289999996981,
+        "max": 1.2414289999996981
+      },
+      "serverMs": {
+        "min": 0.27486400000020694,
+        "median": 0.32871500000004517,
+        "p95": 0.5511089999999967,
+        "max": 0.5511089999999967
+      },
+      "cpuMs": {
+        "min": 0.257,
+        "median": 0.311,
+        "p95": 0.533,
+        "max": 0.533
+      },
+      "responseBytes": {
+        "min": 233,
+        "median": 233,
+        "p95": 233,
+        "max": 233
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 1,
+        "median": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "readBytes": {
+        "min": 60,
+        "median": 60,
+        "p95": 60,
+        "max": 60
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59397136,
+        "median": 89316288,
+        "p95": 104897992,
+        "max": 104897992
+      },
+      "rssBytes": {
+        "min": 140369920,
+        "median": 190619648,
+        "p95": 239898624,
+        "max": 239898624
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.0076719999999568245,
+            "median": 0.008183000000030916,
+            "p95": 0.008663000000012744,
+            "max": 0.008663000000012744
+          }
+        }
+      },
+      "work": {}
+    },
+    "walk": {
+      "samples": 5,
+      "wallMs": {
+        "min": 0.7159679999995205,
+        "median": 0.8838900000000649,
+        "p95": 0.9816970000001675,
+        "max": 0.9816970000001675
+      },
+      "serverMs": {
+        "min": 0.34869400000002315,
+        "median": 0.44113399999992,
+        "p95": 0.5665729999999485,
+        "max": 0.5665729999999485
+      },
+      "cpuMs": {
+        "min": 0.332,
+        "median": 0.423,
+        "p95": 0.567,
+        "max": 0.567
+      },
+      "responseBytes": {
+        "min": 3324,
+        "median": 3324,
+        "p95": 3324,
+        "max": 3324
+      },
+      "requestBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "serializeMs": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "reads": {
+        "min": 3,
+        "median": 3,
+        "p95": 3,
+        "max": 3
+      },
+      "readBytes": {
+        "min": 3012,
+        "median": 3012,
+        "p95": 3012,
+        "max": 3012
+      },
+      "writes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "writeBytes": {
+        "min": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "heapAfterBytes": {
+        "min": 59473824,
+        "median": 89392872,
+        "p95": 104974560,
+        "max": 104974560
+      },
+      "rssBytes": {
+        "min": 140369920,
+        "median": 190619648,
+        "p95": 239898624,
+        "max": 239898624
+      },
+      "readCategories": {
+        "active": {
+          "calls": {
+            "min": 1,
+            "median": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "bytes": {
+            "min": 60,
+            "median": 60,
+            "p95": 60,
+            "max": 60
+          },
+          "readMs": {
+            "min": 0.007610999999997148,
+            "median": 0.008522999999968306,
+            "p95": 0.02148299999998926,
+            "max": 0.02148299999998926
+          }
+        },
+        "terrainChunk": {
+          "calls": {
+            "min": 2,
+            "median": 2,
+            "p95": 2,
+            "max": 2
+          },
+          "bytes": {
+            "min": 2952,
+            "median": 2952,
+            "p95": 2952,
+            "max": 2952
+          },
+          "readMs": {
+            "min": 0.009122999999817694,
+            "median": 0.012247999999999593,
+            "p95": 0.019839999999931024,
+            "max": 0.019839999999931024
+          }
+        }
+      },
+      "work": {}
+    }
+  },
+  "updateRows": [
+    {
+      "type": "world-benchmark",
+      "id": "move-8",
+      "status": 200,
+      "serverMs": 152.664132,
+      "cpuMs": 162.393,
+      "work": {},
+      "reads": 17,
+      "uniqueReadFiles": 7,
+      "readBytes": 6381355,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.028233000000057018
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018012,
+          "readMs": 5.10018500000001
+        },
+        "publishedManifest": {
+          "calls": 6,
+          "bytes": 2356044,
+          "readMs": 5.417532999999992
+        },
+        "terrainChunk": {
+          "calls": 5,
+          "bytes": 6849,
+          "readMs": 0.051297999999917465
+        },
+        "active": {
+          "calls": 2,
+          "bytes": 120,
+          "readMs": 0.04517799999996441
+        }
+      },
+      "writes": 1,
+      "writeBytes": 4018760,
+      "heapBeforeBytes": 36796944,
+      "heapAfterBytes": 69260880,
+      "rssBytes": 136118272,
+      "processPeakRssBytes": 138276864,
+      "operation": "exploration_move",
+      "sample": 0,
+      "wallMs": 153.9861719999999,
+      "serializeMs": 0.007830999999896449,
+      "responseBytes": 161,
+      "requestBytes": 33
+    },
+    {
+      "type": "world-benchmark",
+      "id": "move-16",
+      "status": 200,
+      "serverMs": 76.33476999999999,
+      "cpuMs": 107.507,
+      "work": {},
+      "reads": 17,
+      "uniqueReadFiles": 7,
+      "readBytes": 6382103,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.01902899999993224
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018760,
+          "readMs": 2.323586999999975
+        },
+        "publishedManifest": {
+          "calls": 6,
+          "bytes": 2356044,
+          "readMs": 1.6042159999999512
+        },
+        "terrainChunk": {
+          "calls": 5,
+          "bytes": 6849,
+          "readMs": 0.06505899999990561
+        },
+        "active": {
+          "calls": 2,
+          "bytes": 120,
+          "readMs": 0.026660999999990054
+        }
+      },
+      "writes": 1,
+      "writeBytes": 4018977,
+      "heapBeforeBytes": 59482904,
+      "heapAfterBytes": 50671768,
+      "rssBytes": 163602432,
+      "processPeakRssBytes": 166940672,
+      "operation": "exploration_move",
+      "sample": 1,
+      "wallMs": 77.3187910000006,
+      "serializeMs": 0.004696999999396212,
+      "responseBytes": 161,
+      "requestBytes": 33
+    },
+    {
+      "type": "world-benchmark",
+      "id": "move-24",
+      "status": 200,
+      "serverMs": 69.420615,
+      "cpuMs": 77.624,
+      "work": {},
+      "reads": 17,
+      "uniqueReadFiles": 7,
+      "readBytes": 6382320,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.01949899999988247
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4018977,
+          "readMs": 2.902377999999999
+        },
+        "publishedManifest": {
+          "calls": 6,
+          "bytes": 2356044,
+          "readMs": 1.4083600000001297
+        },
+        "terrainChunk": {
+          "calls": 5,
+          "bytes": 6849,
+          "readMs": 0.03491199999996297
+        },
+        "active": {
+          "calls": 2,
+          "bytes": 120,
+          "readMs": 0.024957000000085827
+        }
+      },
+      "writes": 1,
+      "writeBytes": 4019194,
+      "heapBeforeBytes": 73468664,
+      "heapAfterBytes": 82213448,
+      "rssBytes": 167944192,
+      "processPeakRssBytes": 172908544,
+      "operation": "exploration_move",
+      "sample": 2,
+      "wallMs": 70.5217819999998,
+      "serializeMs": 0.00432600000021921,
+      "responseBytes": 161,
+      "requestBytes": 33
+    },
+    {
+      "type": "world-benchmark",
+      "id": "move-32",
+      "status": 200,
+      "serverMs": 100.84954400000004,
+      "cpuMs": 107.322,
+      "work": {},
+      "reads": 17,
+      "uniqueReadFiles": 7,
+      "readBytes": 6383599,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.019870000000082655
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019194,
+          "readMs": 2.8871950000000197
+        },
+        "publishedManifest": {
+          "calls": 6,
+          "bytes": 2356044,
+          "readMs": 4.782417000000123
+        },
+        "terrainChunk": {
+          "calls": 5,
+          "bytes": 7911,
+          "readMs": 0.08398699999997916
+        },
+        "active": {
+          "calls": 2,
+          "bytes": 120,
+          "readMs": 0.02525700000001052
+        }
+      },
+      "writes": 1,
+      "writeBytes": 4019411,
+      "heapBeforeBytes": 104983552,
+      "heapAfterBytes": 79564776,
+      "rssBytes": 205373440,
+      "processPeakRssBytes": 211460096,
+      "operation": "exploration_move",
+      "sample": 3,
+      "wallMs": 101.79204299999947,
+      "serializeMs": 0.004917000000205007,
+      "responseBytes": 161,
+      "requestBytes": 33
+    },
+    {
+      "type": "world-benchmark",
+      "id": "move-40",
+      "status": 200,
+      "serverMs": 125.33189899999991,
+      "cpuMs": 135.595,
+      "work": {},
+      "reads": 17,
+      "uniqueReadFiles": 7,
+      "readBytes": 6383816,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.033310000000028595
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019411,
+          "readMs": 10.365459999999985
+        },
+        "publishedManifest": {
+          "calls": 6,
+          "bytes": 2356044,
+          "readMs": 5.36687500000005
+        },
+        "terrainChunk": {
+          "calls": 5,
+          "bytes": 7911,
+          "readMs": 0.11131799999975556
+        },
+        "active": {
+          "calls": 2,
+          "bytes": 120,
+          "readMs": 0.032398999999941225
+        }
+      },
+      "writes": 1,
+      "writeBytes": 4019628,
+      "heapBeforeBytes": 102427224,
+      "heapAfterBytes": 66607632,
+      "rssBytes": 235573248,
+      "processPeakRssBytes": 249413632,
+      "operation": "exploration_move",
+      "sample": 4,
+      "wallMs": 126.42493399999967,
+      "serializeMs": 0.005227999999988242,
+      "responseBytes": 161,
+      "requestBytes": 33
+    }
+  ],
+  "updateSummary": {
+    "exploration_move": {
+      "samples": 5,
+      "wallMs": {
+        "min": 70.5217819999998,
+        "median": 101.79204299999947,
+        "p95": 153.9861719999999,
+        "max": 153.9861719999999
+      },
+      "serverMs": {
+        "min": 69.420615,
+        "median": 100.84954400000004,
+        "p95": 152.664132,
+        "max": 152.664132
+      },
+      "cpuMs": {
+        "min": 77.624,
+        "median": 107.507,
+        "p95": 162.393,
+        "max": 162.393
+      },
+      "responseBytes": {
+        "min": 161,
+        "median": 161,
+        "p95": 161,
+        "max": 161
+      },
+      "requestBytes": {
+        "min": 33,
+        "median": 33,
+        "p95": 33,
+        "max": 33
+      },
+      "serializeMs": {
+        "min": 0.00432600000021921,
+        "median": 0.004917000000205007,
+        "p95": 0.007830999999896449,
+        "max": 0.007830999999896449
+      },
+      "reads": {
+        "min": 17,
+        "median": 17,
+        "p95": 17,
+        "max": 17
+      },
+      "readBytes": {
+        "min": 6381355,
+        "median": 6382320,
+        "p95": 6383816,
+        "max": 6383816
+      },
+      "writes": {
+        "min": 1,
+        "median": 1,
+        "p95": 1,
+        "max": 1
+      },
+      "writeBytes": {
+        "min": 4018760,
+        "median": 4019194,
+        "p95": 4019628,
+        "max": 4019628
+      },
+      "heapAfterBytes": {
+        "min": 50671768,
+        "median": 69260880,
+        "p95": 82213448,
+        "max": 82213448
+      },
+      "rssBytes": {
+        "min": 136118272,
+        "median": 167944192,
+        "p95": 235573248,
+        "max": 235573248
+      }
+    }
+  },
+  "updateCycles": [
+    {
+      "sample": 0,
+      "updateMs": 153.9861719999999,
+      "firstReadsMs": 33.997213999999076,
+      "walkMs": 0.8692780000001221,
+      "updateAndFirstReadsMs": 187.98338599999897
+    },
+    {
+      "sample": 1,
+      "updateMs": 77.3187910000006,
+      "firstReadsMs": 25.914785000000848,
+      "walkMs": 0.9816970000001675,
+      "updateAndFirstReadsMs": 103.23357600000145
+    },
+    {
+      "sample": 2,
+      "updateMs": 70.5217819999998,
+      "firstReadsMs": 30.058817000001,
+      "walkMs": 0.8838900000000649,
+      "updateAndFirstReadsMs": 100.5805990000008
+    },
+    {
+      "sample": 3,
+      "updateMs": 101.79204299999947,
+      "firstReadsMs": 55.12103399999978,
+      "walkMs": 0.9741460000004736,
+      "updateAndFirstReadsMs": 156.91307699999925
+    },
+    {
+      "sample": 4,
+      "updateMs": 126.42493399999967,
+      "firstReadsMs": 26.81884099999934,
+      "walkMs": 0.7159679999995205,
+      "updateAndFirstReadsMs": 153.243774999999
+    }
+  ],
+  "validationRows": [
+    {
+      "type": "world-benchmark",
+      "id": "validation-48",
+      "status": 401,
+      "serverMs": 0.533493000000135,
+      "cpuMs": 0.621,
+      "work": {},
+      "reads": 0,
+      "uniqueReadFiles": 0,
+      "readBytes": 0,
+      "readCategories": {},
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 89403752,
+      "heapAfterBytes": 89446080,
+      "rssBytes": 239898624,
+      "processPeakRssBytes": 249413632,
+      "operation": "unauthorized"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-49",
+      "status": 409,
+      "serverMs": 17.63412900000003,
+      "cpuMs": 18.08,
+      "work": {},
+      "reads": 4,
+      "uniqueReadFiles": 3,
+      "readBytes": 4019958,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.017125999999962005
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019628,
+          "readMs": 1.841572000000042
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 89454800,
+      "heapAfterBytes": 102651144,
+      "rssBytes": 244092928,
+      "processPeakRssBytes": 249413632,
+      "operation": "stale"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-50",
+      "status": 409,
+      "serverMs": 40.28964300000007,
+      "cpuMs": 40.221,
+      "work": {},
+      "reads": 6,
+      "uniqueReadFiles": 5,
+      "readBytes": 4414639,
+      "readCategories": {
+        "other": {
+          "calls": 3,
+          "bytes": 330,
+          "readMs": 0.03052599999978156
+        },
+        "positions": {
+          "calls": 1,
+          "bytes": 4019628,
+          "readMs": 1.717724999999973
+        },
+        "publishedManifest": {
+          "calls": 1,
+          "bytes": 392674,
+          "readMs": 0.23014599999987695
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2007,
+          "readMs": 0.011567999999897438
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 102663856,
+      "heapAfterBytes": 117542968,
+      "rssBytes": 248680448,
+      "processPeakRssBytes": 249413632,
+      "operation": "blocked"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-51",
+      "status": 200,
+      "serverMs": 0.41275100000007114,
+      "cpuMs": 0.389,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.010275999999976193
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 117550960,
+      "heapAfterBytes": 117582256,
+      "rssBytes": 248680448,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_status"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-52",
+      "status": 200,
+      "serverMs": 0.4532520000000204,
+      "cpuMs": 0.435,
+      "work": {},
+      "reads": 2,
+      "uniqueReadFiles": 2,
+      "readBytes": 2276,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008653000000094835
+        },
+        "terrainChunk": {
+          "calls": 1,
+          "bytes": 2216,
+          "readMs": 0.006550000000061118
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 117590752,
+      "heapAfterBytes": 117660896,
+      "rssBytes": 248680448,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_near"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-53",
+      "status": 200,
+      "serverMs": 0.4862820000000738,
+      "cpuMs": 0.469,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 4337,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008462999999892418
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 4277,
+          "readMs": 0.00980400000003101
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 117669552,
+      "heapAfterBytes": 117772888,
+      "rssBytes": 248680448,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_adjacent"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-54",
+      "status": 200,
+      "serverMs": 1.320697999999993,
+      "cpuMs": 1.426,
+      "work": {},
+      "reads": 5,
+      "uniqueReadFiles": 5,
+      "readBytes": 53500,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.012920000000121945
+        },
+        "terrainChunk": {
+          "calls": 4,
+          "bytes": 53440,
+          "readMs": 0.042163999999957014
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 55655384,
+      "heapAfterBytes": 55890296,
+      "rssBytes": 231649280,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_distant"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-55",
+      "status": 200,
+      "serverMs": 0.3135219999999208,
+      "cpuMs": 0.295,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008702999999968597
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 55898936,
+      "heapAfterBytes": 55935248,
+      "rssBytes": 231649280,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_live"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-56",
+      "status": 200,
+      "serverMs": 0.3789800000001833,
+      "cpuMs": 0.53,
+      "work": {},
+      "reads": 1,
+      "uniqueReadFiles": 1,
+      "readBytes": 60,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.008272000000033586
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 55943744,
+      "heapAfterBytes": 55980856,
+      "rssBytes": 231649280,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_empty"
+    },
+    {
+      "type": "world-benchmark",
+      "id": "validation-57",
+      "status": 200,
+      "serverMs": 0.36160400000017034,
+      "cpuMs": 0.343,
+      "work": {},
+      "reads": 3,
+      "uniqueReadFiles": 3,
+      "readBytes": 3012,
+      "readCategories": {
+        "active": {
+          "calls": 1,
+          "bytes": 60,
+          "readMs": 0.0077820000001338485
+        },
+        "terrainChunk": {
+          "calls": 2,
+          "bytes": 2952,
+          "readMs": 0.008864000000130545
+        }
+      },
+      "writes": 0,
+      "writeBytes": 0,
+      "heapBeforeBytes": 55989360,
+      "heapAfterBytes": 56058824,
+      "rssBytes": 231649280,
+      "processPeakRssBytes": 249413632,
+      "operation": "unchanged_walk"
+    }
+  ],
+  "updateResponseSequenceSha256": "75b4f6c902b17fa3e9eec3ecfc23a26347163d650d77b4612e8139f2d1362f13"
+}

@@ -1,0 +1,2237 @@
+{
+  "schemaVersion": 1,
+  "applicationRef": "9eadec84e817c5cea80ea973931dc8a49407b533",
+  "createdAt": "2026-11-13T09:31:28.683Z",
+  "samples": 5,
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "arch": "x64",
+    "osRelease": "6.18.57",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "availableParallelism": 9,
+    "osReportedMemoryBytes": 10451427328
+  },
+  "method": {
+    "transport": "loopback HTTP; response download and JSON parse included",
+    "requests": "sequential",
+    "cache": "warm filesystem/OS cache; one unrecorded warm-up; no forced server GC",
+    "memory": "server heap after each request; RSS and lifetime process peak; fixture built outside the server",
+    "viewport": "four published chunks; object metadata is not spatially filtered by the current store",
+    "p95": "nearest-rank; with 5 samples p95 equals the maximum",
+    "exclusions": "browser rendering/FPS, Wi-Fi latency, physical devices and Windows are not measured"
+  },
+  "results": [
+    {
+      "name": "small",
+      "dimensions": {
+        "plots": 1,
+        "objects": 8,
+        "tiles": 2048,
+        "chunks": 20,
+        "draftJsonBytes": 48229,
+        "generatorStateJsonBytes": 20980
+      },
+      "status": "verified",
+      "maxSaveBytes": 48510,
+      "rows": [
+        {
+          "type": "world-benchmark",
+          "id": "request-6",
+          "status": 200,
+          "serverMs": 1.3696519999999737,
+          "cpuMs": 1.976,
+          "reads": 21,
+          "uniqueReadFiles": 21,
+          "readBytes": 49980,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13471376,
+          "heapAfterBytes": 13848344,
+          "rssBytes": 66879488,
+          "processPeakRssBytes": 66879488,
+          "operation": "full_load",
+          "wallMs": 2.4775110000000495,
+          "serializeMs": 0.00039100000003600144,
+          "requestBytes": 0,
+          "responseBytes": 48229
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-7",
+          "status": 200,
+          "serverMs": 20.321708,
+          "cpuMs": 22.095,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13953704,
+          "heapAfterBytes": 14541584,
+          "rssBytes": 70287360,
+          "processPeakRssBytes": 70287360,
+          "operation": "district_preview",
+          "wallMs": 23.367474000000016,
+          "serializeMs": 0.020301000000017666,
+          "requestBytes": 180,
+          "responseBytes": 73175
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-8",
+          "status": 200,
+          "serverMs": 11.276769000000002,
+          "cpuMs": 21.014,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 5,
+          "writeBytes": 29459,
+          "heapBeforeBytes": 14564880,
+          "heapAfterBytes": 14347520,
+          "rssBytes": 72466432,
+          "processPeakRssBytes": 72466432,
+          "operation": "full_save",
+          "wallMs": 14.543507999999974,
+          "serializeMs": 0.6340649999999641,
+          "requestBytes": 48508,
+          "responseBytes": 48228
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-9",
+          "status": 200,
+          "serverMs": 0.9173710000000028,
+          "cpuMs": 1.355,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 8630,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14596232,
+          "heapAfterBytes": 14532664,
+          "rssBytes": 72466432,
+          "processPeakRssBytes": 72466432,
+          "operation": "viewport_read",
+          "wallMs": 2.6765550000000076,
+          "serializeMs": 0.0004610000000866421,
+          "requestBytes": 0,
+          "responseBytes": 6570
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-10",
+          "status": 200,
+          "serverMs": 1.2092999999999847,
+          "cpuMs": 1.18,
+          "reads": 21,
+          "uniqueReadFiles": 21,
+          "readBytes": 49979,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14555168,
+          "heapAfterBytes": 14923000,
+          "rssBytes": 72466432,
+          "processPeakRssBytes": 72466432,
+          "operation": "full_load",
+          "wallMs": 3.0959420000000364,
+          "serializeMs": 0.0007720000000972504,
+          "requestBytes": 0,
+          "responseBytes": 48228
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-11",
+          "status": 200,
+          "serverMs": 6.920159000000012,
+          "cpuMs": 10.792,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51048,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14931440,
+          "heapAfterBytes": 15455720,
+          "rssBytes": 73383936,
+          "processPeakRssBytes": 73383936,
+          "operation": "district_preview",
+          "wallMs": 9.90330700000004,
+          "serializeMs": 0.005579000000011547,
+          "requestBytes": 181,
+          "responseBytes": 73176
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-12",
+          "status": 200,
+          "serverMs": 8.366487000000006,
+          "cpuMs": 14.606,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51048,
+          "writes": 1,
+          "writeBytes": 23709,
+          "heapBeforeBytes": 15536504,
+          "heapAfterBytes": 14753752,
+          "rssBytes": 75268096,
+          "processPeakRssBytes": 75268096,
+          "operation": "full_save",
+          "wallMs": 11.029101000000082,
+          "serializeMs": 0.8115010000000211,
+          "requestBytes": 48510,
+          "responseBytes": 48229
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-13",
+          "status": 200,
+          "serverMs": 0.6971300000000156,
+          "cpuMs": 0.779,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 8630,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14761344,
+          "heapAfterBytes": 14913624,
+          "rssBytes": 76054528,
+          "processPeakRssBytes": 76054528,
+          "operation": "viewport_read",
+          "wallMs": 1.7033050000000003,
+          "serializeMs": 0.00021000000003823516,
+          "requestBytes": 0,
+          "responseBytes": 6570
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-14",
+          "status": 200,
+          "serverMs": 1.2260459999999966,
+          "cpuMs": 1.828,
+          "reads": 21,
+          "uniqueReadFiles": 21,
+          "readBytes": 49980,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14922320,
+          "heapAfterBytes": 15296736,
+          "rssBytes": 76447744,
+          "processPeakRssBytes": 76447744,
+          "operation": "full_load",
+          "wallMs": 2.203302000000008,
+          "serializeMs": 0.0001700000000255386,
+          "requestBytes": 0,
+          "responseBytes": 48229
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-15",
+          "status": 200,
+          "serverMs": 9.379723000000013,
+          "cpuMs": 16.727,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 15305336,
+          "heapAfterBytes": 15485096,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "district_preview",
+          "wallMs": 10.550275000000056,
+          "serializeMs": 0.0062300000000732325,
+          "requestBytes": 180,
+          "responseBytes": 73175
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-16",
+          "status": 200,
+          "serverMs": 6.786798999999974,
+          "cpuMs": 14.291,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 1,
+          "writeBytes": 23708,
+          "heapBeforeBytes": 15497584,
+          "heapAfterBytes": 14510616,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "full_save",
+          "wallMs": 8.929145000000062,
+          "serializeMs": 0.25734799999997904,
+          "requestBytes": 48508,
+          "responseBytes": 48228
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-17",
+          "status": 200,
+          "serverMs": 0.646302999999989,
+          "cpuMs": 0.626,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 8630,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14518224,
+          "heapAfterBytes": 14661416,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "viewport_read",
+          "wallMs": 1.5542500000000246,
+          "serializeMs": 0.01868899999999485,
+          "requestBytes": 0,
+          "responseBytes": 6570
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-18",
+          "status": 200,
+          "serverMs": 1.3314450000000306,
+          "cpuMs": 1.535,
+          "reads": 21,
+          "uniqueReadFiles": 21,
+          "readBytes": 49979,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14676176,
+          "heapAfterBytes": 15045336,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "full_load",
+          "wallMs": 2.8927959999999757,
+          "serializeMs": 0.00018000000000029104,
+          "requestBytes": 0,
+          "responseBytes": 48228
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-19",
+          "status": 200,
+          "serverMs": 5.62986699999999,
+          "cpuMs": 8.448,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51048,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 15053952,
+          "heapAfterBytes": 15137992,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "district_preview",
+          "wallMs": 8.047837999999956,
+          "serializeMs": 0.0047569999999268475,
+          "requestBytes": 181,
+          "responseBytes": 73176
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-20",
+          "status": 200,
+          "serverMs": 5.025678000000028,
+          "cpuMs": 6.151,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51048,
+          "writes": 1,
+          "writeBytes": 23709,
+          "heapBeforeBytes": 15145752,
+          "heapAfterBytes": 22099264,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "full_save",
+          "wallMs": 6.814354999999978,
+          "serializeMs": 0.5623869999999442,
+          "requestBytes": 48510,
+          "responseBytes": 48229
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-21",
+          "status": 200,
+          "serverMs": 0.6609159999999861,
+          "cpuMs": 0.744,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 8630,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13765120,
+          "heapAfterBytes": 13919000,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "viewport_read",
+          "wallMs": 1.5762230000000272,
+          "serializeMs": 0.00022999999998774,
+          "requestBytes": 0,
+          "responseBytes": 6570
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-22",
+          "status": 200,
+          "serverMs": 1.2355999999999767,
+          "cpuMs": 2.475,
+          "reads": 21,
+          "uniqueReadFiles": 21,
+          "readBytes": 49980,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13927416,
+          "heapAfterBytes": 14320032,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "full_load",
+          "wallMs": 3.1181910000000244,
+          "serializeMs": 0.00015000000007603376,
+          "requestBytes": 0,
+          "responseBytes": 48229
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-23",
+          "status": 200,
+          "serverMs": 5.30655999999999,
+          "cpuMs": 5.8,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 14328648,
+          "heapAfterBytes": 14105384,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "district_preview",
+          "wallMs": 7.396536999999967,
+          "serializeMs": 0.004427000000077896,
+          "requestBytes": 180,
+          "responseBytes": 73175
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-24",
+          "status": 200,
+          "serverMs": 4.773077000000001,
+          "cpuMs": 5.158,
+          "reads": 22,
+          "uniqueReadFiles": 22,
+          "readBytes": 51049,
+          "writes": 1,
+          "writeBytes": 23708,
+          "heapBeforeBytes": 14113144,
+          "heapAfterBytes": 20753784,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "full_save",
+          "wallMs": 5.853582999999958,
+          "serializeMs": 0.3399819999999636,
+          "requestBytes": 48508,
+          "responseBytes": 48228
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-25",
+          "status": 200,
+          "serverMs": 0.5380499999999984,
+          "cpuMs": 0.519,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 8630,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13854632,
+          "heapAfterBytes": 13996560,
+          "rssBytes": 77103104,
+          "processPeakRssBytes": 77103104,
+          "operation": "viewport_read",
+          "wallMs": 1.072966000000065,
+          "serializeMs": 0.00017100000002301385,
+          "requestBytes": 0,
+          "responseBytes": 6570
+        }
+      ],
+      "summary": {
+        "full_load": {
+          "samples": 5,
+          "wallMs": {
+            "min": 2.203302000000008,
+            "median": 2.8927959999999757,
+            "p95": 3.1181910000000244,
+            "max": 3.1181910000000244
+          },
+          "serverMs": {
+            "min": 1.2092999999999847,
+            "median": 1.2355999999999767,
+            "p95": 1.3696519999999737,
+            "max": 1.3696519999999737
+          },
+          "cpuMs": {
+            "min": 1.18,
+            "median": 1.828,
+            "p95": 2.475,
+            "max": 2.475
+          },
+          "responseBytes": {
+            "min": 48228,
+            "median": 48229,
+            "p95": 48229,
+            "max": 48229
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00015000000007603376,
+            "median": 0.00018000000000029104,
+            "p95": 0.0007720000000972504,
+            "max": 0.0007720000000972504
+          },
+          "reads": {
+            "min": 21,
+            "median": 21,
+            "p95": 21,
+            "max": 21
+          },
+          "readBytes": {
+            "min": 49979,
+            "median": 49980,
+            "p95": 49980,
+            "max": 49980
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 13848344,
+            "median": 14923000,
+            "p95": 15296736,
+            "max": 15296736
+          },
+          "rssBytes": {
+            "min": 66879488,
+            "median": 76447744,
+            "p95": 77103104,
+            "max": 77103104
+          }
+        },
+        "district_preview": {
+          "samples": 5,
+          "wallMs": {
+            "min": 7.396536999999967,
+            "median": 9.90330700000004,
+            "p95": 23.367474000000016,
+            "max": 23.367474000000016
+          },
+          "serverMs": {
+            "min": 5.30655999999999,
+            "median": 6.920159000000012,
+            "p95": 20.321708,
+            "max": 20.321708
+          },
+          "cpuMs": {
+            "min": 5.8,
+            "median": 10.792,
+            "p95": 22.095,
+            "max": 22.095
+          },
+          "responseBytes": {
+            "min": 73175,
+            "median": 73175,
+            "p95": 73176,
+            "max": 73176
+          },
+          "requestBytes": {
+            "min": 180,
+            "median": 180,
+            "p95": 181,
+            "max": 181
+          },
+          "serializeMs": {
+            "min": 0.004427000000077896,
+            "median": 0.005579000000011547,
+            "p95": 0.020301000000017666,
+            "max": 0.020301000000017666
+          },
+          "reads": {
+            "min": 22,
+            "median": 22,
+            "p95": 22,
+            "max": 22
+          },
+          "readBytes": {
+            "min": 51048,
+            "median": 51049,
+            "p95": 51049,
+            "max": 51049
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 14105384,
+            "median": 15137992,
+            "p95": 15485096,
+            "max": 15485096
+          },
+          "rssBytes": {
+            "min": 70287360,
+            "median": 77103104,
+            "p95": 77103104,
+            "max": 77103104
+          }
+        },
+        "full_save": {
+          "samples": 5,
+          "wallMs": {
+            "min": 5.853582999999958,
+            "median": 8.929145000000062,
+            "p95": 14.543507999999974,
+            "max": 14.543507999999974
+          },
+          "serverMs": {
+            "min": 4.773077000000001,
+            "median": 6.786798999999974,
+            "p95": 11.276769000000002,
+            "max": 11.276769000000002
+          },
+          "cpuMs": {
+            "min": 5.158,
+            "median": 14.291,
+            "p95": 21.014,
+            "max": 21.014
+          },
+          "responseBytes": {
+            "min": 48228,
+            "median": 48228,
+            "p95": 48229,
+            "max": 48229
+          },
+          "requestBytes": {
+            "min": 48508,
+            "median": 48508,
+            "p95": 48510,
+            "max": 48510
+          },
+          "serializeMs": {
+            "min": 0.25734799999997904,
+            "median": 0.5623869999999442,
+            "p95": 0.8115010000000211,
+            "max": 0.8115010000000211
+          },
+          "reads": {
+            "min": 22,
+            "median": 22,
+            "p95": 22,
+            "max": 22
+          },
+          "readBytes": {
+            "min": 51048,
+            "median": 51049,
+            "p95": 51049,
+            "max": 51049
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 5,
+            "max": 5
+          },
+          "writeBytes": {
+            "min": 23708,
+            "median": 23709,
+            "p95": 29459,
+            "max": 29459
+          },
+          "heapAfterBytes": {
+            "min": 14347520,
+            "median": 14753752,
+            "p95": 22099264,
+            "max": 22099264
+          },
+          "rssBytes": {
+            "min": 72466432,
+            "median": 77103104,
+            "p95": 77103104,
+            "max": 77103104
+          }
+        },
+        "viewport_read": {
+          "samples": 5,
+          "wallMs": {
+            "min": 1.072966000000065,
+            "median": 1.5762230000000272,
+            "p95": 2.6765550000000076,
+            "max": 2.6765550000000076
+          },
+          "serverMs": {
+            "min": 0.5380499999999984,
+            "median": 0.6609159999999861,
+            "p95": 0.9173710000000028,
+            "max": 0.9173710000000028
+          },
+          "cpuMs": {
+            "min": 0.519,
+            "median": 0.744,
+            "p95": 1.355,
+            "max": 1.355
+          },
+          "responseBytes": {
+            "min": 6570,
+            "median": 6570,
+            "p95": 6570,
+            "max": 6570
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00017100000002301385,
+            "median": 0.00022999999998774,
+            "p95": 0.01868899999999485,
+            "max": 0.01868899999999485
+          },
+          "reads": {
+            "min": 6,
+            "median": 6,
+            "p95": 6,
+            "max": 6
+          },
+          "readBytes": {
+            "min": 8630,
+            "median": 8630,
+            "p95": 8630,
+            "max": 8630
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 13919000,
+            "median": 14532664,
+            "p95": 14913624,
+            "max": 14913624
+          },
+          "rssBytes": {
+            "min": 72466432,
+            "median": 77103104,
+            "p95": 77103104,
+            "max": 77103104
+          }
+        }
+      }
+    },
+    {
+      "name": "medium",
+      "dimensions": {
+        "plots": 25,
+        "objects": 600,
+        "tiles": 64000,
+        "chunks": 156,
+        "draftJsonBytes": 1668217,
+        "generatorStateJsonBytes": 745281
+      },
+      "status": "verified",
+      "maxSaveBytes": 1668519,
+      "rows": [
+        {
+          "type": "world-benchmark",
+          "id": "request-6",
+          "status": 200,
+          "serverMs": 21.753172999999947,
+          "cpuMs": 21.86,
+          "reads": 157,
+          "uniqueReadFiles": 155,
+          "readBytes": 1681822,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13453664,
+          "heapAfterBytes": 21735600,
+          "rssBytes": 143966208,
+          "processPeakRssBytes": 148549632,
+          "operation": "full_load",
+          "wallMs": 31.412817000000132,
+          "serializeMs": 0.00026000000002568413,
+          "requestBytes": 0,
+          "responseBytes": 1668217
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-7",
+          "status": 200,
+          "serverMs": 130.50665100000015,
+          "cpuMs": 146.027,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 21771512,
+          "heapAfterBytes": 42927024,
+          "rssBytes": 154894336,
+          "processPeakRssBytes": 154894336,
+          "operation": "district_preview",
+          "wallMs": 146.27001599999994,
+          "serializeMs": 0.0076209999999719,
+          "requestBytes": 181,
+          "responseBytes": 2473548
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-8",
+          "status": 200,
+          "serverMs": 101.04832199999987,
+          "cpuMs": 117.892,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 5,
+          "writeBytes": 820360,
+          "heapBeforeBytes": 42902104,
+          "heapAfterBytes": 55447480,
+          "rssBytes": 158724096,
+          "processPeakRssBytes": 158724096,
+          "operation": "full_save",
+          "wallMs": 113.42910800000004,
+          "serializeMs": 17.790346,
+          "requestBytes": 1668519,
+          "responseBytes": 1668238
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-9",
+          "status": 200,
+          "serverMs": 1.9155739999998787,
+          "cpuMs": 1.877,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 75209,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13082848,
+          "heapAfterBytes": 13604936,
+          "rssBytes": 151838720,
+          "processPeakRssBytes": 158724096,
+          "operation": "viewport_read",
+          "wallMs": 3.1501729999999952,
+          "serializeMs": 0.00046099999985926843,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-10",
+          "status": 200,
+          "serverMs": 21.652511000000004,
+          "cpuMs": 21.904,
+          "reads": 157,
+          "uniqueReadFiles": 155,
+          "readBytes": 1681842,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13664112,
+          "heapAfterBytes": 21967968,
+          "rssBytes": 154198016,
+          "processPeakRssBytes": 158724096,
+          "operation": "full_load",
+          "wallMs": 30.96574499999997,
+          "serializeMs": 0.0003800000001774606,
+          "requestBytes": 0,
+          "responseBytes": 1668238
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-11",
+          "status": 200,
+          "serverMs": 193.82174399999985,
+          "cpuMs": 226.092,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682911,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 21987432,
+          "heapAfterBytes": 61524456,
+          "rssBytes": 199843840,
+          "processPeakRssBytes": 199843840,
+          "operation": "district_preview",
+          "wallMs": 208.510941,
+          "serializeMs": 0.009164000000055239,
+          "requestBytes": 182,
+          "responseBytes": 2473540
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-12",
+          "status": 200,
+          "serverMs": 163.07419800000002,
+          "cpuMs": 172.311,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682911,
+          "writes": 1,
+          "writeBytes": 812747,
+          "heapBeforeBytes": 61541440,
+          "heapAfterBytes": 66658792,
+          "rssBytes": 225427456,
+          "processPeakRssBytes": 225427456,
+          "operation": "full_save",
+          "wallMs": 190.17912400000023,
+          "serializeMs": 10.13682300000005,
+          "requestBytes": 1668499,
+          "responseBytes": 1668217
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-13",
+          "status": 200,
+          "serverMs": 1.526749000000109,
+          "cpuMs": 1.833,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 75209,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 66674944,
+          "heapAfterBytes": 67157368,
+          "rssBytes": 225427456,
+          "processPeakRssBytes": 225427456,
+          "operation": "viewport_read",
+          "wallMs": 2.3871549999998933,
+          "serializeMs": 0.00016000000005078618,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-14",
+          "status": 200,
+          "serverMs": 26.447662000000037,
+          "cpuMs": 27.136,
+          "reads": 157,
+          "uniqueReadFiles": 155,
+          "readBytes": 1681822,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 67188488,
+          "heapAfterBytes": 75462928,
+          "rssBytes": 227917824,
+          "processPeakRssBytes": 227917824,
+          "operation": "full_load",
+          "wallMs": 60.720506000000114,
+          "serializeMs": 0.00014000000010128133,
+          "requestBytes": 0,
+          "responseBytes": 1668217
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-15",
+          "status": 200,
+          "serverMs": 94.26834400000007,
+          "cpuMs": 105.161,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 75480864,
+          "heapAfterBytes": 48444872,
+          "rssBytes": 225308672,
+          "processPeakRssBytes": 230146048,
+          "operation": "district_preview",
+          "wallMs": 148.87124300000005,
+          "serializeMs": 0.009864999999990687,
+          "requestBytes": 181,
+          "responseBytes": 2473548
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-16",
+          "status": 200,
+          "serverMs": 74.02456200000006,
+          "cpuMs": 100.187,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 1,
+          "writeBytes": 812758,
+          "heapBeforeBytes": 48467936,
+          "heapAfterBytes": 52436776,
+          "rssBytes": 228573184,
+          "processPeakRssBytes": 230146048,
+          "operation": "full_save",
+          "wallMs": 112.29793500000005,
+          "serializeMs": 25.28450100000009,
+          "requestBytes": 1668519,
+          "responseBytes": 1668238
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-17",
+          "status": 200,
+          "serverMs": 1.46540600000003,
+          "cpuMs": 1.566,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 75209,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 52452224,
+          "heapAfterBytes": 52938360,
+          "rssBytes": 228573184,
+          "processPeakRssBytes": 230146048,
+          "operation": "viewport_read",
+          "wallMs": 5.273910999999771,
+          "serializeMs": 0.00041999999984909664,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-18",
+          "status": 200,
+          "serverMs": 21.50593099999992,
+          "cpuMs": 21.395,
+          "reads": 157,
+          "uniqueReadFiles": 155,
+          "readBytes": 1681842,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 52954760,
+          "heapAfterBytes": 61138680,
+          "rssBytes": 231063552,
+          "processPeakRssBytes": 231063552,
+          "operation": "full_load",
+          "wallMs": 39.663330000000315,
+          "serializeMs": 0.00014000000010128133,
+          "requestBytes": 0,
+          "responseBytes": 1668238
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-19",
+          "status": 200,
+          "serverMs": 94.24153699999988,
+          "cpuMs": 100.541,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682911,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 61157696,
+          "heapAfterBytes": 36994608,
+          "rssBytes": 228683776,
+          "processPeakRssBytes": 234471424,
+          "operation": "district_preview",
+          "wallMs": 124.12093199999981,
+          "serializeMs": 0.007150999999794294,
+          "requestBytes": 182,
+          "responseBytes": 2473540
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-20",
+          "status": 200,
+          "serverMs": 72.82582300000013,
+          "cpuMs": 73.427,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682911,
+          "writes": 1,
+          "writeBytes": 812747,
+          "heapBeforeBytes": 37010272,
+          "heapAfterBytes": 97128248,
+          "rssBytes": 236941312,
+          "processPeakRssBytes": 236941312,
+          "operation": "full_save",
+          "wallMs": 94.60740799999985,
+          "serializeMs": 16.38146599999982,
+          "requestBytes": 1668499,
+          "responseBytes": 1668217
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-21",
+          "status": 200,
+          "serverMs": 1.5491919999999482,
+          "cpuMs": 1.682,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 75209,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 25278344,
+          "heapAfterBytes": 25820024,
+          "rssBytes": 225169408,
+          "processPeakRssBytes": 236941312,
+          "operation": "viewport_read",
+          "wallMs": 2.646484999999757,
+          "serializeMs": 0.0002600000002530578,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-22",
+          "status": 200,
+          "serverMs": 20.640869000000293,
+          "cpuMs": 20.596,
+          "reads": 157,
+          "uniqueReadFiles": 155,
+          "readBytes": 1681822,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 25836472,
+          "heapAfterBytes": 34023696,
+          "rssBytes": 227528704,
+          "processPeakRssBytes": 236941312,
+          "operation": "full_load",
+          "wallMs": 38.468460999999934,
+          "serializeMs": 0.00016000000005078618,
+          "requestBytes": 0,
+          "responseBytes": 1668217
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-23",
+          "status": 200,
+          "serverMs": 85.98279300000013,
+          "cpuMs": 89.757,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 34040304,
+          "heapAfterBytes": 72361592,
+          "rssBytes": 229392384,
+          "processPeakRssBytes": 236941312,
+          "operation": "district_preview",
+          "wallMs": 119.73463300000003,
+          "serializeMs": 0.0075619999997798,
+          "requestBytes": 181,
+          "responseBytes": 2473548
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-24",
+          "status": 200,
+          "serverMs": 72.93433099999993,
+          "cpuMs": 79.849,
+          "reads": 158,
+          "uniqueReadFiles": 156,
+          "readBytes": 1682891,
+          "writes": 1,
+          "writeBytes": 812758,
+          "heapBeforeBytes": 72377192,
+          "heapAfterBytes": 65191728,
+          "rssBytes": 232112128,
+          "processPeakRssBytes": 236941312,
+          "operation": "full_save",
+          "wallMs": 84.59194899999966,
+          "serializeMs": 22.937826999999743,
+          "requestBytes": 1668519,
+          "responseBytes": 1668238
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-25",
+          "status": 200,
+          "serverMs": 1.2767319999998108,
+          "cpuMs": 1.255,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 75209,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 65207176,
+          "heapAfterBytes": 65682456,
+          "rssBytes": 232112128,
+          "processPeakRssBytes": 236941312,
+          "operation": "viewport_read",
+          "wallMs": 2.057267000000138,
+          "serializeMs": 0.00027099999988422496,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        }
+      ],
+      "summary": {
+        "full_load": {
+          "samples": 5,
+          "wallMs": {
+            "min": 30.96574499999997,
+            "median": 38.468460999999934,
+            "p95": 60.720506000000114,
+            "max": 60.720506000000114
+          },
+          "serverMs": {
+            "min": 20.640869000000293,
+            "median": 21.652511000000004,
+            "p95": 26.447662000000037,
+            "max": 26.447662000000037
+          },
+          "cpuMs": {
+            "min": 20.596,
+            "median": 21.86,
+            "p95": 27.136,
+            "max": 27.136
+          },
+          "responseBytes": {
+            "min": 1668217,
+            "median": 1668217,
+            "p95": 1668238,
+            "max": 1668238
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00014000000010128133,
+            "median": 0.00016000000005078618,
+            "p95": 0.0003800000001774606,
+            "max": 0.0003800000001774606
+          },
+          "reads": {
+            "min": 157,
+            "median": 157,
+            "p95": 157,
+            "max": 157
+          },
+          "readBytes": {
+            "min": 1681822,
+            "median": 1681822,
+            "p95": 1681842,
+            "max": 1681842
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 21735600,
+            "median": 34023696,
+            "p95": 75462928,
+            "max": 75462928
+          },
+          "rssBytes": {
+            "min": 143966208,
+            "median": 227528704,
+            "p95": 231063552,
+            "max": 231063552
+          }
+        },
+        "district_preview": {
+          "samples": 5,
+          "wallMs": {
+            "min": 119.73463300000003,
+            "median": 146.27001599999994,
+            "p95": 208.510941,
+            "max": 208.510941
+          },
+          "serverMs": {
+            "min": 85.98279300000013,
+            "median": 94.26834400000007,
+            "p95": 193.82174399999985,
+            "max": 193.82174399999985
+          },
+          "cpuMs": {
+            "min": 89.757,
+            "median": 105.161,
+            "p95": 226.092,
+            "max": 226.092
+          },
+          "responseBytes": {
+            "min": 2473540,
+            "median": 2473548,
+            "p95": 2473548,
+            "max": 2473548
+          },
+          "requestBytes": {
+            "min": 181,
+            "median": 181,
+            "p95": 182,
+            "max": 182
+          },
+          "serializeMs": {
+            "min": 0.007150999999794294,
+            "median": 0.0076209999999719,
+            "p95": 0.009864999999990687,
+            "max": 0.009864999999990687
+          },
+          "reads": {
+            "min": 158,
+            "median": 158,
+            "p95": 158,
+            "max": 158
+          },
+          "readBytes": {
+            "min": 1682891,
+            "median": 1682891,
+            "p95": 1682911,
+            "max": 1682911
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 36994608,
+            "median": 48444872,
+            "p95": 72361592,
+            "max": 72361592
+          },
+          "rssBytes": {
+            "min": 154894336,
+            "median": 225308672,
+            "p95": 229392384,
+            "max": 229392384
+          }
+        },
+        "full_save": {
+          "samples": 5,
+          "wallMs": {
+            "min": 84.59194899999966,
+            "median": 112.29793500000005,
+            "p95": 190.17912400000023,
+            "max": 190.17912400000023
+          },
+          "serverMs": {
+            "min": 72.82582300000013,
+            "median": 74.02456200000006,
+            "p95": 163.07419800000002,
+            "max": 163.07419800000002
+          },
+          "cpuMs": {
+            "min": 73.427,
+            "median": 100.187,
+            "p95": 172.311,
+            "max": 172.311
+          },
+          "responseBytes": {
+            "min": 1668217,
+            "median": 1668238,
+            "p95": 1668238,
+            "max": 1668238
+          },
+          "requestBytes": {
+            "min": 1668499,
+            "median": 1668519,
+            "p95": 1668519,
+            "max": 1668519
+          },
+          "serializeMs": {
+            "min": 10.13682300000005,
+            "median": 17.790346,
+            "p95": 25.28450100000009,
+            "max": 25.28450100000009
+          },
+          "reads": {
+            "min": 158,
+            "median": 158,
+            "p95": 158,
+            "max": 158
+          },
+          "readBytes": {
+            "min": 1682891,
+            "median": 1682891,
+            "p95": 1682911,
+            "max": 1682911
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 5,
+            "max": 5
+          },
+          "writeBytes": {
+            "min": 812747,
+            "median": 812758,
+            "p95": 820360,
+            "max": 820360
+          },
+          "heapAfterBytes": {
+            "min": 52436776,
+            "median": 65191728,
+            "p95": 97128248,
+            "max": 97128248
+          },
+          "rssBytes": {
+            "min": 158724096,
+            "median": 228573184,
+            "p95": 236941312,
+            "max": 236941312
+          }
+        },
+        "viewport_read": {
+          "samples": 5,
+          "wallMs": {
+            "min": 2.057267000000138,
+            "median": 2.646484999999757,
+            "p95": 5.273910999999771,
+            "max": 5.273910999999771
+          },
+          "serverMs": {
+            "min": 1.2767319999998108,
+            "median": 1.526749000000109,
+            "p95": 1.9155739999998787,
+            "max": 1.9155739999998787
+          },
+          "cpuMs": {
+            "min": 1.255,
+            "median": 1.682,
+            "p95": 1.877,
+            "max": 1.877
+          },
+          "responseBytes": {
+            "min": 9524,
+            "median": 9524,
+            "p95": 9524,
+            "max": 9524
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00016000000005078618,
+            "median": 0.00027099999988422496,
+            "p95": 0.00046099999985926843,
+            "max": 0.00046099999985926843
+          },
+          "reads": {
+            "min": 6,
+            "median": 6,
+            "p95": 6,
+            "max": 6
+          },
+          "readBytes": {
+            "min": 75209,
+            "median": 75209,
+            "p95": 75209,
+            "max": 75209
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 13604936,
+            "median": 52938360,
+            "p95": 67157368,
+            "max": 67157368
+          },
+          "rssBytes": {
+            "min": 151838720,
+            "median": 225427456,
+            "p95": 232112128,
+            "max": 232112128
+          }
+        }
+      }
+    },
+    {
+      "name": "limit",
+      "dimensions": {
+        "plots": 125,
+        "objects": 3000,
+        "tiles": 150000,
+        "chunks": 599,
+        "draftJsonBytes": 6020857,
+        "generatorStateJsonBytes": 3749332
+      },
+      "status": "verified",
+      "maxSaveBytes": 6021159,
+      "rows": [
+        {
+          "type": "world-benchmark",
+          "id": "request-6",
+          "status": 200,
+          "serverMs": 83.43933300000003,
+          "cpuMs": 85.762,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 27149888,
+          "heapAfterBytes": 59418112,
+          "rssBytes": 298631168,
+          "processPeakRssBytes": 314388480,
+          "operation": "full_load",
+          "wallMs": 118.3659719999996,
+          "serializeMs": 0.0002500000000509317,
+          "requestBytes": 0,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-7",
+          "status": 200,
+          "serverMs": 355.33008399999994,
+          "cpuMs": 400.685,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 59464304,
+          "heapAfterBytes": 99288768,
+          "rssBytes": 321454080,
+          "processPeakRssBytes": 321454080,
+          "operation": "district_preview",
+          "wallMs": 449.47523699999965,
+          "serializeMs": 0.01436199999989185,
+          "requestBytes": 181,
+          "responseBytes": 10041171
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-8",
+          "status": 200,
+          "serverMs": 274.52875300000005,
+          "cpuMs": 323.125,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 5,
+          "writeBytes": 4077530,
+          "heapBeforeBytes": 99308000,
+          "heapAfterBytes": 154703472,
+          "rssBytes": 341487616,
+          "processPeakRssBytes": 352186368,
+          "operation": "full_save",
+          "wallMs": 317.1617849999993,
+          "serializeMs": 36.582430999999815,
+          "requestBytes": 6021159,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-9",
+          "status": 200,
+          "serverMs": 3.563274999999976,
+          "cpuMs": 3.517,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 25568536,
+          "heapAfterBytes": 27354800,
+          "rssBytes": 320438272,
+          "processPeakRssBytes": 352186368,
+          "operation": "viewport_read",
+          "wallMs": 4.952967999999601,
+          "serializeMs": 0.0006510000002890592,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-10",
+          "status": 200,
+          "serverMs": 86.63000699999975,
+          "cpuMs": 97.954,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072911,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 27367328,
+          "heapAfterBytes": 59528432,
+          "rssBytes": 330661888,
+          "processPeakRssBytes": 352186368,
+          "operation": "full_load",
+          "wallMs": 138.17909299999974,
+          "serializeMs": 0.00036999999974796083,
+          "requestBytes": 0,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-11",
+          "status": 200,
+          "serverMs": 371.45966999999973,
+          "cpuMs": 428.344,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073980,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 59539944,
+          "heapAfterBytes": 99044664,
+          "rssBytes": 342077440,
+          "processPeakRssBytes": 352186368,
+          "operation": "district_preview",
+          "wallMs": 434.0239470000006,
+          "serializeMs": 0.015022999999928288,
+          "requestBytes": 182,
+          "responseBytes": 10041163
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-12",
+          "status": 200,
+          "serverMs": 313.3846819999999,
+          "cpuMs": 349.356,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073980,
+          "writes": 1,
+          "writeBytes": 4069917,
+          "heapBeforeBytes": 99052720,
+          "heapAfterBytes": 150891128,
+          "rssBytes": 342216704,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_save",
+          "wallMs": 352.0642310000003,
+          "serializeMs": 33.663596999999754,
+          "requestBytes": 6021139,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-13",
+          "status": 200,
+          "serverMs": 3.6496250000000146,
+          "cpuMs": 4.559,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13286232,
+          "heapAfterBytes": 15099912,
+          "rssBytes": 286781440,
+          "processPeakRssBytes": 353218560,
+          "operation": "viewport_read",
+          "wallMs": 4.8145800000002055,
+          "serializeMs": 0.00030000000060681487,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-14",
+          "status": 200,
+          "serverMs": 88.17011599999978,
+          "cpuMs": 88.9,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 15123016,
+          "heapAfterBytes": 47112336,
+          "rssBytes": 309063680,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_load",
+          "wallMs": 118.74646500000017,
+          "serializeMs": 0.000240999999732594,
+          "requestBytes": 0,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-15",
+          "status": 200,
+          "serverMs": 412.41464399999995,
+          "cpuMs": 468.464,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 47122608,
+          "heapAfterBytes": 86695736,
+          "rssBytes": 332402688,
+          "processPeakRssBytes": 353218560,
+          "operation": "district_preview",
+          "wallMs": 509.43832099999963,
+          "serializeMs": 0.013289999999869906,
+          "requestBytes": 181,
+          "responseBytes": 10041171
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-16",
+          "status": 200,
+          "serverMs": 293.260166,
+          "cpuMs": 331.493,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 1,
+          "writeBytes": 4069928,
+          "heapBeforeBytes": 12221024,
+          "heapAfterBytes": 84355960,
+          "rssBytes": 332476416,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_save",
+          "wallMs": 337.4722099999999,
+          "serializeMs": 31.668542999999772,
+          "requestBytes": 6021159,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-17",
+          "status": 200,
+          "serverMs": 3.924869999999828,
+          "cpuMs": 4.681,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 24082280,
+          "heapAfterBytes": 25878784,
+          "rssBytes": 311152640,
+          "processPeakRssBytes": 353218560,
+          "operation": "viewport_read",
+          "wallMs": 5.414131999999881,
+          "serializeMs": 0.000459999999293359,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-18",
+          "status": 200,
+          "serverMs": 82.14312100000006,
+          "cpuMs": 83.985,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072911,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 25888560,
+          "heapAfterBytes": 57815944,
+          "rssBytes": 321245184,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_load",
+          "wallMs": 121.40577900000062,
+          "serializeMs": 0.00015999999959603883,
+          "requestBytes": 0,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-19",
+          "status": 200,
+          "serverMs": 362.6721980000002,
+          "cpuMs": 407.208,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073980,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 57824936,
+          "heapAfterBytes": 97212856,
+          "rssBytes": 341975040,
+          "processPeakRssBytes": 353218560,
+          "operation": "district_preview",
+          "wallMs": 468.198217000001,
+          "serializeMs": 0.013951000000815839,
+          "requestBytes": 182,
+          "responseBytes": 10041163
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-20",
+          "status": 200,
+          "serverMs": 292.02150100000017,
+          "cpuMs": 329.515,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073980,
+          "writes": 1,
+          "writeBytes": 4069917,
+          "heapBeforeBytes": 97225200,
+          "heapAfterBytes": 148414232,
+          "rssBytes": 342048768,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_save",
+          "wallMs": 330.9094690000002,
+          "serializeMs": 33.782264999999825,
+          "requestBytes": 6021139,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-21",
+          "status": 200,
+          "serverMs": 5.337156000000505,
+          "cpuMs": 6.914,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 11719528,
+          "heapAfterBytes": 13556304,
+          "rssBytes": 286588928,
+          "processPeakRssBytes": 353218560,
+          "operation": "viewport_read",
+          "wallMs": 6.492715999998836,
+          "serializeMs": 0.000661000000036438,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-22",
+          "status": 200,
+          "serverMs": 88.2177929999998,
+          "cpuMs": 88.064,
+          "reads": 600,
+          "uniqueReadFiles": 577,
+          "readBytes": 6072891,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 13564832,
+          "heapAfterBytes": 45438312,
+          "rssBytes": 308871168,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_load",
+          "wallMs": 119.51747599999908,
+          "serializeMs": 0.00018000000090978574,
+          "requestBytes": 0,
+          "responseBytes": 6020857
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-23",
+          "status": 200,
+          "serverMs": 353.26326599999993,
+          "cpuMs": 420.996,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 45447152,
+          "heapAfterBytes": 12040632,
+          "rssBytes": 310919168,
+          "processPeakRssBytes": 353218560,
+          "operation": "district_preview",
+          "wallMs": 442.43274200000087,
+          "serializeMs": 0.01344999999855645,
+          "requestBytes": 181,
+          "responseBytes": 10041171
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-24",
+          "status": 200,
+          "serverMs": 293.77941199999987,
+          "cpuMs": 333.109,
+          "reads": 601,
+          "uniqueReadFiles": 578,
+          "readBytes": 6073960,
+          "writes": 1,
+          "writeBytes": 4069928,
+          "heapBeforeBytes": 12116856,
+          "heapAfterBytes": 86084856,
+          "rssBytes": 332419072,
+          "processPeakRssBytes": 353218560,
+          "operation": "full_save",
+          "wallMs": 331.3045889999994,
+          "serializeMs": 33.80443799999921,
+          "requestBytes": 6021159,
+          "responseBytes": 6020878
+        },
+        {
+          "type": "world-benchmark",
+          "id": "request-25",
+          "status": 200,
+          "serverMs": 3.4303149999996094,
+          "cpuMs": 3.395,
+          "reads": 6,
+          "uniqueReadFiles": 6,
+          "readBytes": 328328,
+          "writes": 0,
+          "writeBytes": 0,
+          "heapBeforeBytes": 11810128,
+          "heapAfterBytes": 13617448,
+          "rssBytes": 311312384,
+          "processPeakRssBytes": 353218560,
+          "operation": "viewport_read",
+          "wallMs": 4.605895000000601,
+          "serializeMs": 0.0009020000015880214,
+          "requestBytes": 0,
+          "responseBytes": 9524
+        }
+      ],
+      "summary": {
+        "full_load": {
+          "samples": 5,
+          "wallMs": {
+            "min": 118.3659719999996,
+            "median": 119.51747599999908,
+            "p95": 138.17909299999974,
+            "max": 138.17909299999974
+          },
+          "serverMs": {
+            "min": 82.14312100000006,
+            "median": 86.63000699999975,
+            "p95": 88.2177929999998,
+            "max": 88.2177929999998
+          },
+          "cpuMs": {
+            "min": 83.985,
+            "median": 88.064,
+            "p95": 97.954,
+            "max": 97.954
+          },
+          "responseBytes": {
+            "min": 6020857,
+            "median": 6020857,
+            "p95": 6020878,
+            "max": 6020878
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00015999999959603883,
+            "median": 0.000240999999732594,
+            "p95": 0.00036999999974796083,
+            "max": 0.00036999999974796083
+          },
+          "reads": {
+            "min": 600,
+            "median": 600,
+            "p95": 600,
+            "max": 600
+          },
+          "readBytes": {
+            "min": 6072891,
+            "median": 6072891,
+            "p95": 6072911,
+            "max": 6072911
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 45438312,
+            "median": 57815944,
+            "p95": 59528432,
+            "max": 59528432
+          },
+          "rssBytes": {
+            "min": 298631168,
+            "median": 309063680,
+            "p95": 330661888,
+            "max": 330661888
+          }
+        },
+        "district_preview": {
+          "samples": 5,
+          "wallMs": {
+            "min": 434.0239470000006,
+            "median": 449.47523699999965,
+            "p95": 509.43832099999963,
+            "max": 509.43832099999963
+          },
+          "serverMs": {
+            "min": 353.26326599999993,
+            "median": 362.6721980000002,
+            "p95": 412.41464399999995,
+            "max": 412.41464399999995
+          },
+          "cpuMs": {
+            "min": 400.685,
+            "median": 420.996,
+            "p95": 468.464,
+            "max": 468.464
+          },
+          "responseBytes": {
+            "min": 10041163,
+            "median": 10041171,
+            "p95": 10041171,
+            "max": 10041171
+          },
+          "requestBytes": {
+            "min": 181,
+            "median": 181,
+            "p95": 182,
+            "max": 182
+          },
+          "serializeMs": {
+            "min": 0.013289999999869906,
+            "median": 0.013951000000815839,
+            "p95": 0.015022999999928288,
+            "max": 0.015022999999928288
+          },
+          "reads": {
+            "min": 601,
+            "median": 601,
+            "p95": 601,
+            "max": 601
+          },
+          "readBytes": {
+            "min": 6073960,
+            "median": 6073960,
+            "p95": 6073980,
+            "max": 6073980
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 12040632,
+            "median": 97212856,
+            "p95": 99288768,
+            "max": 99288768
+          },
+          "rssBytes": {
+            "min": 310919168,
+            "median": 332402688,
+            "p95": 342077440,
+            "max": 342077440
+          }
+        },
+        "full_save": {
+          "samples": 5,
+          "wallMs": {
+            "min": 317.1617849999993,
+            "median": 331.3045889999994,
+            "p95": 352.0642310000003,
+            "max": 352.0642310000003
+          },
+          "serverMs": {
+            "min": 274.52875300000005,
+            "median": 293.260166,
+            "p95": 313.3846819999999,
+            "max": 313.3846819999999
+          },
+          "cpuMs": {
+            "min": 323.125,
+            "median": 331.493,
+            "p95": 349.356,
+            "max": 349.356
+          },
+          "responseBytes": {
+            "min": 6020857,
+            "median": 6020878,
+            "p95": 6020878,
+            "max": 6020878
+          },
+          "requestBytes": {
+            "min": 6021139,
+            "median": 6021159,
+            "p95": 6021159,
+            "max": 6021159
+          },
+          "serializeMs": {
+            "min": 31.668542999999772,
+            "median": 33.782264999999825,
+            "p95": 36.582430999999815,
+            "max": 36.582430999999815
+          },
+          "reads": {
+            "min": 601,
+            "median": 601,
+            "p95": 601,
+            "max": 601
+          },
+          "readBytes": {
+            "min": 6073960,
+            "median": 6073960,
+            "p95": 6073980,
+            "max": 6073980
+          },
+          "writes": {
+            "min": 1,
+            "median": 1,
+            "p95": 5,
+            "max": 5
+          },
+          "writeBytes": {
+            "min": 4069917,
+            "median": 4069928,
+            "p95": 4077530,
+            "max": 4077530
+          },
+          "heapAfterBytes": {
+            "min": 84355960,
+            "median": 148414232,
+            "p95": 154703472,
+            "max": 154703472
+          },
+          "rssBytes": {
+            "min": 332419072,
+            "median": 341487616,
+            "p95": 342216704,
+            "max": 342216704
+          }
+        },
+        "viewport_read": {
+          "samples": 5,
+          "wallMs": {
+            "min": 4.605895000000601,
+            "median": 4.952967999999601,
+            "p95": 6.492715999998836,
+            "max": 6.492715999998836
+          },
+          "serverMs": {
+            "min": 3.4303149999996094,
+            "median": 3.6496250000000146,
+            "p95": 5.337156000000505,
+            "max": 5.337156000000505
+          },
+          "cpuMs": {
+            "min": 3.395,
+            "median": 4.559,
+            "p95": 6.914,
+            "max": 6.914
+          },
+          "responseBytes": {
+            "min": 9524,
+            "median": 9524,
+            "p95": 9524,
+            "max": 9524
+          },
+          "requestBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "serializeMs": {
+            "min": 0.00030000000060681487,
+            "median": 0.0006510000002890592,
+            "p95": 0.0009020000015880214,
+            "max": 0.0009020000015880214
+          },
+          "reads": {
+            "min": 6,
+            "median": 6,
+            "p95": 6,
+            "max": 6
+          },
+          "readBytes": {
+            "min": 328328,
+            "median": 328328,
+            "p95": 328328,
+            "max": 328328
+          },
+          "writes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "writeBytes": {
+            "min": 0,
+            "median": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "heapAfterBytes": {
+            "min": 13556304,
+            "median": 15099912,
+            "p95": 27354800,
+            "max": 27354800
+          },
+          "rssBytes": {
+            "min": 286588928,
+            "median": 311152640,
+            "p95": 320438272,
+            "max": 320438272
+          }
+        }
+      }
+    }
+  ]
+}

@@ -130,6 +130,14 @@
     for(const dx of [-.039,.039])oval(ctx,x+dx*s,y+.015*s,.022*s,.024*s,dark);
     oval(ctx,x,y+.06*s,.014*s,.017*s,dark);
   }
+  function warmLight(ctx) {
+    // A small decorative glow stays within this object's cell. It never reveals fog.
+    const glow = ctx.createRadialGradient(0,0,.04,0,0,.46);
+    glow.addColorStop(0,'#f5c77750');
+    glow.addColorStop(.5,'#e6a04e25');
+    glow.addColorStop(1,'#e6a04e00');
+    oval(ctx,0,0,.46,.46,glow);
+  }
   function pumpkin(ctx, scale) {
     ctx.save();
     ctx.scale(scale,scale);
@@ -179,11 +187,46 @@
     },
     table(ctx) {
       for(const x of [-.34,.34])for(const y of [-.24,.24])oval(ctx,x,y,.06,.06,dark);
-      boards(ctx,-.44,-.22,.88,.44,4);
+      boards(ctx,-.44,-.34,.88,.68,5);
+      // Shallow knots and worn edges use the same timber as the floor and doors.
+      oval(ctx,-.21,-.04,.032,.020,'#765139');
+      oval(ctx,-.21,-.043,.017,.009,'#c39b68');
+      line(ctx,[[.14,.16],[.30,.155],[.36,.173]],'#684932',.012);
     },
     bench(ctx) {
       for(const x of [-.35,.35])line(ctx,[[x,-.12],[x,.14]],dark,.082);
       boards(ctx,-.43,-.095,.86,.19,2);
+    },
+    bed(ctx) {
+      boards(ctx,-.40,-.45,.80,.90,7);
+      for(const x of [-.40,.32]) {
+        ctx.fillStyle=dark;ctx.fillRect(x,-.46,.08,.92);
+        ctx.fillStyle=gold;ctx.fillRect(x+.012,-.45,.025,.88);
+      }
+      ctx.fillStyle='#756a51';ctx.fillRect(-.30,-.35,.60,.72);
+      ctx.fillStyle='#d2c5a4';ctx.fillRect(-.29,-.34,.58,.69);
+      polygon(ctx,[[-.29,-.10],[.28,-.09],[.30,.34],[-.30,.34]],'#667665');
+      polygon(ctx,[[-.28,-.08],[.05,-.07],[.11,.30],[-.27,.31]],'#7f8d76');
+      line(ctx,[[-.24,-.074],[.23,-.067]],'#b0b393',.025);
+      for(const x of [-.20,.13])line(ctx,[[x,.01],[x+.023,.14],[x+.012,.27]],'#495e51',.014);
+      polygon(ctx,[[-.23,-.31],[.22,-.30],[.24,-.16],[-.22,-.15]],'#b3a78b');
+      polygon(ctx,[[-.23,-.32],[.20,-.32],[.22,-.18],[-.22,-.18]],'#e3d8b9');
+      line(ctx,[[-.17,-.29],[.15,-.29]],'#f6ebcc',.016);
+      for(const y of [-.43,.40])boards(ctx,-.44,y,.88,.065,1);
+    },
+    stairs(ctx) {
+      polygon(ctx,[[-.44,-.46],[.44,-.46],[.44,.46],[-.44,.46]],'#37382f');
+      for(let i=0;i<8;i++) {
+        const y=-.42+i*.106;
+        const shade=['#716f60','#7c7968','#88836e','#938c75'][Math.floor(i/2)];
+        ctx.fillStyle=shade;ctx.fillRect(-.34,y,.68,.091);
+        line(ctx,[[-.31,y+.071],[.31,y+.071]],'#c2b797',.014);
+        line(ctx,[[-.32,y+.092],[.32,y+.092]],'#4e4c40',.013);
+      }
+      for(const x of [-.43,.35]) {
+        ctx.fillStyle='#565548';ctx.fillRect(x,-.45,.08,.90);
+        ctx.fillStyle='#b2a889';ctx.fillRect(x,-.45,.022,.90);
+      }
     },
     bearTrap(ctx) {
       oval(ctx,0,0,.33,.28,dark);
@@ -198,6 +241,7 @@
       line(ctx,[[.29,.10],[.36,.20],[.39,.30]],'#a6a292',.037);
     },
     brazier(ctx) {
+      warmLight(ctx);
       for(const [x,y] of [[-.34,.20],[.32,.22],[0,-.34]])line(ctx,[[0,0],[x,y]],dark,.072);
       oval(ctx,0,0,.29,.234,'#41433b');oval(ctx,0,-.025,.245,.18,iron);oval(ctx,0,-.018,.200,.14,'#643a29');
       for(const x of [-.13,-.05,.06,.15])oval(ctx,x,.025,.032,.022,'#de8849');
@@ -211,16 +255,6 @@
         polygon(ctx,[[x,y],[x+.075,y+.01],[x+.036,y+.19],[x-.032,y+.15]],c);
         line(ctx,[[x,y],[x+.006,y+.12]],gold,.013);
       }
-    },
-    barn(ctx) {
-      boards(ctx,-.46,-.39,.92,.79,7);
-      polygon(ctx,[[-.47,-.42],[.47,-.42],[.47,0],[-.47,0]],'#a77953');
-      polygon(ctx,[[-.47,0],[.47,0],[.47,.29],[-.47,.29]],'#795337');
-      for(let i=0;i<13;i++)line(ctx,[[-.44+i*.071,-.40],[-.441+i*.071,.267]],'#594631',.012);
-      line(ctx,[[-.47,0],[.47,0]],gold,.028);
-      boards(ctx,-.21,.24,.42,.18,3);
-      for(const x of [-.19,.015])line(ctx,[[x,.255],[x+.166,.396]],'#5b402d',.018);
-      line(ctx,[[0,.25],[0,.408]],dark,.024);
     },
     well(ctx) {
       oval(ctx,.037,.067,.36,.34,'#292a2358');
@@ -289,6 +323,7 @@
       line(ctx,[[-.20,-.17],[-.06,-.24],[.10,-.233]],'#b9b3a2',.018);
     },
     torch(ctx) {
+      warmLight(ctx);
       polygon(ctx,[[-.083,.24],[.083,.24],[.055,.37],[-.06,.37]],iron);
       line(ctx,[[0,.32],[.02,-.045]],wood,.072);
       fire(ctx,.02,-.055,.66,false);

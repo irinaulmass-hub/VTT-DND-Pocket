@@ -2,6 +2,15 @@
 const content = document.querySelector('#content');
 const nav = document.querySelector('nav');
 const status = document.querySelector('#connection');
+let invitation = new URLSearchParams(location.hash.slice(1)).get('invite') || localStorage.getItem('player-invitation');
+if (invitation) {
+  localStorage.setItem('player-invitation', invitation);
+  history.replaceState(null, '', location.pathname + location.search);
+}
+let accessRevoked = false;
+let position = null, positionReady = false, moving = false, movementStatus = '';
+let discoveries = [], discoveriesStatus = '', discoveryRequest = 0;
+const directions = { north: 'На север', west: 'На запад', east: 'На восток', south: 'На юг' };
 let roster = [], selected = localStorage.getItem('pocket-character') || new URLSearchParams(location.search).get('character'), tab = 'hero', socket;
 const stats = {str:'СИЛ',dex:'ЛОВ',con:'ТЕЛ',int:'ИНТ',wis:'МДР',cha:'ХАР'};
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -20,18 +29,114 @@ function rows(items, kind) {
     return `<button class="row" data-detail="${kind}" data-index="${index}">${safeImage(obj.image)?`<img src="${safeImage(obj.image)}" alt="">`:''}<span class="description"><strong>${esc(title(obj))}</strong><small>${esc(obj.summary || obj.recovery || obj.type || '')}</small></span><span class="badge">${esc(kind==='inventory' ? '× '+number(obj.quantity,1) : kind==='combat' ? `${obj.attackBonus != null ? signed(number(obj.attackBonus)) : '—'} • ${obj.damage || '—'}` : uses)} ›</span></button>`;
   }).join('');
 }
+function renderTravel() {
+  let locationText = 'Мастер ещё не задал позицию героя.';
+  if (position) locationText = 'Клетка (' + position.x + ', ' + position.y + ')';
+  else if (!positionReady) locationText = 'Получаем позицию героя…';
+  const disabled = !position || !positionReady || moving;
+  const discoveriesList = discoveries.map(({ mapName, object }) => {
+    const label = window.WorldMap.props[object.kind]?.[0] || object.kind;
+    return `<li><strong>${esc(label)}</strong> · ${esc(mapName)} · (${esc(object.x)}, ${esc(object.y)})</li>`;
+  }).join('');
+  content.innerHTML = `<h2>Путь героя</h2>
+    <p role="status">${esc(locationText)}</p>
+    <div class="travel-controls" role="group" aria-label="Шаг на соседнюю клетку">
+      ${Object.entries(directions).map(([direction, label]) =>
+        `<button class="choose" data-move="${direction}" ${disabled ? 'disabled' : ''}>${label}</button>`).join('')}
+    </div>
+    <button class="choose" data-move="enter" ${disabled ? 'disabled' : ''}>Войти в переход</button>
+    <p class="muted" role="status">${esc(movementStatus)}</p>
+    <h3>Личные открытия</h3>
+    <p class="muted" role="status">${esc(discoveriesStatus || (discoveries.length ? '' : 'Мастер пока не передал открытий.'))}</p>
+    ${discoveriesList ? `<ul>${discoveriesList}</ul>` : ''}`;
+}
+
+function clearDiscoveries() {
+  ++discoveryRequest;
+  discoveries = [];
+  discoveriesStatus = '';
+}
+
+function revokeAccess() {
+  accessRevoked = true;
+  roster = [];
+  selected = null;
+  position = null;
+  positionReady = false;
+  clearDiscoveries();
+  localStorage.removeItem('player-invitation');
+  document.querySelector('#detail').close();
+  status.textContent = 'Доступ отозван';
+  socket?.close();
+  render();
+}
+
+async function readDiscoveries() {
+  if (!selected || !invitation || accessRevoked) return;
+  const request = ++discoveryRequest;
+  if (!discoveries.length) discoveriesStatus = 'Получаем открытия…';
+  try {
+    const response = await fetch('/api/player-discoveries', {
+      headers: { Authorization: 'Bearer ' + invitation },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (request !== discoveryRequest) return;
+    if (response.status === 401) return revokeAccess();
+    if (!response.ok) throw new Error('Не удалось прочитать открытия');
+    const data = await response.json();
+    if (request !== discoveryRequest) return;
+    discoveries = list(data.discoveries);
+    discoveriesStatus = '';
+  } catch {
+    if (request === discoveryRequest) discoveriesStatus = 'Не удалось загрузить открытия. Откройте вкладку «Путь» ещё раз.';
+  } finally {
+    if (request === discoveryRequest && tab === 'travel') render();
+  }
+}
+
+function showPosition(next) {
+  if (next && position && next.revision < position.revision) return;
+  position = next;
+}
+
+async function moveHero(direction) {
+  if (!position || !positionReady || moving || accessRevoked) return;
+  moving = true;
+  movementStatus = '';
+  renderTravel();
+  try {
+    const response = await fetch('/api/player-position/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + invitation },
+      body: JSON.stringify({ direction, revision: position.revision }),
+    });
+    const data = await response.json();
+    if (accessRevoked) return;
+    if (Object.hasOwn(data, 'position')) showPosition(data.position);
+    if (!response.ok) movementStatus = data.error || 'Не удалось переместить героя';
+    else if (direction === 'enter') movementStatus = 'Переход выполнен.';
+  } catch {
+    if (!accessRevoked) movementStatus = 'Связь прервалась. Проверьте позицию перед следующим шагом.';
+  } finally {
+    moving = false;
+    if (!accessRevoked && tab === 'travel') render();
+  }
+}
+
 function render() {
   const ch = roster.find(c=>c.id===selected);
   nav.hidden = !ch;
   if (!ch) {
-    content.innerHTML = '<p class="eyebrow">Ваша история за этим столом</p><h1>Выберите героя</h1><p class="muted">Личная карточка, связанная с мастером.</p>'+ (roster.length ? roster.map(c=>`<button class="choose" data-character="${esc(c.id)}"><strong>${esc(c.name)}</strong><br><small>${esc(c.cls)} · уровень ${esc(c.level ?? 1)}</small></button>`).join('') : '<p class="empty">Мастер ещё не создал персонажей.</p>');
+    content.innerHTML = '<h1>Приглашение мастера</h1><p>Откройте ссылку, которую мастер создал для вашего героя.</p>';
     return;
   }
   document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
   const abilities = [...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
   if (tab==='hero') {
     const hp=number(ch.hp), maxHp=number(ch.maxHp,10), eclipse=number(ch.eclipse), maxEclipse=number(ch.maxEclipse,10);
-    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)} · опыт ${esc(ch.xp??0)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><small>Временные HP: ${esc(ch.tempHp??0)}</small><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Сменить персонажа</button>`;
+    content.innerHTML=`<div class="identity">${safeImage(ch.portrait)?`<img class="portrait" src="${safeImage(ch.portrait)}" alt="Портрет ${esc(ch.name)}">`:`<div class="portrait" aria-hidden="true">${esc(ch.name?.[0] || '✦')}</div>`}<div><span class="eyebrow">Личный лист персонажа</span><h1>${esc(ch.name)}</h1><span class="muted">${esc(ch.cls)} · уровень ${esc(ch.level??1)} · опыт ${esc(ch.xp??0)}</span></div></div><div class="trackers"><div class="tracker hp"><label>Здоровье · HP</label><small>Временные HP: ${esc(ch.tempHp??0)}</small><b>${hp}<small> / ${maxHp}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,hp/Math.max(1,maxHp)*100))}%"></i></div></div><div class="tracker"><label>☾ Затмение</label><b>${eclipse}<small> / ${maxEclipse}</small></b><div class="bar"><i style="width:${Math.max(0,Math.min(100,eclipse/Math.max(1,maxEclipse)*100))}%"></i></div></div></div><div class="metrics">${[[ch.ac??10,'Класс доспеха'],[signed(number(ch.initiative,mod(ch,'dex'))),'Инициатива'],[ch.speed??30,'Скорость · футы'],[ch.passivePerception??10+mod(ch,'wis'),'Восприятие']].map(([v,l])=>`<div class="metric"><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div><p class="eyebrow">Текущие эффекты</p><div class="chips">${effects(ch).length?effects(ch).map(e=>`<span class="chip">${esc(title(e))}</span>`).join(''):'<span class="muted">Нет активных эффектов</span>'}</div><p class="eyebrow">Характеристики</p><div class="stats">${Object.entries(stats).map(([k,l])=>`<div class="stat"><span>${l}</span><b>${esc(ch.stats?.[k]??10)}</b><small>${signed(mod(ch,k))}</small></div>`).join('')}</div><button class="switch" data-switch>Выйти из приглашения</button>`;
+  } else if (tab==='travel') {
+    renderTravel();
   } else if (tab==='inventory') {
     const money = typeof ch.money === 'object' && ch.money ? Object.entries(ch.money).map(([k,v])=>`${v} ${k}`).join(' · ') : ch.money ?? 0;
     content.innerHTML=`<p class="eyebrow">Всё для приключения</p><h2>Инвентарь</h2><button class="choose" data-open-loot>Сундуки и добыча</button><div class="money">Монеты · ${esc(money)}</div>${rows(list(ch.inventory),'inventory')}`;
@@ -44,10 +149,16 @@ function render() {
 }
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
+  if(b.dataset.move)moveHero(b.dataset.move);
   if(b.hasAttribute('data-open-loot'))window.openLoot();
   if(b.dataset.character){selected=b.dataset.character;localStorage.setItem('pocket-character',selected);render();}
-  if(b.hasAttribute('data-switch')){selected=null;localStorage.removeItem('pocket-character');render();}
-  if(b.dataset.tab){tab=b.dataset.tab;render();window.scrollTo(0,0);}
+  if(b.hasAttribute('data-switch')){localStorage.removeItem('player-invitation');location.reload();}
+  if(b.dataset.tab){
+    tab=b.dataset.tab;
+    if (tab === 'travel') readDiscoveries();
+    render();
+    window.scrollTo(0,0);
+  }
   if(b.dataset.detail){
     const ch=roster.find(c=>c.id===selected); if(!ch)return;
     const items=b.dataset.detail==='inventory'?list(ch.inventory):b.dataset.detail==='combat'?list(ch.attacks):[...list(ch.abilities),...list(ch.spells),...list(ch.resources)];
@@ -58,10 +169,44 @@ document.addEventListener('click',e=>{
 });
 document.querySelector('#close-detail').onclick=()=>document.querySelector('#detail').close();
 function connect(){
-  socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
-  socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'request-characters'}));};
-  socket.onmessage=event=>{const msg=JSON.parse(event.data);if(msg.type==='LOOT_CHANGED')window.dispatchEvent(new Event('loot-changed'));if(msg.type==='CHARACTERS_UPDATE'){roster=msg.characters||[];render();}if(msg.type==='ping')socket.send(JSON.stringify({action:'pong'}));};
-  socket.onclose=()=>{status.textContent='○ Переподключение…';setTimeout(connect,2000);};
+  if (!invitation || accessRevoked) { status.textContent='Ожидание приглашения'; return; }
+  let loadedFor;
+  socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws?view=player`);
+  socket.onopen=()=>{status.textContent='● На связи';socket.send(JSON.stringify({action:'player-auth',token:invitation}));};
+  socket.onmessage = event => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'ACCESS_REVOKED') return revokeAccess();
+    if (accessRevoked) return;
+    if (msg.type === 'LOOT_CHANGED') window.dispatchEvent(new Event('loot-changed'));
+    if (msg.type === 'CHARACTERS_UPDATE') {
+      roster = msg.characters || [];
+      const characterId = roster[0]?.id;
+      if (characterId !== selected) clearDiscoveries();
+      selected = characterId;
+      if (selected && selected !== loadedFor) {
+        loadedFor = selected;
+        readDiscoveries();
+      }
+      render();
+    }
+    if (msg.type === 'PLAYER_DISCOVERIES_CHANGED' && msg.characterId === selected) readDiscoveries();
+    if (msg.type === 'CHARACTER_POSITION' && msg.characterId === selected) {
+      showPosition(msg.position);
+      positionReady = true;
+      if (tab === 'travel') render();
+    }
+    if (msg.type === 'ping') socket.send(JSON.stringify({ action: 'pong' }));
+  };
+  socket.onclose = () => {
+    positionReady = false;
+    if (accessRevoked) {
+      status.textContent = 'Доступ отозван';
+      return;
+    }
+    status.textContent = '○ Переподключение…';
+    if (tab === 'travel') render();
+    setTimeout(connect, 2000);
+  };
   socket.onerror=()=>socket.close();
 }
 render();connect();
