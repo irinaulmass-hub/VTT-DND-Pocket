@@ -25,6 +25,20 @@ test('room presets, generated furniture and structural paths persist through aut
   }
   const health=await request(base+'/api/health');assert.equal(health.instanceId,'editor-test-instance');
   const demos=(await request(base+'/api/worlds')).worlds.filter(w=>w.id.startsWith('71000000-'));assert.equal(demos.length,6);
+  const villageDemo=await request(base+'/api/worlds/72000000-0000-4000-8000-000000000000');assert.ok(villageDemo.objects.some(p=>p.kind==='marketStall'));
+  let village=await request(base+'/api/worlds','POST',{name:'Landscape HTTP',preset:'village'},201);
+  const villageUrl=base+'/api/worlds/'+village.id,market=village.objects.find(p=>p.kind==='marketStall');
+  village.objects=village.objects.map(p=>p.id===market.id?{...p,hidden:true}:p);
+  village=await request(villageUrl,'PUT',village);assert.ok(g.validGenerators(village.generators));
+  assert.deepEqual((await request(villageUrl)).generators,village.generators);
+  await request(villageUrl+'/publish','POST',{revision:village.revision,fog:false});
+  const publicVillage=await request('http://127.0.0.1:'+upstreamPort+'/api/worlds/table?chunks='+Object.keys(village.chunks).join(';'));
+  assert.ok(publicVillage.objects.some(p=>p.kind==='wheat'));assert.ok(!publicVillage.objects.some(p=>p.id===market.id));
+  const plot=village.generators.find(p=>p.params.biome==='field');
+  const plotRecipe={id:plot.id,kind:plot.kind,seed:plot.seed,version:plot.version,params:{...plot.params,biome:'garden',orientation:1}};
+  const regen=g.generationChange(plotRecipe,village);
+  village=await request(villageUrl,'PUT',{...village,chunks:regen.chunks,objects:regen.objects?.after || village.objects,generators:regen.generators.after});
+  assert.equal((await request(villageUrl)).generators.find(p=>p.id===plot.id).params.orientation,1);
   for(const theme of Object.keys(g.roomThemes).filter(t=>t!=='none')) {
     const draft=await request(base+'/api/worlds','POST',{name:'Preset '+theme,preset:theme},201);
     assert.equal(draft.generators[0].params.furnishing,theme);assert.ok(draft.objects.length>30);

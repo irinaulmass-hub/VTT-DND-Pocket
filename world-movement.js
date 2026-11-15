@@ -5,7 +5,8 @@ const { createHash } = require('node:crypto');
 const map = require('./remote/world-model');
 
 const barriers = new Set(['wall', 'palisade', 'fence']);
-const solid = new Set(['house', 'tavern', 'barn', 'well', 'boulder', 'tree', 'wagon', 'wreckedWagon']);
+const solid = new Set(['house', 'tavern', 'barn', 'well', 'boulder', 'tree', 'wagon', 'wreckedWagon',
+  'pine','appleTree','deadTree','stoneTower','fountain','marketStall','statue']);
 const sightRadius = 4;
 
 const { sceneScope, locationMapId, cellBounds } = map;

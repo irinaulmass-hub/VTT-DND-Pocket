@@ -14,7 +14,7 @@ test('rotated low furniture blocks exactly its footprint, leaving sight and stai
   const movement = require('../world-movement')(store, file);
   const layout = { id: '10000000-0000-0000-0000-000000000004', name: 'Furniture', revision: 1, chunks: {}, objects: [] };
   const point = (x, y) => ({ ...map.sceneScope(layout), x, y });
-  for (const kind of ['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus', 'rug', 'stairs']) for (let turn = 0; turn < 4; turn++) {
+  for (const kind of ['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus', 'oven', 'counter', 'anvil', 'rug', 'stairs']) for (let turn = 0; turn < 4; turn++) {
     const prop = { id: kind, kind, x: -1, y: -1, turn };
     layout.objects = [prop];
     const bounds = map.cellBounds(prop), center = map.footprint(prop);
@@ -60,7 +60,7 @@ test('interior art has balanced transforms, rotated world-space shadows and a ce
   for (const file of ['world-decor.js', 'world-art.js']) {
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../remote', file), 'utf8'), globals);
   }
-  for (const kind of ['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus', 'rug', 'stairs', 'torch', 'brazier']) for (let turn = 0; turn < 4; turn++) {
+  for (const kind of ['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus', 'oven', 'counter', 'anvil', 'rug', 'stairs', 'torch', 'brazier']) for (let turn = 0; turn < 4; turn++) {
     calls.length = 0;
     window.WorldArt.paintProp(ctx, { id: kind, kind, x: 0, y: 0, turn, hidden: true }, true);
     assert.equal(states.length, 0);

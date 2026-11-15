@@ -24,7 +24,7 @@
         const area = bounds();
         const ratio = canvas.width / width;
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-        ctx.fillStyle = options.player ? '#121915' : '#e8dec5';
+        ctx.fillStyle = options.player ? '#121915' : options.background?.() || '#e8dec5';
         ctx.fillRect(0, 0, width, height);
         ctx.translate(width / 2, height / 2);
         ctx.scale(camera.scale, camera.scale);
@@ -270,6 +270,7 @@
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.scale(canvas.width/24,canvas.height/24);
     if (terrain[type]) {
       const chunks = {};
       if (type === 'path') {
@@ -286,6 +287,41 @@
       ctx.scale(scale, scale);
       paintProp(ctx, { kind: type, x: 0, y: 0, turn: 0 });
     }
+  };
+  create.exportImage = async (layout, options) => {
+    const plan=window.WorldMap.exportPlan(options.area,options.pixelsPerCell);
+    if(!['none','square','hex'].includes(options.grid)) throw new RangeError('Неизвестный тип сетки');
+    const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+    canvas.width=plan.width;canvas.height=plan.height;
+    const s=plan.pixelsPerCell;
+    if(!options.transparent){ctx.fillStyle='#e8dec5';ctx.fillRect(0,0,canvas.width,canvas.height);}
+    // Paint in pixel coordinates first, as in the live view, to avoid tile seams.
+    for(let y=plan.top;y<plan.bottom;y++)for(let x=plan.left;x<plan.right;x++){
+      const type=get(layout.chunks,x,y);
+      if(type)paintTile(ctx,layout.chunks,x,y,type,[(x-plan.left)*s,(y-plan.top)*s,s,s]);
+    }
+    ctx.setTransform(s,0,0,s,-plan.left*s,-plan.top*s);
+    const objects=layout.objects.filter(p=>options.includeHidden || !p.hidden);
+    const structures=window.WorldMap.structures(objects);
+    for(const prop of objects)if(window.WorldMap.boundsIntersect(window.WorldMap.visualBounds(prop),plan))
+      paintProp(ctx,options.includeHidden && prop.hidden?{...prop,hidden:false}:prop,false,structures);
+    if(options.grid!=='none'){
+      ctx.strokeStyle='#242c2755';ctx.lineWidth=1/s;ctx.beginPath();
+      if(options.grid==='square'){
+        for(let x=plan.left;x<=plan.right;x++){ctx.moveTo(x,plan.top);ctx.lineTo(x,plan.bottom);}
+        for(let y=plan.top;y<=plan.bottom;y++){ctx.moveTo(plan.left,y);ctx.lineTo(plan.right,y);}
+      } else {
+        // Flat-top hexes: one cell is their vertical height. Anchor to world zero.
+        const radius=1/Math.sqrt(3),step=radius*1.5;
+        for(let col=Math.floor(plan.left/step)-1;col<=Math.ceil(plan.right/step)+1;col++)
+          for(let row=plan.top-1;row<=plan.bottom+1;row++){
+            const x=col*step,y=row+(col%2)*.5;
+            for(let i=0;i<=6;i++){const a=i*Math.PI/3,px=x+Math.cos(a)*radius,py=y+Math.sin(a)*radius;ctx[i?'lineTo':'moveTo'](px,py);}
+          }
+      }
+      ctx.stroke();
+    }
+    return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Не удалось создать PNG')),'image/png'));
   };
   window.createWorldView = create;
 })();

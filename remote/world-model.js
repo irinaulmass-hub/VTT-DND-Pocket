@@ -22,6 +22,12 @@
     bookshelf: ['Книжный шкаф', 2, 1], chair: ['Стул', 1, 1], crate: ['Ящик', 1, 1],
     altar: ['Алтарь', 2, 1], sarcophagus: ['Саркофаг', 1, 2],
     rug: ['Ковёр', 4, 5],
+    pine: ['Ель', 1, 1], deadTree: ['Сухое дерево', 1, 1], flowers: ['Полевые цветы', 1, 1],
+    reeds: ['Камыш', 1, 1], wheat: ['Пшеница', 1, 1], crops: ['Овощная грядка', 1, 1],
+    appleTree: ['Яблоня', 1, 1], grave: ['Надгробие', 1, 1], hay: ['Стог сена', 1, 1],
+    marketStall: ['Торговая палатка', 3, 2], stoneTower: ['Каменная башня', 3, 3],
+    fountain: ['Фонтан', 3, 3], statue: ['Статуя', 1, 1], oven: ['Печь', 2, 2],
+    counter: ['Барная стойка', 3, 1], anvil: ['Наковальня', 1, 1],
     stairs: ['Лестница', 2, 3], bearTrap: ['Капкан', 1, 1],
     brazier: ['Жаровня', 1, 1], goblinTotems: ['Тотемы гоблинов', 2, 1],
     barn: ['Амбар', 6, 4], well: ['Колодец', 1, 1], cart: ['Телега', 3, 1],
@@ -32,11 +38,13 @@
     goblinArcher: ['Гоблин-лучник', 1, 1], goblinShield: ['Гоблин со щитом', 1, 1],
     goblinAxes: ['Гоблин с топорами', 1, 1],
   };
-  const buildingKinds = new Set(['house', 'tavern', 'barn']);
+  const buildingKinds = new Set(['house', 'tavern', 'barn', 'stoneTower']);
   // Low furniture blocks occupied cells, but does not block sight like a wall.
-  const furnitureKinds = new Set(['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus']);
+  const furnitureKinds = new Set(['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus', 'oven', 'counter', 'anvil']);
   const linkedSections = new Set(['wall','palisade','fence']);
   const propGroups = {
+    'Растения и поля': ['pine','deadTree','flowers','reeds','wheat','crops','appleTree','hay'],
+    'Город и ремесло': ['marketStall','stoneTower','fountain','statue','grave','oven','counter','anvil'],
     'Существа': ['goblinArcher','goblinShield','goblinAxes'],
     'Постройки и природа': ['house','tavern','barn','bridge','well','tree','bush','wall','door','fence','palisade','ruinedHouse','burningRoof','boulder'],
     'Деревня и лагерь': ['wagon','wreckedWagon','cart','campfire','pole','pumpkin','smallPumpkin','garland'],
@@ -74,7 +82,7 @@
   }
   function visualBounds(prop) {
     const center = footprint(prop);
-    if (prop.kind === 'tree' || prop.kind === 'bush') {
+    if (prop.kind === 'tree' || prop.kind === 'bush' || prop.kind === 'pine' || prop.kind === 'appleTree') {
       const frame = crownFrame(prop);
       return { left: center.x + frame.left, right: center.x + frame.left + frame.width,
         top: center.y + frame.top, bottom: center.y + frame.top + frame.height };
@@ -170,7 +178,18 @@
     return sceneId === 'overworld' ? worldId : sceneId;
   }
 
-  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
+  function exportPlan(area, pixelsPerCell=64) {
+    if(!area || !['left','top','right','bottom'].every(key=>Number.isInteger(area[key])) ||
+      area.left < -limit || area.top < -limit || area.right > limit || area.bottom > limit ||
+      area.right <= area.left || area.bottom <= area.top || ![32,64,128].includes(pixelsPerCell))
+      throw new RangeError('Укажи целые границы области и масштаб 32, 64 или 128 px/кл.');
+    const width=(area.right-area.left)*pixelsPerCell,height=(area.bottom-area.top)*pixelsPerCell;
+    if(width>8192 || height>8192 || width*height>16777216)
+      throw new RangeError('Изображение слишком большое: до 8192 px по стороне и 16 мегапикселей. Уменьши область или масштаб.');
+    return {...area,width,height,pixelsPerCell};
+  }
+
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, exportPlan, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

@@ -9,7 +9,7 @@
   editor.id = 'world-map-editor';
   const extraGroups = Object.entries(window.WorldMap.propGroups)
     .map(([title, ids]) => [title, ids.filter(id => !['house','tavern','bridge','tree','bush','wall','door'].includes(id))]);
-  const tileButton = ([id, [label]]) => `<button class="book-button" data-tool="${id}"><canvas width="24" height="24" aria-hidden="true"></canvas>${label}</button>`;
+  const tileButton = ([id, [label]]) => `<button class="book-button" data-tool="${id}"><canvas width="96" height="96" aria-hidden="true"></canvas>${label}</button>`;
   editor.innerHTML = `
     <div class="book-widget-body">
       <div class="world-editor-heading"><div><small>КНИГА МАСТЕРА · РЕДАКТОР МИРА</small><h2>Большая карта мира</h2></div><button class="book-button" data-world-expand aria-pressed="false">Развернуть редактор</button></div>
@@ -18,7 +18,7 @@
         <input class="book-select" name="title" required maxlength="80" placeholder="Название карты" aria-label="Название карты мира">
         <select class="book-select" name="parentMap" aria-label="Тип и расположение новой карты"></select>
         <label>Заготовка <select class="book-select" name="preset" aria-label="Готовая заготовка карты">
-          <option value="">Пустая карта</option>
+          <option value="">Пустая карта</option><option value="village">Поселение у реки</option>
           ${Object.entries(window.WorldGenerators.roomThemes).filter(([id]) => id !== 'none').map(([id,label]) => `<option value="${id}">${label}</option>`).join('')}
         </select></label>
         <label data-world-elevation hidden>Номер этажа <input class="book-select" type="number" name="elevation" step="1" disabled></label>
@@ -33,7 +33,7 @@
         <div class="world-toolbox" aria-label="Инструменты карты">
           <button class="book-button" data-tool="pan">Рука</button>
           <button class="book-button" data-tool="generate-path">Path · Линии и ограды</button>
-          <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
+          <button class="book-button" data-tool="generate-forest">Plot · Лес, поля и участки</button>
           <button class="book-button" data-tool="generate-room">Room · Комната</button>
           <button class="book-button" data-tool="generate-district">District Plot · Район</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
@@ -60,13 +60,13 @@
           </div>`).join('')}
         </details>
         </aside><div class="world-workbench">
-        <div class="world-canvas-toolbar"><div><strong data-world-map-name>Карта мира</strong><small>Колёсико — масштаб · Правая кнопка — перемещение</small></div><div class="book-toolbar">
+        <div class="world-stage"><div class="world-canvas-toolbar"><div><strong data-world-map-name>Карта мира</strong><small>Колёсико — масштаб · Правая кнопка — перемещение</small></div><div class="book-toolbar">
           <label><input type="checkbox" data-world-grid> Сетка</label>
-          <button class="book-button" data-world-undo>Отменить</button>
+          <button class="book-button" data-world-frame>Вся карта</button><button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
         </div></div>
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
-        <div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
+        </div><aside class="world-inspector" aria-label="Свойства и действия"><h3>Свойства инструмента</h3><div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
           <label>Размер кисти <select class="book-select" data-world-brush-size>
             ${[1, 3, 5, 9, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
           </select></label>
@@ -88,6 +88,10 @@
             <label data-world-path-width-label>Ширина <select class="book-select" data-world-path-width>
               ${[1, 3, 5, 7, 9, 11, 13, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
             </select></label>
+            <label data-world-plot-biome-label hidden>Тип участка <select class="book-select" data-world-plot-biome aria-label="Тип участка">
+              ${Object.entries(window.WorldGenerators.plotBiomes).map(([id,spec]) => `<option value="${id}">${spec.label}</option>`).join('')}
+            </select></label>
+            <label data-world-plot-orientation-label hidden>Направление рядов <select class="book-select" data-world-plot-orientation aria-label="Направление рядов"><option value="0">Вдоль X</option><option value="1">Вдоль Y</option></select></label>
             <label data-world-forest-density-label hidden>Плотность <input class="book-select" type="number" min="10" max="100" step="1" value="65" data-world-forest-density> %</label>
             <label data-world-district-count-label hidden>Домов <input class="book-select" type="number" min="1" max="24" step="1" value="8" data-world-district-count></label>
             <label data-world-room-floor-label hidden>Пол <select class="book-select" data-world-room-floor>
@@ -159,12 +163,26 @@
           </form>
           <ul data-world-transition-list></ul>
         </details>
+        <details class="world-export"><summary>Экспорт карты · PNG</summary>
+          <p>Область без тумана и маркеров редактора. Скрытые предметы исключены.</p>
+          <div class="world-export-bounds">
+            <label>Слева <input class="book-select" type="number" step="1" data-world-export-left aria-label="Левая граница экспорта"></label>
+            <label>Сверху <input class="book-select" type="number" step="1" data-world-export-top aria-label="Верхняя граница экспорта"></label>
+            <label>Справа <input class="book-select" type="number" step="1" data-world-export-right aria-label="Правая граница экспорта"></label>
+            <label>Снизу <input class="book-select" type="number" step="1" data-world-export-bottom aria-label="Нижняя граница экспорта"></label>
+          </div>
+          <button class="book-button" data-world-export-viewport>Взять видимый участок</button>
+          <label>Масштаб <select class="book-select" data-world-export-scale><option value="32">32 px/кл.</option><option value="64">64 px/кл.</option><option value="128">128 px/кл.</option></select></label>
+          <label>Сетка <select class="book-select" data-world-export-grid><option value="none">Без сетки</option><option value="square">Квадраты</option><option value="hex">Шестиугольники</option></select></label>
+          <label><input type="checkbox" data-world-export-transparent> Прозрачный фон вне карты</label>
+          <button class="book-button primary" data-world-export>Скачать PNG</button>
+        </details>
         <div class="book-toolbar">
           <button class="book-button" data-world-save>Сохранить черновик</button>
           <label><input type="checkbox" data-world-fog checked> Туман на экране игроков</label>
           <button class="book-button primary" data-world-publish>Показать игрокам</button>
         </div>
-        </div></div>
+        </aside></div></div>
       </div>
       <p class="book-status" data-world-status role="status"></p>
     </div>`;
@@ -181,6 +199,7 @@
     const expanded=editor.classList.toggle('world-editor-expanded');
     e('expand').textContent=expanded?'Вернуться к книге':'Развернуть редактор';
     e('expand').setAttribute('aria-pressed',String(expanded));
+    if(draft)requestAnimationFrame(()=>frameMap());
   };
   let libraryWasExpanded;
   function filterLibrary() {
@@ -246,12 +265,14 @@
     e('district-count-label').hidden = kind !== 'district';
     e('room-entrance').textContent = pickingEntrance ? 'Нажми на клетку входа…' : 'Выбрать вход';
     e('room-entry-info').textContent = roomEntrance ? 'Вход: ' + roomEntrance.x + ', ' + roomEntrance.y : 'Вход не выбран';
-    e('forest-density-label').hidden = kind !== 'forest';
+    e('forest-density-label').hidden = e('plot-biome-label').hidden = kind !== 'forest';
+    e('plot-orientation-label').hidden = kind !== 'forest' || !['field','garden','orchard','graveyard'].includes(e('plot-biome').value);
+    e('templates').hidden ||= kind === 'forest' && !['','forest'].includes(e('plot-biome').value);
     const saved = e('path-saved');
     const selectedId = saved.value;
     const recipes = (draft.generators || []).filter(recipe => recipe.kind === kind && recipe.version === 1);
     saved.replaceChildren(new Option(kind === 'district' ? 'Новый район' : kind === 'room' ? 'Новая комната' : kind === 'forest' ? 'Новый лесной участок' : 'Новая линия', ''), ...recipes.map((recipe, index) =>
-      new Option((kind === 'district' ? 'Район' : kind === 'room' ? (window.WorldGenerators.roomThemes[recipe.params.furnishing] || 'Комната') : kind === 'forest' ? 'Лес' :
+      new Option((kind === 'district' ? 'Район' : kind === 'room' ? (window.WorldGenerators.roomThemes[recipe.params.furnishing] || 'Комната') : kind === 'forest' ? (window.WorldGenerators.plotBiomes[recipe.params.biome || 'forest']?.label || 'Лес') :
         ({path:'Дорога',water:'Река',wall:'Стена',fence:'Забор',palisade:'Частокол'})[recipe.params.terrain]) + ' · ' + (index + 1) +
         ' · seed ' + recipe.seed, recipe.id)));
     if (recipes.some(recipe => recipe.id === selectedId)) saved.value = selectedId;
@@ -325,7 +346,8 @@
         id: savedId || crypto.randomUUID?.() || 'path-' + Date.now() + '-' + Math.random().toString(36).slice(2),
         kind, version: 1, seed: e('path-seed').valueAsNumber,
         params: kind === 'district' ? { count: e('district-count').valueAsNumber, points: generatorPoints } : kind === 'room' ? { floor: e('room-floor').value, points: generatorPoints, entrance: roomEntrance,
-          ...(e('room-theme').value && e('room-theme').value !== 'none' ? { furnishing: e('room-theme').value } : {}) } : forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints } :
+          ...(e('room-theme').value && e('room-theme').value !== 'none' ? { furnishing: e('room-theme').value } : {}) } : forest ? { density: e('forest-density').valueAsNumber, points: generatorPoints,
+          ...(e('plot-biome').value && e('plot-biome').value !== 'forest' ? {biome:e('plot-biome').value,orientation:Number(e('plot-orientation').value || 0)} : {}) } :
           { ...generatorSettings().settings, points: generatorPoints },
       };
       if (kind === 'district') return run(async () => {
@@ -391,7 +413,7 @@
     e('brush-size').disabled ||= e('rect').checked;
     e('brush-shape').disabled ||= e('rect').checked;
     e('canvas').setAttribute('data-brush-active', String(placing() || brushTool && !e('rect').checked));
-    for (const name of ['path-saved','path-terrain','path-width','forest-density','district-count','room-floor','room-theme','path-seed',
+    for (const name of ['path-saved','path-terrain','path-width','forest-density','plot-biome','plot-orientation','district-count','room-floor','room-theme','path-seed',
       'path-clear-points','path-reset','room-entrance','save','publish','select']) e(name).disabled = busy || !!brushStroke;
     editor.querySelectorAll('[data-tool]').forEach(button => {
       button.disabled = busy || !!brushStroke;
@@ -408,6 +430,7 @@
         generatorPoints = recipe.params.points.map(p => ({ ...p }));
         roomEntrance = recipe.kind === 'room' ? { ...recipe.params.entrance } : null;
         if (recipe.kind === 'room') { e('room-floor').value = recipe.params.floor; e('room-theme').value = recipe.params.furnishing || 'none'; }
+        if (recipe.kind === 'forest') { e('forest-density').value=String(recipe.params.density); e('plot-biome').value=recipe.params.biome || 'forest'; e('plot-orientation').value=String(recipe.params.orientation || 0); }
         if (recipe.kind === 'path') { e('path-terrain').value = recipe.params.terrain; e('path-width').value = String(recipe.params.width); }
         e('path-seed').value = String(recipe.seed);
       }
@@ -695,6 +718,7 @@
     else paint();
   }
   const editorView = createWorldView(e('canvas'), {
+    background:()=>editor.classList.contains('world-editor-expanded')?'#343c32':'#e8dec5',
     grid: () => e('grid').checked, click, pan: () => tool === 'pan', selected: () => selected,
     placementPreview(x, y) {
       if (!draft || busy || !placing() || !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return null;
@@ -786,6 +810,36 @@
     }
   });
 
+  function frameMap(updateExport=false) {
+    if (!draft) return;
+    let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+    for(const [key,chunk] of Object.entries(draft.chunks)) {
+      const [cx,cy]=key.split(',').map(Number);
+      for(const offset of Object.keys(chunk)) {
+        const x=cx*window.WorldMap.size+Number(offset)%window.WorldMap.size,y=cy*window.WorldMap.size+Math.floor(Number(offset)/window.WorldMap.size);
+        left=Math.min(left,x);right=Math.max(right,x+1);top=Math.min(top,y);bottom=Math.max(bottom,y+1);
+      }
+    }
+    for(const prop of draft.objects){const b=window.WorldMap.visualBounds(prop);left=Math.min(left,b.left);right=Math.max(right,b.right);top=Math.min(top,b.top);bottom=Math.max(bottom,b.bottom);}
+    if(!Number.isFinite(left))return editorView.setCamera({x:0,y:0,scale:24});
+    if(updateExport===true)fillExportArea({left:Math.floor(left),top:Math.floor(top),right:Math.ceil(right),bottom:Math.ceil(bottom)});
+    editorView.setCamera({x:(left+right)/2,y:(top+bottom)/2,scale:Math.min(42,((e('canvas').clientWidth||1000)-40)/(right-left+2),((e('canvas').clientHeight||480)-40)/(bottom-top+2))});
+  }
+  e('frame').onclick=()=>frameMap();
+  function fillExportArea(area){for(const key of ['left','top','right','bottom'])e('export-'+key).value=String(Math.max(-window.WorldMap.limit,Math.min(window.WorldMap.limit,area[key])));}
+  e('export-viewport').onclick=()=>{
+    const camera=editorView.camera(),width=(e('canvas').clientWidth||1000)/camera.scale,height=(e('canvas').clientHeight||480)/camera.scale;
+    fillExportArea({left:Math.floor(camera.x-width/2),right:Math.ceil(camera.x+width/2),top:Math.floor(camera.y-height/2),bottom:Math.ceil(camera.y+height/2)});
+  };
+  e('export').onclick=()=>run(async()=>{
+    if(!draft)return;
+    const area=Object.fromEntries(['left','top','right','bottom'].map(key=>[key,e('export-'+key).valueAsNumber]));
+    const plan=window.WorldMap.exportPlan(area,Number(e('export-scale').value));
+    const blob=await createWorldView.exportImage(draft,{area,pixelsPerCell:plan.pixelsPerCell,grid:e('export-grid').value,transparent:e('export-transparent').checked,includeHidden:false});
+    const link=document.createElement('a'),url=URL.createObjectURL(blob);link.href=url;link.download='world-map.png';link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    status('PNG готов: '+plan.width+' × '+plan.height+' px. Скрытые предметы и маркеры редактора не включены.');
+  });
   function open(data) {
     draft = data;
     dirty = false;
@@ -805,7 +859,7 @@
     updateDestinations();
     if (e('transitions').open) showTransitions().catch(error => status(error.message));
     readPosition();
-    editorView.setCamera({ x: 0, y: 0, scale: 24 });
+    frameMap(true);
     paint();
     status('Открыт черновик «' + data.name + '»');
   }
@@ -826,9 +880,11 @@
     const requested = typeof URLSearchParams === 'function' ? new URLSearchParams(location.search || '').get('world') : null;
     if (!draft && requested && worlds.some(item => item.id === requested)) {
       open(await request('/api/worlds/' + encodeURIComponent(requested)));
-      tool = 'generate-room'; paint();
-      e('path-saved').value = draft.generators?.find(item => item.kind === 'room')?.id || '';
-      if (e('path-saved').value) loadGeneratorRecipe();
+      const room=draft.generators?.find(item => item.kind === 'room');
+      tool = room ? 'generate-room' : 'pan'; paint();
+      e('path-saved').value = room?.id || '';
+      if (room) loadGeneratorRecipe();
+      if(new URLSearchParams(location.search || '').get('editor') === '1' && !editor.classList.contains('world-editor-expanded')) e('expand').onclick();
     }
     e('select').value = draft?.id || '';
   }
@@ -883,7 +939,7 @@
     copyTemplate = null; placementTurn = 0;
     if (tool === 'generate-room') status('Отметь углы комнаты и вход. Выбери назначение — мебель появится автоматически. Стороны идут по линиям сетки.');
     if (tool === 'generate-district') status('Укажи два противоположных угла района: от 11×11 до 4096 клеток. Затем выбери число домов и seed.');
-    if (tool === 'generate-forest') status('Отметь вершины контура леса по порядку и нажми «Предпросмотр».');
+    if (tool === 'generate-forest') status('Выбери тип участка, отметь вершины по порядку и нажми «Предпросмотр».');
     if (tool === 'generate-path') status('Выбери дорогу, реку или ограду, укажи точки и нажми «Предпросмотр».');
     if (tool === 'generate-path' || tool === 'generate-forest') readTemplates();
     if (tool === 'transition') status('Нажми на исходную клетку перехода');
@@ -903,7 +959,7 @@
     roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
     e('path-seed').value = String(template.seed);
-    if (template.kind === 'forest') e('forest-density').value = String(template.settings.density);
+    if (template.kind === 'forest') { e('forest-density').value = String(template.settings.density); e('plot-biome').value='forest'; e('plot-orientation').value='0'; }
     else {
       e('path-terrain').value = template.settings.terrain;
       e('path-width').value = String(template.settings.width);
@@ -946,7 +1002,7 @@
     if (recipe) {
       if (recipe.kind === 'room') { e('room-floor').value = recipe.params.floor; e('room-theme').value = recipe.params.furnishing || 'none'; }
       else if (recipe.kind === 'district') e('district-count').value = String(recipe.params.count);
-      else if (recipe.kind === 'forest') e('forest-density').value = String(recipe.params.density);
+      else if (recipe.kind === 'forest') { e('forest-density').value = String(recipe.params.density); e('plot-biome').value=recipe.params.biome || 'forest'; e('plot-orientation').value=String(recipe.params.orientation || 0); }
       else {
         e('path-terrain').value = recipe.params.terrain;
         e('path-width').value = String(recipe.params.width);
@@ -961,7 +1017,7 @@
     paint();
   }
   e('path-saved').onchange = () => { if (draft && !busy) loadGeneratorRecipe(); };
-  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density', 'room-floor', 'room-theme', 'district-count']) {
+  for (const field of ['path-terrain', 'path-width', 'path-seed', 'forest-density', 'plot-biome', 'plot-orientation', 'room-floor', 'room-theme', 'district-count']) {
     e(field).oninput = () => {
       if (busy) return;
       clearGeneratorPreview();

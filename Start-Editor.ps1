@@ -68,7 +68,7 @@ try {
         }
         if (!$ready) { throw ('The editor could not start. See ' + (Join-Path $previewData 'server-error.log')) }
     }
-    Start-Process ($address + '/?view=maps&world=71000000-0000-4000-8000-000000000000')
+    Start-Process ($address + '/?view=maps&world=72000000-0000-4000-8000-000000000000&editor=1')
     Write-Host 'Editor opened. The desktop shortcut is ready.'
 } catch {
     Add-Type -AssemblyName System.Windows.Forms

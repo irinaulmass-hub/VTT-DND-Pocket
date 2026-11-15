@@ -354,3 +354,17 @@ test('furnished Room and barrier Path previews persist their settings and genera
  const barrierId=f.saved.generators.at(-1).id;await f.open();c('path-saved').value=barrierId;c('path-saved').onchange();assert.equal(c('path-terrain').value,'fence');
  assert.equal(c('path-width-label').hidden,true);assert.equal(f.saved.generators.length,2);
 });
+
+test('landscape UI restores biome and rows after switching recipes, regeneration, Undo/Redo and reload',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();f.tools.find(t=>t.dataset.tool==='generate-forest').onclick();
+  c('plot-biome').value='field';c('plot-orientation').value='1';c('forest-density').value='100';c('path-seed').value='13';
+  for(const [x,y] of [[-9,-9],[9,-9],[9,9],[-9,9]])f.canvas.click(x,y);
+  c('path-preview').onclick();await c('path-apply').onclick();
+  const field=copy(f.rendered),id=field.generators[0].id;assert.equal(field.generators[0].params.biome,'field');
+  c('plot-biome').value='garden';c('plot-biome').oninput();c('plot-orientation').value='0';
+  c('path-preview').onclick();await c('path-apply').onclick();assert.ok(f.rendered.objects.some(p=>p.kind==='crops'));
+  await c('undo').onclick();assert.equal(c('plot-biome').value,'field');assert.equal(c('plot-orientation').value,'1');assert.deepEqual(f.rendered,field);
+  await c('redo').onclick();assert.equal(c('plot-biome').value,'garden');assert.equal(c('plot-orientation').value,'0');
+  await c('save').onclick();await f.open();f.tools.find(t=>t.dataset.tool==='generate-forest').onclick();c('path-saved').value=id;c('path-saved').onchange();
+  assert.equal(c('plot-biome').value,'garden');assert.equal(c('plot-orientation').value,'0');
+});

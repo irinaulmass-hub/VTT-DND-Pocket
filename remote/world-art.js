@@ -702,7 +702,7 @@
       window.WorldSprites.draw(ctx, prop.kind);
     } else if (decor) {
       ctx.save();
-      ctx.scale(w,h);
+      ctx.scale(w * (['pine','appleTree'].includes(prop.kind) ? 2 : 1),h * (['pine','appleTree'].includes(prop.kind) ? 2 : 1));
       decor(ctx);
       ctx.restore();
     } else if (prop.kind==='door') {

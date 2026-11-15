@@ -16,7 +16,16 @@
   const roomThemes = { none: 'Без мебели', tavern: 'Таверна', bedroom: 'Спальня',
     library: 'Библиотека', storeroom: 'Склад', crypt: 'Склеп', workshop: 'Мастерская' };
   const roomFurniture = new Set(['table','bench','bed','chest','barrel','torch','brazier','bones',
-    'bookshelf','chair','altar','sarcophagus','crate','rug']);
+    'bookshelf','chair','altar','sarcophagus','crate','rug','oven','counter','anvil']);
+  const plotBiomes = {
+    forest: { label:'Лиственный лес', ground:'woodland', kinds:['tree','bush'] },
+    pine: { label:'Хвойный лес', ground:'woodland', kinds:['pine','boulder','bush'] },
+    meadow: { label:'Цветущий луг', ground:'grass', kinds:['flowers','bush'] },
+    field: { label:'Пшеничное поле', ground:'dirt', kinds:['wheat'] },
+    garden: { label:'Огород', ground:'dirt', kinds:['crops'] },
+    orchard: { label:'Яблоневый сад', ground:'grass', kinds:['appleTree'] },
+    graveyard: { label:'Кладбище', ground:'grass', kinds:['grave','flowers'] },
+  };
 
   function hasFields(value, fields) {
     return value !== null && typeof value === 'object' && !Array.isArray(value) &&
@@ -58,7 +67,11 @@
   }
 
   function validForestParams(params) {
-    if (!hasFields(params, ['density', 'points']) || !Number.isInteger(params.density) ||
+    const fields=['density','points'];
+    if (params && Object.hasOwn(params,'biome')) fields.push('biome');
+    if (params && Object.hasOwn(params,'orientation')) fields.push('orientation');
+    if (!hasFields(params, fields) || (Object.hasOwn(params,'biome') && (typeof params.biome !== 'string' || !Object.hasOwn(plotBiomes,params.biome))) ||
+        (Object.hasOwn(params,'orientation') && ![0,1].includes(params.orientation)) || !Number.isInteger(params.density) ||
         params.density < 10 || params.density > 100 || !Array.isArray(params.points) ||
         params.points.length < 3 || params.points.length > maxForestPoints) return false;
     const seen = new Set();
@@ -172,7 +185,7 @@
       const seen = new Set();
       for (const cell of cells) {
         if (!hasFields(cell, fields) || !valid(cell.x) || !valid(cell.y) || seen.has(cellKey(cell))) return false;
-        const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : kind === 'room' ? roomFloors.has(cell.after) :
+        const allowedAfter = kind === 'forest' ? cell.after === (plotBiomes[params?.biome || 'forest']?.ground) : kind === 'room' ? roomFloors.has(cell.after) :
           kind === 'district' ? ['path', 'dirt'].includes(cell.after) : !structuralPaths.has(params?.terrain) && ['path', 'water'].includes(cell.after);
         if (fields.length === 4 && (!terrainValue(cell.before) || !allowedAfter)) return false;
         seen.add(cellKey(cell));
@@ -182,7 +195,7 @@
     for (const prop of state.objects) {
       const allowedKind = kind === 'path' ? structuralPaths.has(params?.terrain) && prop?.kind === params.terrain :
         kind === 'room' ? ['wall', 'door'].includes(prop?.kind) || params?.furnishing && params.furnishing !== 'none' && roomFurniture.has(prop?.kind) :
-        kind === 'district' ? prop?.kind === 'house' : ['tree', 'bush'].includes(prop?.kind);
+        kind === 'district' ? prop?.kind === 'house' : (plotBiomes[params?.biome || 'forest']?.kinds || []).includes(prop?.kind);
       if (!['path', 'forest', 'room', 'district'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
           typeof prop.id !== 'string' || !prop.id.length || prop.id.length > 64 || ids.has(prop.id) ||
           !allowedKind || !valid(prop.x) || !valid(prop.y) ||
@@ -368,6 +381,8 @@
       throw new RangeError('Проверь seed, плотность и контур. Участок должен занимать до 4096 клеток по габаритам.');
     }
     const { points, density } = recipe.params;
+    const biome = recipe.params.biome || 'forest', spec = plotBiomes[biome];
+    const orientation = recipe.params.orientation || 0;
     const { left, right, top, bottom } = forestBounds(points);
     const occupied = {};
     const objectIds = new Set();
@@ -392,24 +407,28 @@
     for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
       const roll = random(), turn = Math.floor(random() * 4);
       if (excludedCells.has(x + ',' + y) || !contains(points, x, y) ||
-          !forestGround.has(get(draft.chunks, x, y)) || get(occupied, x, y)) continue;
-      set(chunks, x, y, 'woodland');
+          !(forestGround.has(get(draft.chunks, x, y)) || biome !== 'forest' && get(draft.chunks,x,y) === 'dirt') || get(occupied, x, y)) continue;
+      set(chunks, x, y, spec.ground);
       count++;
       const cx = Math.floor(x / 7), cy = Math.floor(y / 7);
       const fx = x / 7 - cx, fy = y / 7 - cy;
       const north = grove(cx, cy) * (1 - fx) + grove(cx + 1, cy) * fx;
       const south = grove(cx, cy + 1) * (1 - fx) + grove(cx + 1, cy + 1) * fx;
       const cover = north * (1 - fy) + south * fy;
-      const chance = density / 100 * (.04 + .93 * cover);
+      const chance = density / 100 * (['field','garden','orchard','graveyard'].includes(biome) ? 1 : (.04 + .93 * cover));
       if (roll >= chance) continue;
+      const row = orientation ? x : y, column = orientation ? y : x;
+      if (['field','garden'].includes(biome) && ((row%3+3)%3 === 2)) continue;
+      if (['orchard','graveyard'].includes(biome) && ((row%3+3)%3 || (column%3+3)%3)) continue;
       const nearTree = get(occupied, x - 1, y) === 'tree' || get(occupied, x, y - 1) === 'tree';
-      const kind = roll < chance * .77 && !nearTree ? 'tree' : 'bush';
+      const kind = biome === 'forest' ? (roll < chance * .77 && !nearTree ? 'tree' : 'bush') :
+        spec.kinds[Math.min(spec.kinds.length-1, Math.floor(roll/chance*spec.kinds.length))];
       const id = 'forest-' + prefix.toString(36) + '-' + x + '_' + y;
       if (objectIds.has(id) || excludedIds.has(id)) continue;
       if (draft.objects.length + plants.length >= objectLimit) {
         throw new RangeError('Лес превысит лимит объектов. Уменьши плотность или размер участка.');
       }
-      plants.push({ id, kind, x, y, turn, hidden: false });
+      plants.push({ id, kind, x, y, turn: ['field','garden','graveyard'].includes(biome) ? orientation : turn, hidden: false });
       set(occupied, x, y, kind);
     }
     return { chunks, count, plants };
@@ -606,7 +625,8 @@
     const amount=(divisor,max)=>Math.max(1,Math.min(max,Math.floor(interior.size/divisor)));
     const theme=recipe.params.furnishing;
     if(theme==='tavern') {
-      place([['table',0,0],['bench',0,-2],['bench',0,2]],amount(30,6));
+      place([['table',0,0],['bench',0,-1],['bench',0,1]],amount(24,8));
+      place([['counter',0,0]],1,true);place([['oven',0,0]],1,true);
       place([['barrel',0,0]],amount(28,5),true); place([['brazier',0,0]],1,true);
     } else if(theme==='bedroom') {
       place([['bed',0,0],['chest',2,0]],amount(34,6),true);
@@ -621,12 +641,13 @@
       place([['crate',0,0]],amount(13,12),true);place([['barrel',0,0]],amount(18,8),true);place([['chest',0,0]],amount(35,4),true);
     } else if(theme==='workshop') {
       place([['table',0,0],['chair',0,2]],amount(40,3));
+      place([['anvil',0,0]],1,true);place([['oven',0,0]],1,true);
       place([['crate',0,0]],amount(25,6),true);place([['barrel',0,0]],2,true);
     }
     place([['torch',0,0]],amount(50,4),true);
     // Rugs are a decorative underlay. They may share furniture cells but never walls.
     const rugs=[], rugCells=new Set();
-    if(['tavern','bedroom','library'].includes(theme))for(const anchor of objects.filter(p=>['table','bed'].includes(p.kind))) {
+    if(['tavern','bedroom','library'].includes(theme))for(const anchor of objects.filter(p=>['table','bed'].includes(p.kind)).slice(0,theme==='tavern'?1:3)) {
       const prop={id:prefix+'f-rug-'+anchor.x+'_'+anchor.y,kind:'rug',x:anchor.x,y:anchor.y,turn:0,hidden:false};
       if(excludedIds.has(prop.id)||draft.objects.some(p=>p.id===prop.id))continue;
       const b=cellBounds(prop);let clear=true;
@@ -895,7 +916,7 @@
     return { points, entrance: entry };
   }
 
-  const api = { validTemplate, validGenerators, validContour, editContour, roomThemes, structuralPaths, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
+  const api = { validTemplate, validGenerators, validContour, editContour, roomThemes, plotBiomes, structuralPaths, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
     compactGenerationChange, expandGenerationChange,
     maxPathPoints, maxForestPoints, maxDistrictBuildings };
   if (typeof module === 'object') module.exports = api;

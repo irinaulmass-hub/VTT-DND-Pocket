@@ -23,6 +23,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       const id = '71000000-0000-4000-8000-00000000000' + index;
       if (!store.readDraft(id, [])) store.writeDraft({ id, name: title + ' · Готовая сцена', revision: 0, ...createWorldPreset(theme) });
     });
+    const id='72000000-0000-4000-8000-000000000000';
+    if(!store.readDraft(id,[]))store.writeDraft({id,name:'Поселение у реки · Готовая сцена',revision:0,...createWorldPreset('village')});
   }
 
   registerWorldTemplates(app, { express, requireDm, gameFile });
@@ -130,7 +132,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const name = typeof req.body?.name === 'string' && req.body.name.trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'Введите название карты' });
     if (req.body.preset !== undefined && (typeof req.body.preset !== 'string' || req.body.preset === 'none' ||
-        !Object.hasOwn(roomThemes, req.body.preset) || req.body.sample === true)) {
+        !(req.body.preset === 'village' || Object.hasOwn(roomThemes, req.body.preset)) || req.body.sample === true)) {
       return res.status(400).json({ error: 'Выберите одну из доступных заготовок карты' });
     }
     const { parentWorldId, sceneMapId, elevation } = req.body;
