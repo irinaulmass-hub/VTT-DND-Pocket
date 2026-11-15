@@ -257,9 +257,10 @@ test('unconfirmed or competing commits never enter the local history or replace 
     const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();
     f.loseNext('apply');if(offline)f.failRead(true);else f.foreignWrite();
     await c('path-apply').onclick();
-    assert.equal(f.rendered.objects.length,0);assert.equal(c('undo').disabled,true);assert.equal(c('redo').disabled,true);
+    assert.equal(f.rendered.objects.length,0);assert.equal(c('undo').textContent,'Отменить точку');assert.equal(c('redo').disabled,true);
     assert.equal(c('path-apply').disabled,true);
     assert.match(c('status').textContent,offline?/подтвердить сохранение/:/Карта изменилась/);
+    const requestsBeforeUndo=f.requests.length;await c('undo').onclick();assert.equal(f.requests.length,requestsBeforeUndo,'only the staged contour is undone after an unconfirmed write');assert.equal(f.rendered.objects.length,0);
     f.failRead(false);await f.open();assert.deepEqual(f.rendered,f.saved,'explicit reopen loads the authoritative version');
   }
   const f=editorFixture(),c=f.control;await f.open();f.begin();await c('path-preview').onclick();await c('path-apply').onclick();
@@ -285,10 +286,54 @@ test('District conflicts leave draft and history intact and a pending request lo
   assert.equal(c('select').disabled,false);
   const before=copy(f.saved);f.changeLinks();await c('path-apply').onclick();
   assert.deepEqual(f.saved,before);assert.deepEqual(f.rendered,before);
-  assert.equal(c('undo').disabled,true);assert.equal(c('path-apply').disabled,true);
+  assert.equal(c('undo').textContent,'Отменить точку');assert.equal(c('path-apply').disabled,true);
   await c('path-preview').onclick();await c('path-apply').onclick();
   const committed=copy(f.saved);f.failWrite(true);await c('undo').onclick();
   assert.deepEqual(f.saved,committed);assert.equal(c('undo').disabled,false);
   assert.equal(c('redo').disabled,true);
   f.failWrite(false);await c('undo').onclick();assert.equal(f.saved.objects.length,0);
+});
+
+test('staged contour dragging, coordinate edits, insertion and Undo never write until regeneration is applied',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();f.tools[0].onclick();
+  c('path-width').value='3';c('path-terrain').value='path';c('path-seed').value='47';
+  f.canvas.click(-8,0);f.canvas.click(8,0);c('path-preview').onclick();c('path-apply').onclick();await c('save').onclick();
+  const original=copy(f.saved),recipeId=f.saved.generators[0].id;
+  c('path-saved').value=recipeId;c('path-saved').onchange();
+  const handle=f.canvas.pickHandle(8.5,.5,.3);assert.equal(handle.index,1);
+  f.canvas.previewHandle(handle,8,6);assert.equal(f.canvas.contour().points[1].y,6);
+  assert.deepEqual(f.rendered,f.saved,'a drag changes only the contour overlay');
+  f.canvas.cancelHandle();assert.equal(f.canvas.contour().points[1].y,0);
+  f.canvas.moveHandle(handle,8,6);assert.equal(c('path-apply').disabled,true);
+  assert.deepEqual(f.saved,original);assert.equal(c('undo').textContent,'Отменить точку');
+  c('undo').onclick();assert.equal(f.canvas.contour().points[1].y,0);
+  c('redo').onclick();assert.equal(f.canvas.contour().points[1].y,6);
+  c('vertex').value='1';c('vertex').onchange();c('vertex-x').value='10';c('vertex-y').value='4';c('vertex-move').onclick();
+  assert.equal(f.canvas.contour().points[1].x,10);c('vertex-insert').onclick();assert.equal(f.canvas.contour().points.length,3);
+  c('vertex-delete').onclick();assert.equal(f.canvas.contour().points.length,2);
+  c('path-preview').onclick();c('path-apply').onclick();await c('save').onclick();
+  assert.equal(f.saved.generators.length,1);assert.equal(f.saved.generators[0].id,recipeId);
+  assert.notDeepEqual(f.saved.generators[0].params.points,original.generators[0].params.points);
+  const regenerated=copy(f.saved);c('undo').onclick();await c('save').onclick();
+  assert.deepEqual(f.saved.generators,original.generators);assert.deepEqual(f.saved.chunks,original.chunks);
+  c('redo').onclick();await c('save').onclick();assert.deepEqual(f.saved.generators,regenerated.generators);
+  await f.open();c('path-saved').value=recipeId;c('path-saved').onchange();
+  assert.deepEqual(copy(f.canvas.contour().points),f.saved.generators[0].params.points);
+});
+
+test('Room handle edits preserve an entrance, reject invalid geometry and cancel safely without mutating recipes',async()=>{
+  const f=editorFixture(),c=f.control;await f.open();f.tools[2].onclick();c('room-floor').value='wood';c('path-seed').value='7';
+  for(const [x,y] of [[0,0],[10,0],[10,8],[0,8]])f.canvas.click(x,y);
+  c('room-entrance').onclick();f.canvas.click(5,0);c('path-preview').onclick();c('path-apply').onclick();await c('save').onclick();
+  const original=copy(f.saved),recipeId=f.saved.generators[0].id;c('path-saved').value=recipeId;c('path-saved').onchange();
+  const corner=f.canvas.pickHandle(.5,.5,.3);f.canvas.moveHandle(corner,-4,-2);
+  assert.deepEqual(copy(f.canvas.contour().entrance),{x:3,y:-2});assert.deepEqual(f.saved,original);
+  const entry=f.canvas.pickHandle(3.5,-1.5,.3);assert.equal(entry.index,'entrance');
+  f.canvas.moveHandle(entry,10,4);assert.deepEqual(copy(f.canvas.contour().entrance),{x:10,y:4});
+  const before=copy(f.canvas.contour());f.canvas.moveHandle(entry,-4,-2);
+  assert.deepEqual(copy(f.canvas.contour()),before);assert.match(c('status').textContent,/недопустим/);
+  c('path-preview').onclick();c('path-apply').onclick();await c('save').onclick();
+  assert.equal(f.saved.generators[0].id,recipeId);assert.deepEqual(f.saved.generators[0].params.entrance,{x:10,y:4});
+  assert.ok(f.saved.objects.some(p=>p.kind==='door'&&p.x===10&&p.y===4));
+  c('undo').onclick();await c('save').onclick();assert.deepEqual(f.saved.generators,original.generators);assert.deepEqual(f.saved.objects,original.objects);
 });

@@ -91,6 +91,39 @@
           ctx.fillStyle = '#eacb6940'; ctx.strokeStyle = '#fff0b5'; ctx.lineWidth = 1 / camera.scale;
           for (const cell of brush) { ctx.fillRect(cell.x, cell.y, 1, 1); ctx.strokeRect(cell.x, cell.y, 1, 1); }
         }
+        const contour = options.contour?.();
+        if (contour?.points.length) {
+          const points = contour.points, unit = 1 / camera.scale;
+          ctx.save();
+          ctx.lineWidth = 2 * unit;
+          ctx.strokeStyle = contour.invalid ? '#c14736' : '#246e66';
+          ctx.fillStyle = '#43867822';
+          ctx.beginPath();
+          points.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](p.x + .5, p.y + .5));
+          if (contour.closed && points.length >= 3) { ctx.closePath(); ctx.fill(); }
+          ctx.stroke();
+          ctx.font = 'bold ' + 11 * unit + 'px system-ui';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          points.forEach((p, i) => {
+            const active = contour.selected === i, radius = (active ? 8 : 6) * unit;
+            ctx.fillStyle = active ? '#246e66' : '#fff9e9';
+            ctx.beginPath(); ctx.arc(p.x + .5, p.y + .5, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#173f3b';
+            ctx.fillText(String(i + 1), p.x + .5, p.y + .5 - 16 * unit);
+          });
+          if (contour.entrance) {
+            const p = contour.entrance;
+            ctx.fillStyle = '#d9a34c'; ctx.strokeStyle = '#704a22';
+            ctx.fillRect(p.x + .5 - 7 * unit, p.y + .5 - 7 * unit, 14 * unit, 14 * unit);
+            ctx.strokeRect(p.x + .5 - 7 * unit, p.y + .5 - 7 * unit, 14 * unit, 14 * unit);
+          }
+          ctx.restore();
+        }
+        for (const p of options.marks?.() || []) {
+          if (contour) break;
+          ctx.strokeStyle = '#246e66'; ctx.lineWidth = 2 / camera.scale;
+          ctx.strokeRect(p.x + .08, p.y + .08, .84, .84);
+        }
       });
     }
     function setCamera(next, notify = true) {
@@ -123,7 +156,7 @@
     canvas.addEventListener('contextmenu', event => event.preventDefault());
     canvas.addEventListener('wheel', event => {
       event.preventDefault();
-      if (gesture?.stroke) return;
+      if (gesture?.stroke || gesture?.handle) return;
       const before = point(event);
       const scale = Math.max(minScale(), Math.min(100, camera.scale * Math.exp(-event.deltaY * .0016)));
       const change = camera.scale / scale;
@@ -136,6 +169,11 @@
       if (options.pickProp && event.button === 0) canvas.focus({ preventScroll: true });
       const p = point(event);
       hover = p;
+      const handle = event.button === 0 && options.pickHandle?.(p.x, p.y, 10 / camera.scale);
+      if (handle) {
+        gesture = { id: event.pointerId, handle, x: event.clientX, y: event.clientY, camera: { ...camera } };
+        canvas.focus({ preventScroll: true }); draw(); return;
+      }
       if (event.button === 0 && options.startStroke?.(Math.floor(p.x), Math.floor(p.y))) {
         gesture = { id: event.pointerId, stroke: true };
         canvas.focus({ preventScroll: true });
@@ -148,6 +186,12 @@
     });
     canvas.addEventListener('pointermove', event => {
       hover = point(event);
+      if (gesture?.handle && gesture.id === event.pointerId) {
+        const h = gesture.handle;
+        options.previewHandle?.(h, h.x + Math.round((event.clientX - gesture.x) / gesture.camera.scale),
+          h.y + Math.round((event.clientY - gesture.y) / gesture.camera.scale));
+        draw(); return;
+      }
       if (gesture?.stroke && gesture.id === event.pointerId) {
         options.strokeTo?.(Math.floor(hover.x), Math.floor(hover.y)); draw(); return;
       }
@@ -173,19 +217,26 @@
       if (event?.pointerId !== undefined && gesture?.id !== event.pointerId) return;
       const cancelled = gesture; gesture = null;
       if (cancelled?.stroke) options.endStroke?.(false);
+      if (cancelled?.handle) options.cancelHandle?.();
       draw();
     }
     canvas.addEventListener('lostpointercapture', cancelGesture);
     canvas.addEventListener('pointercancel', cancelGesture);
     canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; hoveringBrush = false; draw(); } });
     canvas.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && gesture?.stroke) { event.preventDefault(); cancelGesture(); }
+      if (event.key === 'Escape' && (gesture?.stroke || gesture?.handle)) { event.preventDefault(); cancelGesture(); }
     });
     canvas.addEventListener('pointerup', event => {
       if (gesture?.id !== event.pointerId) return;
       const start = gesture;
       gesture = null;
       const p = point(event);
+      if (start.handle) {
+        const h = start.handle;
+        options.moveHandle?.(h, h.x + Math.round((event.clientX - start.x) / start.camera.scale),
+          h.y + Math.round((event.clientY - start.y) / start.camera.scale));
+        draw(); return;
+      }
       if (start.stroke) {
         options.strokeTo?.(Math.floor(p.x), Math.floor(p.y));
         options.endStroke?.(true); draw(); return;

@@ -12,19 +12,31 @@
   const tileButton = ([id, [label]]) => `<button class="book-button" data-tool="${id}"><canvas width="24" height="24" aria-hidden="true"></canvas>${label}</button>`;
   editor.innerHTML = `
     <div class="book-widget-body">
-      <h2>Большая карта мира</h2>
+      <div class="world-editor-heading"><div><small>КНИГА МАСТЕРА · РЕДАКТОР МИРА</small><h2>Большая карта мира</h2></div><span>Линии · Области · Комнаты</span></div>
+      <details class="world-create"><summary>Новая карта или сцена</summary>
       <form class="book-toolbar" data-world-create>
         <input class="book-select" name="title" required maxlength="80" placeholder="Название карты" aria-label="Название карты мира">
         <select class="book-select" name="parentMap" aria-label="Тип и расположение новой карты"></select>
         <label data-world-elevation hidden>Номер этажа <input class="book-select" type="number" name="elevation" step="1" disabled></label>
         <label><input type="checkbox" name="sample"> Начать с деревни у озера</label>
         <button class="book-button primary">Создать карту</button>
-      </form>
+      </form></details>
       <div class="book-toolbar">
         <select class="book-select" data-world-select aria-label="Открыть черновик карты"></select>
       </div>
       <div data-world-editor hidden>
-        <p>Выбери покрытие и рисуй, удерживая левую кнопку. Колёсико меняет масштаб, правая кнопка сдвигает карту.</p>
+        <div class="world-studio"><aside class="world-library" aria-label="Инструменты и библиотека карты"><h3>Материалы и объекты</h3>
+        <div class="world-toolbox" aria-label="Инструменты карты">
+          <button class="book-button" data-tool="pan">Рука</button>
+          <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
+          <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
+          <button class="book-button" data-tool="generate-room">Room · Комната</button>
+          <button class="book-button" data-tool="generate-district">District Plot · Район</button>
+          <button class="book-button" data-tool="erase">Убрать тайл</button>
+          <button class="book-button" data-tool="select">Двигать объекты</button>
+          <button class="book-button" data-tool="delete-object">Удалять объекты</button>
+          <label><input type="checkbox" data-world-rect> Заполнить прямоугольник</label>
+        </div>
         <div class="world-palette" role="group" aria-label="Местность">
           <strong>Местность</strong>
           ${Object.entries(terrain).map(tileButton).join('')}
@@ -39,19 +51,12 @@
             <strong>${title}</strong>${ids.map(id => tileButton([id, props[id]])).join('')}
           </div>`).join('')}
         </details>
-        <div class="book-toolbar">
-          <button class="book-button" data-tool="pan">Рука</button>
-          <button class="book-button" data-tool="generate-path">Path · Дорога или река</button>
-          <button class="book-button" data-tool="generate-forest">Forest Plot · Лес</button>
-          <button class="book-button" data-tool="generate-room">Room · Комната</button>
-          <button class="book-button" data-tool="generate-district">District Plot · Район</button>
-          <button class="book-button" data-tool="erase">Убрать тайл</button>
-          <button class="book-button" data-tool="select">Двигать объекты</button>
-          <button class="book-button" data-tool="delete-object">Удалять объекты</button>
-          <label><input type="checkbox" data-world-rect> Заполнить прямоугольник</label>
+        </aside><div class="world-workbench">
+        <div class="world-canvas-toolbar"><div><strong data-world-map-name>Карта мира</strong><small>Колёсико — масштаб · Правая кнопка — перемещение</small></div><div class="book-toolbar">
           <button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
-        </div>
+        </div></div>
+        <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
         <div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
           <label>Размер кисти <select class="book-select" data-world-brush-size>
             ${[1, 3, 5, 9, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
@@ -79,18 +84,31 @@
             <small data-world-room-entry-info hidden></small>
             <label>Seed <input class="book-select" type="number" min="0" max="4294967295" step="1" value="0" data-world-path-seed></label>
           </div>
-          <div class="book-toolbar" data-world-templates>
+          <details data-world-templates><summary>Шаблоны настроек</summary><div class="book-toolbar">
             <select class="book-select" data-world-template-select aria-label="Шаблон настроек"></select>
             <button class="book-button" data-world-template-load disabled>Загрузить настройки</button>
             <input class="book-select" data-world-template-name maxlength="80" placeholder="Название шаблона" aria-label="Название шаблона">
             <button class="book-button" data-world-template-save>Сохранить настройки</button>
-          </div>
+          </div></details>
           <div class="book-toolbar">
             <small data-world-path-count></small>
             <button class="book-button" data-world-path-preview>Предпросмотр</button>
             <button class="book-button primary" data-world-path-apply>Применить к черновику</button>
-            <button class="book-button" data-world-path-clear-points>Изменить точки</button>
+            <button class="book-button" data-world-path-clear-points>Нарисовать контур заново</button>
             <button class="book-button" data-world-path-reset>Новый участок</button>
+          </div>
+          <div class="world-contour-controls" data-world-contour-controls aria-label="Редактирование контура">
+            <strong>Опорные точки</strong>
+            <p>Перетаскивай круглые вершины. Квадрат — вход в комнату. Карта изменится после предпросмотра и применения.</p>
+            <div class="book-toolbar">
+              <select class="book-select" data-world-vertex aria-label="Выбранная вершина"></select>
+              <label>X <input class="book-select" type="number" step="1" data-world-vertex-x></label>
+              <label>Y <input class="book-select" type="number" step="1" data-world-vertex-y></label>
+              <button class="book-button" data-world-vertex-move>Переместить</button>
+              <button class="book-button" data-world-vertex-insert>Вставить на ребре</button>
+              <button class="book-button" data-world-vertex-delete>Убрать точку</button>
+            </div>
+            <small data-world-contour-info role="status"></small>
           </div>
         </section>
         <div class="book-toolbar" data-world-object hidden>
@@ -113,7 +131,7 @@
           <button class="book-button" data-tool="position">Поставить или перенести героя</button>
           <small data-world-position-info role="status"></small>
         </div>
-        <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
+
         <details data-world-transitions>
           <summary>Переходы между сценами</summary>
           <form class="book-toolbar" data-world-transition-form aria-label="Связь между картами">
@@ -133,6 +151,7 @@
           <label><input type="checkbox" data-world-fog checked> Туман на экране игроков</label>
           <button class="book-button primary" data-world-publish>Показать игрокам</button>
         </div>
+        </div></div>
       </div>
       <p class="book-status" data-world-status role="status"></p>
     </div>`;
@@ -154,6 +173,23 @@
   const undo = [], redo = [];
   let availableMaps = [];
   let generatorPoints = [], generatorPreview = null, roomEntrance = null, pickingEntrance = false;
+  let selectedVertex = null, dragContour = null;
+  const contourUndo = [], contourRedo = [];
+  const contourSnapshot = () => ({ points: generatorPoints.map(p => ({ ...p })), entrance: roomEntrance && { ...roomEntrance } });
+  function resetContourHistory() { contourUndo.length = contourRedo.length = 0; selectedVertex = null; dragContour = null; }
+  function setContour(next) { generatorPoints = next.points; roomEntrance = next.entrance; dragContour = null; clearGeneratorPreview(); }
+  function changeContour(next) {
+    if (JSON.stringify(contourSnapshot()) === JSON.stringify(next)) { dragContour = null; return paint(); }
+    contourUndo.push(contourSnapshot());
+    if (contourUndo.length > 50) contourUndo.shift();
+    contourRedo.length = 0; setContour(next); paint();
+    status('Контур изменён. Проверь предпросмотр, затем примени результат.');
+  }
+  function modifyContour(operation) {
+    if (!draft || busy || !generatorTool()) return;
+    try { changeContour(window.WorldGenerators.editContour(generatorKind(), generatorPoints, roomEntrance, operation)); }
+    catch (error) { dragContour = null; paint(); status(error.message); }
+  }
   let templates = { revision: 0, templates: [] }, templatesReady = false, templateGeneration = 0;
   const templateUrl = '/api/world-generator-templates';
   const generatorKind = () => tool === 'generate-district' ? 'district' : tool === 'generate-room' ? 'room' : tool === 'generate-forest' ? 'forest' : 'path';
@@ -182,6 +218,21 @@
     e('path-preview').disabled = busy || generatorPoints.length < (kind === 'room' || kind === 'district' ? 4 : kind === 'path' ? 2 : 3) || (kind === 'room' && !roomEntrance);
     e('path-apply').disabled = busy || !generatorPreview;
     e('path-apply').textContent = kind === 'district' ? 'Применить и сохранить район' : saved.value ? 'Применить регенерацию' : 'Применить к черновику';
+    const vertex = e('vertex');
+    if (selectedVertex !== 'entrance' && !(selectedVertex >= 0 && selectedVertex < generatorPoints.length)) selectedVertex = null;
+    vertex.replaceChildren(new Option('Выбрать точку', ''), ...generatorPoints.map((p, i) => new Option('Точка ' + (i + 1), String(i))),
+      ...(roomEntrance ? [new Option('Вход в комнату', 'entrance')] : []));
+    vertex.value = selectedVertex === null ? '' : String(selectedVertex);
+    const point = selectedVertex === 'entrance' ? roomEntrance : generatorPoints[selectedVertex];
+    e('vertex-x').value = point ? String(point.x) : '';
+    e('vertex-y').value = point ? String(point.y) : '';
+    for (const name of ['vertex','vertex-x','vertex-y','vertex-move']) e(name).disabled = busy || (name !== 'vertex' && !point);
+    const flexible = ['path','forest'].includes(kind) && Number.isInteger(selectedVertex);
+    e('vertex-insert').disabled = busy || !flexible || generatorPoints.length < 2;
+    e('vertex-delete').disabled = busy || !flexible || generatorPoints.length <= (kind === 'path' ? 2 : 3);
+    e('contour-info').textContent = kind === 'room' || kind === 'district'
+      ? 'При переносе угла соседние стороны остаются прямыми. Вход перемещается вместе со стеной.'
+      : 'Выбери вершину для точных координат, вставки точки на следующем ребре или удаления.';
   }
 
   function generatorSettings() {
@@ -265,6 +316,7 @@
       editorView.data({ ...draft, chunks: generatorPreview.chunks, objects: generatorPreview.objects?.after || draft.objects });
     } else editorView.data(draft);
     paintGeneratorControls();
+    e('map-name').textContent = draft.name;
     const object = draft.objects.find(item => item.id === selected);
     e('object').hidden = !object || placing();
     e('copy').disabled = busy || !!brushStroke || draft.objects.length >= window.WorldMap.objectLimit;
@@ -285,8 +337,10 @@
       e('size').textContent = props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
     }
     e('secret').checked = !!object?.hidden;
-    e('undo').disabled = busy || !!brushStroke || !undo.length;
-    e('redo').disabled = busy || !!brushStroke || !redo.length;
+    e('undo').disabled = busy || !!brushStroke || !(contourUndo.length || undo.length);
+    e('redo').disabled = busy || !!brushStroke || !(contourRedo.length || redo.length);
+    e('undo').textContent = contourUndo.length ? 'Отменить точку' : 'Отменить';
+    e('redo').textContent = contourRedo.length ? 'Повторить точку' : 'Повторить';
     const brushTool = !!terrain[tool] || tool === 'erase';
     e('brush-controls').hidden = !brushTool;
     for (const name of ['brush-size','brush-shape','rect']) e(name).disabled = busy || !!brushStroke;
@@ -304,10 +358,19 @@
     if (change.objects) draft.objects = backwards ? change.objects.before : change.objects.after;
     for (const tile of change.tiles || []) set(draft.chunks, tile.x, tile.y, backwards ? tile.before : tile.after);
     if (change.generators) draft.generators = backwards ? change.generators.before : change.generators.after;
+    if (change.recipeId && generatorTool()) {
+      const recipe = (draft.generators || []).find(item => item.id === change.recipeId && item.kind === generatorKind());
+      if (recipe) {
+        generatorPoints = recipe.params.points.map(p => ({ ...p }));
+        roomEntrance = recipe.kind === 'room' ? { ...recipe.params.entrance } : null;
+      }
+      resetContourHistory();
+    }
     generatorPreview = null;
     dirty = true;
     status('Есть несохранённые изменения');
     paint();
+    if (change.recipeId && (draft.generators || []).some(item => item.id === change.recipeId && item.kind === generatorKind())) e('path-saved').value = change.recipeId;
   }
   function edit(change) {
     try { if (!change.generators) change = protectManualChanges(draft, change); }
@@ -509,26 +572,28 @@
     if (generatorTool()) {
       if (generatorKind() === 'district') {
         if (generatorPoints.length !== 1) {
-          generatorPoints = [{ x, y }];
+          changeContour({ points: [{ x, y }], entrance: null });
           status('Укажи противоположный угол прямоугольного района.');
         } else {
           const first = generatorPoints[0];
           if (first.x === x || first.y === y) return status('Углы должны задавать прямоугольник с шириной и высотой.');
-          generatorPoints = [first, { x, y: first.y }, { x, y }, { x: first.x, y }];
+          changeContour({ points: [first, { x, y: first.y }, { x, y }, { x: first.x, y }], entrance: null });
           status('Контур района выбран. Задай число домов и seed, затем нажми «Предпросмотр».');
         }
         clearGeneratorPreview(); paint(); return;
       }
       const forest = generatorKind() !== 'path';
       if (generatorKind() === 'room' && pickingEntrance) {
-        roomEntrance = { x, y }; pickingEntrance = false; clearGeneratorPreview();
+        const next = { x, y };
+        if (!window.WorldGenerators.validContour('room', generatorPoints, next)) return status('Вход должен находиться на прямой стене, вдали от углов.');
+        changeContour({ points: generatorPoints, entrance: next }); pickingEntrance = false;
         status('Вход выбран. Проверь предпросмотр комнаты.'); paint(); return;
       }
       const maxPoints = forest ? maxForestPoints : maxPathPoints;
       const usedPoints = forest ? generatorPoints : generatorPoints.slice(-1);
       if (usedPoints.some(point => point.x === x && point.y === y)) return;
       if (generatorPoints.length >= maxPoints) return status('Допустимо не больше ' + maxPoints + ' опорных точек');
-      generatorPoints = [...generatorPoints, { x, y }];
+      changeContour({ points: [...generatorPoints, { x, y }], entrance: roomEntrance });
       clearGeneratorPreview();
       status(generatorPoints.length < (forest ? 3 : 2) ? 'Укажи ещё точки на карте.' : 'Добавь ещё точки или нажми «Предпросмотр».');
       paint();
@@ -623,6 +688,25 @@
     },
     marks: () => generatorTool() ? [...generatorPoints, ...(tool === 'generate-room' && roomEntrance ? [roomEntrance] : [])] : first ? [first] : [],
     outline: () => ['generate-forest','generate-room','generate-district'].includes(tool) ? generatorPoints : null,
+    contour: () => generatorTool() ? { ...(dragContour || contourSnapshot()), closed: generatorKind() !== 'path', selected: selectedVertex } : null,
+    pickHandle(x, y, tolerance) {
+      if (!draft || busy || !generatorTool() || pickingEntrance) return null;
+      const handles = generatorPoints.map((p, index) => ({ ...p, index }));
+      if (roomEntrance) handles.unshift({ ...roomEntrance, index: 'entrance' });
+      const handle = handles.find(p => Math.hypot(x - p.x - .5, y - p.y - .5) <= tolerance);
+      if (handle) { selectedVertex = handle.index; paint(); }
+      return handle;
+    },
+    previewHandle(handle, x, y) {
+      try { dragContour = window.WorldGenerators.editContour(generatorKind(), generatorPoints, roomEntrance,
+        { type: handle.index === 'entrance' ? 'entrance' : 'move', index: handle.index, x, y }); }
+      catch { dragContour = { ...contourSnapshot(), invalid: true }; }
+    },
+    moveHandle(handle, x, y) {
+      if (x === handle.x && y === handle.y) { dragContour = null; return paint(); }
+      modifyContour({ type: handle.index === 'entrance' ? 'entrance' : 'move', index: handle.index, x, y });
+    },
+    cancelHandle() { dragContour = null; paint(); },
     pickProp(x, y) {
       if (!draft || busy || tool !== 'select') return;
       const item = objectAt(x, y);
@@ -636,6 +720,12 @@
     },
   });
   e('canvas').addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && ['z','y'].includes(event.key.toLowerCase())) {
+      event.preventDefault(); history(event.key.toLowerCase() === 'z' && !event.shiftKey); return;
+    }
+    if (event.key === 'Delete' && generatorTool() && !e('vertex-delete').disabled) {
+      event.preventDefault(); e('vertex-delete').onclick(); return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
       event.preventDefault(); if (!placing()) beginCopy(); return;
     }
@@ -656,6 +746,7 @@
     copyTemplate = null; placementTurn = 0;
     if (tool === 'place-copy') tool = 'select';
     generatorPoints = [];
+    resetContourHistory();
     roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
     undo.length = redo.length = 0;
@@ -730,6 +821,7 @@
     if (busy) return;
     if (tool !== button.dataset.tool) {
       generatorPoints = [];
+      resetContourHistory();
       roomEntrance = null; pickingEntrance = false;
       clearGeneratorPreview(true);
     }
@@ -752,6 +844,7 @@
     if (!draft || busy) return;
     const template = templates.templates.find(item => item.id === e('template-select').value && item.kind === generatorKind());
     if (!template) return;
+    resetContourHistory();
     generatorPoints = [];
     roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
@@ -793,8 +886,9 @@
   e('path-saved').onchange = () => {
     if (!draft || busy) return;
     const recipe = (draft.generators || []).find(item => item.id === e('path-saved').value);
-    generatorPoints = recipe?.params.points || [];
-    roomEntrance = recipe?.kind === 'room' ? recipe.params.entrance : null; pickingEntrance = false;
+    resetContourHistory();
+    generatorPoints = (recipe?.params.points || []).map(p => ({ ...p }));
+    roomEntrance = recipe?.kind === 'room' ? { ...recipe.params.entrance } : null; pickingEntrance = false;
     generatorPreview = null;
     if (recipe) {
       if (recipe.kind === 'room') e('room-floor').value = recipe.params.floor;
@@ -822,14 +916,13 @@
   }
   e('path-clear-points').onclick = () => {
     if (!draft || busy) return;
-    generatorPoints = [];
-    roomEntrance = null; pickingEntrance = false;
-    clearGeneratorPreview();
+    changeContour({ points: [], entrance: null }); pickingEntrance = false;
     status('Укажи новый контур или линию. Сохранённый участок будет перестроен после применения.');
     paint();
   };
   e('path-reset').onclick = () => {
     if (!draft || busy) return;
+    resetContourHistory();
     generatorPoints = [];
     roomEntrance = null; pickingEntrance = false;
     clearGeneratorPreview(true);
@@ -841,6 +934,15 @@
     pickingEntrance = true; clearGeneratorPreview();
     status('Нажми на клетку входа на прямой стороне контура.'); paint();
   };
+  e('vertex').onchange = () => { selectedVertex = e('vertex').value === 'entrance' ? 'entrance' :
+    e('vertex').value === '' ? null : Number(e('vertex').value); paint(); };
+  e('vertex-move').onclick = () => {
+    if (selectedVertex === null) return;
+    modifyContour({ type: selectedVertex === 'entrance' ? 'entrance' : 'move', index: selectedVertex,
+      x: e('vertex-x').valueAsNumber, y: e('vertex-y').valueAsNumber });
+  };
+  e('vertex-insert').onclick = () => { if (!e('vertex-insert').disabled) modifyContour({ type: 'insert', index: selectedVertex }); };
+  e('vertex-delete').onclick = () => { if (!e('vertex-delete').disabled) modifyContour({ type: 'remove', index: selectedVertex }); };
   e('path-preview').onclick = previewGenerator;
   const sameDistrictValue = (a, b) => a === b || (!!a && !!b && typeof a === 'object' && typeof b === 'object' &&
     Array.isArray(a) === Array.isArray(b) && Object.keys(a).length === Object.keys(b).length &&
@@ -895,6 +997,7 @@
           if (undo.length > 50) undo.shift();
           redo.length = 0;
           draft = next; dirty = false; generatorPreview = null;
+          resetContourHistory();
           paint();
           e('path-saved').value = preview.id;
           status('Район сохранён. Отмена и повтор доступны; для ТВ нажми «Показать игрокам».');
@@ -902,12 +1005,13 @@
       });
     }
     const { id, tiles, objects, generators } = generatorPreview;
+    resetContourHistory();
     if (!tiles.length && !objects && generators.before === generators.after) {
       generatorPreview = null;
       paint();
       return status('Результат уже есть в черновике.');
     }
-    edit({ tiles, objects, generators });
+    edit({ tiles, objects, generators, recipeId: id });
     e('path-saved').value = id;
     paint();
   };
@@ -917,6 +1021,12 @@
   e('placement-stop').onclick = stopPlacement;
   e('brush-size').onchange = e('brush-shape').onchange = () => editorView.draw?.();
   function history(backwards) {
+    if (busy) return;
+    const contourFrom = backwards ? contourUndo : contourRedo, contourTo = backwards ? contourRedo : contourUndo;
+    if (generatorTool() && contourFrom.length) {
+      contourTo.push(contourSnapshot()); setContour(contourFrom.pop()); selectedVertex = null;
+      paint(); status(backwards ? 'Правка контура отменена.' : 'Правка контура повторена.'); return;
+    }
     const from = backwards ? undo : redo, to = backwards ? redo : undo;
     if (busy || !from.length) return;
     const change = from.at(-1);

@@ -686,7 +686,68 @@
     return same(generators, after) ? change : { ...change, generators: { before: generators, after } };
   }
 
-  const api = { validTemplate, validGenerators, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
+  // Editor geometry is staged independently of the saved/generated map.
+  function validContour(kind, points, entrance = null) {
+    if (kind === 'path') return validPathParams({ terrain: 'path', width: 1, points });
+    if (kind === 'district') return validDistrictParams({ count: 1, points });
+    if (!validForestParams({ density: 10, points })) return false;
+    if (kind === 'forest') return true;
+    if (kind !== 'room' || !points.every((p, i) => {
+      const next = points[(i + 1) % points.length];
+      return p.x === next.x || p.y === next.y;
+    })) return false;
+    return !entrance || validRoomParams({ floor: 'wood', points, entrance });
+  }
+
+  function editContour(kind, source, entrance, operation) {
+    let points = source.map(p => ({ ...p }));
+    let entry = entrance ? { ...entrance } : null;
+    const { index, x, y } = operation;
+    const fail = () => { throw new RangeError('Контур недопустим: проверь пересечения, размеры и вход на прямой стене.'); };
+    if (operation.type === 'entrance') {
+      if (kind !== 'room' || !valid(x) || !valid(y)) return fail();
+      entry = { x, y };
+    } else {
+      if (!Number.isInteger(index) || index < 0 || index >= points.length) return fail();
+      if (operation.type === 'move') {
+        if (!valid(x) || !valid(y)) return fail();
+        const old = points[index];
+        if (kind === 'room' || kind === 'district') {
+          // Keep neighboring walls axis-aligned, including a rectangle's opposite corner.
+          for (const adjacent of [(index + points.length - 1) % points.length, (index + 1) % points.length]) {
+            const p = points[adjacent];
+            points[adjacent] = p.x === old.x ? { x, y: p.y } : { x: p.x, y };
+          }
+        }
+        points[index] = { x, y };
+        if (kind === 'room' && entry) {
+          for (let i = 0; i < source.length; i++) {
+            const a = source[i], b = source[(i + 1) % source.length];
+            const horizontal = a.y === b.y;
+            const axis = horizontal ? 'x' : 'y', cross = horizontal ? 'y' : 'x';
+            if (entry[cross] !== a[cross] || entry[axis] <= Math.min(a[axis], b[axis]) || entry[axis] >= Math.max(a[axis], b[axis])) continue;
+            const t = (entry[axis] - a[axis]) / (b[axis] - a[axis]);
+            const nextA = points[i], nextB = points[(i + 1) % points.length];
+            entry = { [axis]: Math.round(nextA[axis] + t * (nextB[axis] - nextA[axis])), [cross]: nextA[cross] };
+            break;
+          }
+        }
+      } else if (operation.type === 'insert') {
+        if (!['path', 'forest'].includes(kind) || points.length >= (kind === 'path' ? maxPathPoints : maxForestPoints)) return fail();
+        const edge = kind === 'path' && index === points.length - 1 ? index - 1 : index;
+        if (edge < 0) return fail();
+        const a = points[edge], b = points[(edge + 1) % points.length];
+        points.splice(edge + 1, 0, { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) });
+      } else if (operation.type === 'remove') {
+        if (!['path', 'forest'].includes(kind)) return fail();
+        points.splice(index, 1);
+      } else return fail();
+    }
+    if (!validContour(kind, points, entry)) return fail();
+    return { points, entrance: entry };
+  }
+
+  const api = { validTemplate, validGenerators, validContour, editContour, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
     compactGenerationChange, expandGenerationChange,
     maxPathPoints, maxForestPoints, maxDistrictBuildings };
   if (typeof module === 'object') module.exports = api;
