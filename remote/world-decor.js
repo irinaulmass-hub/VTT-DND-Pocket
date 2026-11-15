@@ -214,6 +214,63 @@
       line(ctx,[[-.17,-.29],[.15,-.29]],'#f6ebcc',.016);
       for(const y of [-.43,.40])boards(ctx,-.44,y,.88,.065,1);
     },
+    rug(ctx) {
+      ctx.fillStyle='#583f35';ctx.fillRect(-.46,-.46,.92,.92);
+      ctx.fillStyle='#a16a58';ctx.fillRect(-.44,-.44,.88,.88);
+      ctx.fillStyle='#6e4641';ctx.fillRect(-.38,-.39,.76,.78);
+      ctx.strokeStyle='#c6a270';ctx.lineWidth=.012;ctx.strokeRect(-.405,-.405,.81,.81);
+      polygon(ctx,[[0,-.30],[.25,0],[0,.30],[-.25,0]],'#b98b62');
+      polygon(ctx,[[0,-.24],[.19,0],[0,.24],[-.19,0]],'#4d6660');
+      polygon(ctx,[[0,-.14],[.10,0],[0,.14],[-.10,0]],'#c5ab7b');
+      for(let i=0;i<13;i++)for(const y of [-.465,.465])line(ctx,[[-.43+i*.069,y],[-.43+i*.069,y+Math.sign(y)*.022]],'#d1b887',.008);
+      for(const x of [-.32,.32])for(const y of [-.31,.31])polygon(ctx,[[x,y-.035],[x+.025,y],[x,y+.035],[x-.025,y]],'#d4b17a');
+    },
+    bookshelf(ctx) {
+      boards(ctx,-.46,-.37,.92,.74,3);
+      ctx.fillStyle='#382f26';ctx.fillRect(-.405,-.285,.81,.57);
+      for(let row=0;row<2;row++)for(let i=0;i<10;i++) {
+        const x=-.38+i*.076, y=-.26+row*.285, h=.17+(i*7%5)*.014;
+        ctx.fillStyle=['#8c5143','#65715a','#b39762','#52696a','#9b7759'][i%5];
+        ctx.fillRect(x,y,.053,h);
+        line(ctx,[[x+.006,y+.035],[x+.044,y+.035]],'#e3cf9a',.012);
+      }
+      for(const y of [-.34,-.01,.31])boards(ctx,-.44,y,.88,.055,1);
+      line(ctx,[[-.45,-.37],[.45,-.37]],'#d5b483',.022);
+    },
+    chair(ctx) {
+      for(const x of [-.28,.21])for(const y of [-.28,.21]){
+        ctx.fillStyle=dark;ctx.fillRect(x,y,.07,.1);
+      }
+      boards(ctx,-.30,-.26,.60,.56,4);
+      ctx.fillStyle='#607463';ctx.fillRect(-.21,-.13,.42,.31);
+      line(ctx,[[-.19,.17],[.19,.17]],'#a7af87',.023);
+      boards(ctx,-.34,-.33,.68,.12,1);
+    },
+    crate(ctx) {
+      boards(ctx,-.39,-.37,.78,.74,5);
+      for(const x of [-.37,.29]){ctx.fillStyle='#c29a65';ctx.fillRect(x,-.36,.075,.71);}
+      line(ctx,[[-.28,-.28],[.28,.27]],'#503b29',.11);
+      line(ctx,[[-.28,-.29],[.28,.26]],'#bc915c',.065);
+      for(const [x,y] of [[-.33,-.30],[.32,-.30],[-.33,.29],[.32,.29]])oval(ctx,x,y,.022,.022,iron);
+    },
+    altar(ctx) {
+      ctx.fillStyle='#4d4c43';ctx.fillRect(-.45,-.39,.90,.78);
+      ctx.fillStyle='#aaa28a';ctx.fillRect(-.42,-.36,.84,.69);
+      ctx.fillStyle='#777c70';ctx.fillRect(-.35,-.29,.70,.55);
+      polygon(ctx,[[-.32,-.26],[.31,-.26],[.35,.22],[-.35,.22]],'#65766a');
+      line(ctx,[[0,-.16],[0,.13]],gold,.032);line(ctx,[[-.09,-.05],[.09,-.05]],gold,.032);
+      for(const x of [-.34,.34]){oval(ctx,x,-.12,.032,.055,'#e1cf9e');oval(ctx,x,-.14,.014,.021,'#ebaa4d');}
+      line(ctx,[[-.43,-.36],[.42,-.36]],'#d1c9aa',.025);
+    },
+    sarcophagus(ctx) {
+      polygon(ctx,[[-.31,-.45],[.31,-.45],[.40,-.30],[.35,.42],[-.35,.42],[-.40,-.30]],'#45473f');
+      polygon(ctx,[[-.27,-.41],[.27,-.41],[.35,-.27],[.30,.37],[-.30,.37],[-.35,-.27]],'#b2aa91');
+      polygon(ctx,[[-.22,-.35],[.22,-.35],[.28,-.24],[.24,.31],[-.24,.31],[-.28,-.24]],'#8f9383');
+      oval(ctx,0,-.21,.09,.073,'#c3bea5');
+      polygon(ctx,[[-.13,-.12],[.13,-.12],[.10,.24],[-.10,.24]],'#aaa991');
+      line(ctx,[[-.10,-.03],[.10,.08],[-.09,.08],[.09,-.03]],'#5d6559',.025);
+      line(ctx,[[-.25,-.39],[.24,-.39]],'#dbd3b6',.023);
+    },
     stairs(ctx) {
       polygon(ctx,[[-.44,-.46],[.44,-.46],[.44,.46],[-.44,.46]],'#37382f');
       for(let i=0;i<8;i++) {

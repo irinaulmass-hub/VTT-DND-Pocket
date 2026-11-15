@@ -41,7 +41,7 @@
             [pixelX(x), pixelY(y), pixelX(x+1)-pixelX(x), pixelY(y+1)-pixelY(y)]);
         }
         ctx.restore();
-        if (options.grid && camera.scale >= 14) {
+        if ((typeof options.grid === 'function' ? options.grid() : options.grid) && camera.scale >= 14) {
           ctx.beginPath();
           ctx.lineWidth = 1 / camera.scale;
           ctx.strokeStyle = '#302a2528';

@@ -18,3 +18,4 @@ backups/
 update-project.cjs
 
 public/icon_new.ico
+.editor-preview/

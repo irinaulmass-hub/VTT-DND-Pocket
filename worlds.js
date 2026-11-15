@@ -9,6 +9,8 @@ const createWorldDiscoveries = require('./world-discoveries');
 const registerWorldTemplates = require('./world-templates');
 const createWorldDistricts = require('./world-districts');
 const { validGenerators } = require('./remote/world-generators');
+const createWorldPreset = require('./world-presets');
+const { roomThemes } = require('./remote/world-generators');
 const { project, isRevealedSecret } = require('./world-exploration');
 
 module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters, assignedCharacter, movementLocked, revealScreen, screenBlackout }) => {
@@ -16,6 +18,12 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   const chunkPattern = /^-?\d{1,3},-?\d{1,3}$/;
   const store = createWorldStore(gameFile);
   const { tileLimit, objectLimit } = map;
+  if (process.env.VTT_EDITOR_DEMO === '1') {
+    Object.entries(roomThemes).filter(([theme]) => theme !== 'none').forEach(([theme, title], index) => {
+      const id = '71000000-0000-4000-8000-00000000000' + index;
+      if (!store.readDraft(id, [])) store.writeDraft({ id, name: title + ' · Готовая сцена', revision: 0, ...createWorldPreset(theme) });
+    });
+  }
 
   registerWorldTemplates(app, { express, requireDm, gameFile });
   const movement = createWorldMovement(store, gameFile);
@@ -121,6 +129,10 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
   app.post('/api/worlds', requireDm, json, route((req, res) => {
     const name = typeof req.body?.name === 'string' && req.body.name.trim().slice(0, 80);
     if (!name) return res.status(400).json({ error: 'Введите название карты' });
+    if (req.body.preset !== undefined && (typeof req.body.preset !== 'string' || req.body.preset === 'none' ||
+        !Object.hasOwn(roomThemes, req.body.preset) || req.body.sample === true)) {
+      return res.status(400).json({ error: 'Выберите одну из доступных заготовок карты' });
+    }
     const { parentWorldId, sceneMapId, elevation } = req.body;
     let parentScope;
     if (sceneMapId !== undefined) {
@@ -139,7 +151,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
       const parent = typeof parentWorldId === 'string' && store.readDraft(parentWorldId, []);
       if (!parent || parent.parentWorldId) return res.status(404).json({ error: 'Выберите основной мир кампании' });
     }
-    const data = { id: randomUUID(), name, revision: 0, ...(req.body.sample === true ? map.sample() : { chunks: {}, objects: [] }) };
+    const data = { id: randomUUID(), name, revision: 0, ...(req.body.preset ? createWorldPreset(req.body.preset) :
+      req.body.sample === true ? map.sample() : { chunks: {}, objects: [] }) };
     if (parentScope) {
       data.parentWorldId = parentScope.worldId;
       data.parentSceneId = parentScope.sceneId;

@@ -12,6 +12,11 @@
   const maxForestArea = 4096;
   const maxDistrictBuildings = 24;
   const forestGround = new Set([undefined, 'grass', 'forest', 'denseForest', 'woodland']);
+  const structuralPaths = new Set(['wall', 'fence', 'palisade']);
+  const roomThemes = { none: 'Без мебели', tavern: 'Таверна', bedroom: 'Спальня',
+    library: 'Библиотека', storeroom: 'Склад', crypt: 'Склеп', workshop: 'Мастерская' };
+  const roomFurniture = new Set(['table','bench','bed','chest','barrel','torch','brazier','bones',
+    'bookshelf','chair','altar','sarcophagus','crate','rug']);
 
   function hasFields(value, fields) {
     return value !== null && typeof value === 'object' && !Array.isArray(value) &&
@@ -25,7 +30,8 @@
   function validPathParams(params) {
     if (!hasFields(params, ['terrain', 'width', 'points'])) return false;
     const { terrain, width, points } = params;
-    if ((terrain !== 'path' && terrain !== 'water') ||
+    if ((terrain !== 'path' && terrain !== 'water' && !structuralPaths.has(terrain)) ||
+        (structuralPaths.has(terrain) && width !== 1) ||
         !Number.isInteger(width) || width < 1 || width > 15 || width % 2 === 0 ||
         !Array.isArray(points) || points.length < 2 || points.length > maxPathPoints) return false;
 
@@ -124,7 +130,9 @@
   }
 
   function validRoomParams(params) {
-    if (!hasFields(params, ['floor', 'points', 'entrance']) || !roomFloors.has(params.floor) ||
+    const fields = ['floor', 'points', 'entrance'];
+    if (params && Object.hasOwn(params, 'furnishing')) fields.push('furnishing');
+    if (!hasFields(params, fields) || (Object.hasOwn(params, 'furnishing') && !Object.hasOwn(roomThemes, params.furnishing)) || !roomFloors.has(params.floor) ||
         !hasFields(params.entrance, ['x', 'y']) || !valid(params.entrance.x) || !valid(params.entrance.y) ||
         !validForestParams({ density: 10, points: params.points })) return false;
     if (!params.points.every((point, index) => {
@@ -154,7 +162,7 @@
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const terrainValue = value => value === null || typeof value === 'string' && Object.hasOwn(terrain, value);
 
-  function validState(state, kind) {
+  function validState(state, kind, params) {
     if (!hasFields(state, ['version', 'tiles', 'objects', 'protectedTiles', 'protectedObjects']) || state.version !== 1 ||
         !Array.isArray(state.tiles) || state.tiles.length > (kind === 'path' ? maxPathCells : maxForestArea) ||
         !Array.isArray(state.objects) || state.objects.length > objectLimit ||
@@ -165,18 +173,21 @@
       for (const cell of cells) {
         if (!hasFields(cell, fields) || !valid(cell.x) || !valid(cell.y) || seen.has(cellKey(cell))) return false;
         const allowedAfter = kind === 'forest' ? cell.after === 'woodland' : kind === 'room' ? roomFloors.has(cell.after) :
-          kind === 'district' ? ['path', 'dirt'].includes(cell.after) : ['path', 'water'].includes(cell.after);
+          kind === 'district' ? ['path', 'dirt'].includes(cell.after) : !structuralPaths.has(params?.terrain) && ['path', 'water'].includes(cell.after);
         if (fields.length === 4 && (!terrainValue(cell.before) || !allowedAfter)) return false;
         seen.add(cellKey(cell));
       }
     }
     const ids = new Set();
     for (const prop of state.objects) {
-      if (!['forest', 'room', 'district'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
+      const allowedKind = kind === 'path' ? structuralPaths.has(params?.terrain) && prop?.kind === params.terrain :
+        kind === 'room' ? ['wall', 'door'].includes(prop?.kind) || params?.furnishing && params.furnishing !== 'none' && roomFurniture.has(prop?.kind) :
+        kind === 'district' ? prop?.kind === 'house' : ['tree', 'bush'].includes(prop?.kind);
+      if (!['path', 'forest', 'room', 'district'].includes(kind) || !hasFields(prop, ['id', 'kind', 'x', 'y', 'turn', 'hidden']) ||
           typeof prop.id !== 'string' || !prop.id.length || prop.id.length > 64 || ids.has(prop.id) ||
-          !(kind === 'room' ? ['wall', 'door'] : kind === 'district' ? ['house'] : ['tree', 'bush']).includes(prop.kind) || !valid(prop.x) || !valid(prop.y) ||
+          !allowedKind || !valid(prop.x) || !valid(prop.y) ||
           ![0, 1, 2, 3].includes(prop.turn) || typeof prop.hidden !== 'boolean' ||
-          (prop.kind === 'wall' && !wallCells(prop).every(cell => cell.every(valid)))) return false;
+          (structuralPaths.has(prop.kind) && !wallCells(prop).every(cell => cell.every(valid)))) return false;
       ids.add(prop.id);
     }
     const protectedIds = state.protectedObjects;
@@ -188,7 +199,7 @@
     const fields = ['id', 'kind', 'version', 'seed', 'params'];
     if (recipe && Object.hasOwn(recipe, 'state')) fields.push('state');
     return hasFields(recipe, fields) &&
-      (!Object.hasOwn(recipe, 'state') || validState(recipe.state, recipe.kind)) &&
+      (!Object.hasOwn(recipe, 'state') || validState(recipe.state, recipe.kind, recipe.params)) &&
       typeof recipe.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(recipe.id) &&
       recipe.version === 1 && validSeed(recipe.seed) &&
       ((recipe.kind === 'path' && validPathParams(recipe.params)) ||
@@ -253,8 +264,46 @@
     }
   }
 
-  function generatePath(recipe) {
+  function generateStructuralPath(recipe, draft, excludedCells, excludedIds) {
+    const points = recipe.params.points, line = [points[0]], visited = new Set([cellKey(points[0])]);
+    let steps = 0;
+    for (let i = 1; i < points.length; i++) trace(points[i - 1], points[i], (x, y) => {
+      if (++steps > maxPathSteps) throw new RangeError('Линия слишком велика. Раздели её на участки.');
+      const key = x + ',' + y;
+      if (!visited.has(key)) { line.push({ x, y }); visited.add(key); }
+      // Retraced sections break the ordered pairing without inventing diagonal segments.
+      else if (line.at(-1).x !== x || line.at(-1).y !== y) line.push({ x, y });
+    });
+    const prefix = 'path-' + Array.from(recipe.id).reduce((hash, c) => Math.imul(hash ^ c.charCodeAt(0), 16777619), 2166136261).toString(36) + '-';
+    const occupied = new Set(), ids = new Set(draft.objects.map(p => p.id));
+    for (const prop of draft.objects) {
+      if (prop.id.startsWith(prefix) && excludedIds.has(prop.id) && structuralPaths.has(prop.kind) &&
+          wallCells(prop).every(([x,y]) => visited.has(x + ',' + y))) continue;
+      const b = cellBounds(prop);
+      for (let y = b.top; y <= b.bottom; y++) for (let x = b.left; x <= b.right; x++) {
+        if (visited.has(x + ',' + y)) occupied.add(x + ',' + y);
+      }
+    }
+    const objects = [], pairs = new Set();
+    for (let i = 0; i < line.length; i += 2) {
+      const a = i + 1 < line.length ? line[i] : line[i - 1], b = i + 1 < line.length ? line[i + 1] : line[i];
+      if (!a || Math.abs(a.x-b.x) + Math.abs(a.y-b.y) !== 1) continue;
+      const pair = [cellKey(a),cellKey(b)].sort().join('|');
+      if (pairs.has(pair)) continue;
+      pairs.add(pair);
+      const turn = b.x > a.x ? 0 : b.y > a.y ? 1 : b.x < a.x ? 2 : 3;
+      const prop = { id: prefix + a.x + '_' + a.y + '_' + turn, kind: recipe.params.terrain, ...a, turn, hidden: false };
+      if (ids.has(prop.id) || excludedIds.has(prop.id) || [a,b].some(p =>
+        excludedCells.has(cellKey(p)) || occupied.has(cellKey(p)) || get(draft.chunks,p.x,p.y) === 'water')) continue;
+      if (objects.length + draft.objects.length >= objectLimit) throw new RangeError('Линия превысит лимит объектов. Раздели её на участки.');
+      objects.push(prop);
+    }
+    return { chunks: {}, count: objects.length, objects };
+  }
+
+  function generatePath(recipe, draft = { chunks: {}, objects: [] }, excludedCells = new Set(), excludedIds = new Set()) {
     if (recipe?.kind !== 'path' || !validRecipe(recipe)) throw new RangeError('Проверь точки, ширину и seed линии');
+    if (structuralPaths.has(recipe.params.terrain)) return generateStructuralPath(recipe, draft, excludedCells, excludedIds);
     const { points, terrain, width } = recipe.params;
     const random = createRandomV1(recipe.seed);
     const radius = (width - 1) / 2;
@@ -488,9 +537,108 @@
         throw new RangeError('Стена или вход комнаты пересекает существующий объект. Измени контур или перемести объект.');
       }
     }
+    if (recipe.params.furnishing && recipe.params.furnishing !== 'none') {
+      generated.push(...furnishRoom(recipe, { area, boundary }, draft, occupied, prefix, excludedCells, excludedIds));
+    }
     if (draft.objects.length + generated.length > objectLimit) throw new RangeError('Комната превысит лимит объектов');
     for (const cell of area.values()) if (!excludedCells.has(cellKey(cell))) set(chunks, cell.x, cell.y, floor);
     return { chunks, count: area.size, objects: generated };
+  }
+
+  function furnishRoom(recipe, shape, draft, occupied, prefix, excludedCells, excludedIds) {
+    const { area, boundary } = shape, entry = recipe.params.entrance;
+    const interior = new Set([...area.keys()].filter(key => !boundary.has(key) && key !== cellKey(entry)));
+    const blocked = new Set(occupied), objects = [], reserved = new Set();
+    const start = neighbors.map(([dx,dy]) => ({ x: entry.x+dx, y: entry.y+dy })).find(p => interior.has(cellKey(p)));
+    if (!start) return objects;
+    reserved.add(cellKey(start));
+    const inward = { x: start.x + start.x-entry.x, y: start.y + start.y-entry.y };
+    if (interior.has(cellKey(inward))) reserved.add(cellKey(inward));
+    const flood = () => {
+      const reached = new Set(), queue = [start];
+      for (let i=0; i<queue.length; i++) {
+        const p=queue[i], key=cellKey(p);
+        if (!interior.has(key) || blocked.has(key) || reached.has(key)) continue;
+        reached.add(key);
+        for (const [dx,dy] of neighbors) queue.push({x:p.x+dx,y:p.y+dy});
+      }
+      return reached;
+    };
+    let accessible = flood();
+    const candidates = [...area.values()].filter(p => accessible.has(cellKey(p)));
+    const hash = (p, salt) => {
+      let n = Math.imul(p.x,374761393) ^ Math.imul(p.y,668265263) ^ recipe.seed ^ Math.imul(salt,1274126177);
+      n = Math.imul(n ^ n>>>13,1274126177); return (n ^ n>>>16) >>> 0;
+    };
+    let salt=0;
+    const place = (parts, count, edge = false) => {
+      const order = candidates.map(p => ({ ...p, score: hash(p,++salt) }));
+      // Wall furniture is tried at the perimeter first; all ties are deterministic.
+      const nearWall = p => neighbors.some(([dx,dy]) => boundary.has((p.x+dx)+','+(p.y+dy)));
+      order.sort((a,b) => (edge ? Number(nearWall(b))-Number(nearWall(a)) : 0) || a.score-b.score);
+      let placed=0;
+      for (const p of order) {
+        if (placed >= count) break;
+        const turn = hash(p,salt) % 2;
+        const group = parts.map(([kind,dx,dy],i) => {
+          const x=p.x+(turn ? -dy : dx), y=p.y+(turn ? dx : dy);
+          return { id: prefix+'f-'+kind+'-'+x+'_'+y+'_'+turn+'_'+i, kind, x, y, turn, hidden:false };
+        });
+        if (group.some(prop => excludedIds.has(prop.id) || draft.objects.some(p => p.id===prop.id))) continue;
+        const cells = new Set(); let validGroup=true;
+        for (const prop of group) {
+          const b=cellBounds(prop);
+          for(let y=b.top;y<=b.bottom;y++)for(let x=b.left;x<=b.right;x++) {
+            const key=x+','+y;
+            if(!interior.has(key)||blocked.has(key)||reserved.has(key)||excludedCells.has(key)||cells.has(key))validGroup=false;
+            cells.add(key);
+          }
+        }
+        if(!validGroup)continue;
+        for(const key of cells)blocked.add(key);
+        const next=flood();
+        if([...accessible].some(key=>!cells.has(key)&&!next.has(key))) {
+          for(const key of cells)blocked.delete(key);continue;
+        }
+        objects.push(...group); accessible=next; placed++;
+      }
+    };
+    const amount=(divisor,max)=>Math.max(1,Math.min(max,Math.floor(interior.size/divisor)));
+    const theme=recipe.params.furnishing;
+    if(theme==='tavern') {
+      place([['table',0,0],['bench',0,-2],['bench',0,2]],amount(30,6));
+      place([['barrel',0,0]],amount(28,5),true); place([['brazier',0,0]],1,true);
+    } else if(theme==='bedroom') {
+      place([['bed',0,0],['chest',2,0]],amount(34,6),true);
+      place([['table',0,0],['chair',0,2]],1);
+    } else if(theme==='library') {
+      place([['bookshelf',0,0]],amount(18,10),true);
+      place([['table',0,0],['chair',0,2]],amount(48,3));
+    } else if(theme==='crypt') {
+      place([['altar',0,0]],1,true);place([['sarcophagus',0,0]],amount(22,8));
+      place([['bones',0,0]],amount(35,5));
+    } else if(theme==='storeroom') {
+      place([['crate',0,0]],amount(13,12),true);place([['barrel',0,0]],amount(18,8),true);place([['chest',0,0]],amount(35,4),true);
+    } else if(theme==='workshop') {
+      place([['table',0,0],['chair',0,2]],amount(40,3));
+      place([['crate',0,0]],amount(25,6),true);place([['barrel',0,0]],2,true);
+    }
+    place([['torch',0,0]],amount(50,4),true);
+    // Rugs are a decorative underlay. They may share furniture cells but never walls.
+    const rugs=[], rugCells=new Set();
+    if(['tavern','bedroom','library'].includes(theme))for(const anchor of objects.filter(p=>['table','bed'].includes(p.kind))) {
+      const prop={id:prefix+'f-rug-'+anchor.x+'_'+anchor.y,kind:'rug',x:anchor.x,y:anchor.y,turn:0,hidden:false};
+      if(excludedIds.has(prop.id)||draft.objects.some(p=>p.id===prop.id))continue;
+      const b=cellBounds(prop);let clear=true;
+      for(let y=b.top;y<=b.bottom;y++)for(let x=b.left;x<=b.right;x++) {
+        const key=x+','+y;if(!interior.has(key)||occupied.has(key)||excludedCells.has(key)||rugCells.has(key))clear=false;
+      }
+      if(clear) {
+        rugs.push(prop);
+        for(let y=b.top;y<=b.bottom;y++)for(let x=b.left;x<=b.right;x++)rugCells.add(x+','+y);
+      }
+    }
+    return [...rugs,...objects];
   }
 
   function cells(chunks) {
@@ -584,7 +732,7 @@
     }
     const output = recipe.kind === 'forest' ? generateForest(recipe, base, excluded, protectedObjects) :
       recipe.kind === 'room' ? generateRoom(recipe, base, excluded, protectedObjects) :
-      recipe.kind === 'district' ? generateDistrict(recipe, base, excluded, protectedObjects, retained) : generatePath(recipe);
+      recipe.kind === 'district' ? generateDistrict(recipe, base, excluded, protectedObjects, retained) : generatePath(recipe, base, excluded, protectedObjects);
     // Keep ownership of temporarily pinned pads/entrances, so unlinking can restore source ground.
     const tiles = (old?.tiles || []).filter(cell => reserved.has(cellKey(cell)) &&
       !protectedTiles.has(cellKey(cell)) && !foreignCells.has(cellKey(cell)));
@@ -604,7 +752,7 @@
     const changes = [...affected.values()].map(({ x, y }) => ({ x, y,
       before: get(draft.chunks, x, y), after: get(working.chunks, x, y),
     })).filter(cell => cell.before !== cell.after);
-    return { id: recipe.id, chunks: working.chunks, tiles: changes, count: tiles.length,
+    return { id: recipe.id, chunks: working.chunks, tiles: changes, count: tiles.length || generatedObjects.length,
       objects: same(draft.objects, afterObjects) ? null : { before: draft.objects, after: afterObjects },
       generators: { before: generators, after: same(generators, nextGenerators) ? generators : nextGenerators } };
   }
@@ -747,7 +895,7 @@
     return { points, entrance: entry };
   }
 
-  const api = { validTemplate, validGenerators, validContour, editContour, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
+  const api = { validTemplate, validGenerators, validContour, editContour, roomThemes, structuralPaths, createRandomV1, generatePath, generateForest, generateRoom, generateDistrict, generationChange, protectManualChanges,
     compactGenerationChange, expandGenerationChange,
     maxPathPoints, maxForestPoints, maxDistrictBuildings };
   if (typeof module === 'object') module.exports = api;

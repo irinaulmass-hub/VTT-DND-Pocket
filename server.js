@@ -1224,7 +1224,8 @@ app.use('/dm', requireDm);
 app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 app.get('/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'sheet.html')); });
 app.get('/tv', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
-app.get('/api/health', (req, res) => res.json({ app: 'vtt-pocket', ok: true }));
+app.get('/api/health', (req, res) => res.json({ app: 'vtt-pocket', ok: true,
+  instanceId: process.env.VTT_INSTANCE_ID || null }));
 app.get('/api/connection', requireDm, (req, res) => {
   const addresses = Object.values(require('os').networkInterfaces()).flat().filter(i => i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.'));
   res.json({ addresses: [...new Set(addresses.map(i => 'http://' + i.address + ':' + PORT))] });

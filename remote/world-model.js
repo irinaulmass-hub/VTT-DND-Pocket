@@ -19,6 +19,9 @@
     chest: ['Сундук', 1, 1], openChest: ['Сундук (приоткрытый)', 1, 1],
     palisade: ['Частокол', 2, 1], ruinedHouse: ['Разрушенный дом', 3, 3],
     table: ['Стол', 2, 1], bench: ['Скамейка', 2, 1], bed: ['Кровать', 1, 2],
+    bookshelf: ['Книжный шкаф', 2, 1], chair: ['Стул', 1, 1], crate: ['Ящик', 1, 1],
+    altar: ['Алтарь', 2, 1], sarcophagus: ['Саркофаг', 1, 2],
+    rug: ['Ковёр', 4, 5],
     stairs: ['Лестница', 2, 3], bearTrap: ['Капкан', 1, 1],
     brazier: ['Жаровня', 1, 1], goblinTotems: ['Тотемы гоблинов', 2, 1],
     barn: ['Амбар', 6, 4], well: ['Колодец', 1, 1], cart: ['Телега', 3, 1],
@@ -31,13 +34,13 @@
   };
   const buildingKinds = new Set(['house', 'tavern', 'barn']);
   // Low furniture blocks occupied cells, but does not block sight like a wall.
-  const furnitureKinds = new Set(['table', 'bench', 'bed']);
+  const furnitureKinds = new Set(['table', 'bench', 'bed', 'bookshelf', 'chair', 'crate', 'altar', 'sarcophagus']);
   const linkedSections = new Set(['wall','palisade','fence']);
   const propGroups = {
     'Существа': ['goblinArcher','goblinShield','goblinAxes'],
     'Постройки и природа': ['house','tavern','barn','bridge','well','tree','bush','wall','door','fence','palisade','ruinedHouse','burningRoof','boulder'],
     'Деревня и лагерь': ['wagon','wreckedWagon','cart','campfire','pole','pumpkin','smallPumpkin','garland'],
-    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','bed','stairs','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
+    'Интерьер и приключения': ['barrel','vineBarrel','chest','openChest','table','bench','bed','bookshelf','chair','crate','altar','sarcophagus','rug','stairs','brazier','torch','bearTrap','goblinTotems','greatsword','debris','bones'],
   };
   const directions = [[0,-1],[1,0],[0,1],[-1,0]];
   function wallCells(prop) {

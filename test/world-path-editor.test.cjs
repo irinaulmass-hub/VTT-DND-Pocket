@@ -155,7 +155,7 @@ test('the master can preview, apply, undo, save, and reopen Path, Forest Plot an
   await reopen();
   control('path-saved').value = recipe.id;
   control('path-saved').onchange();
-  assert.equal(camera.x, -.5);
+  assert.equal(camera.x, 1.5, 'loading a recipe centers the complete contour');
   assert.equal(control('path-seed').value, '43');
   control('path-preview').onclick();
   control('path-apply').onclick();

@@ -337,3 +337,20 @@ test('Room handle edits preserve an entrance, reject invalid geometry and cancel
   assert.ok(f.saved.objects.some(p=>p.kind==='door'&&p.x===10&&p.y===4));
   c('undo').onclick();await c('save').onclick();assert.deepEqual(f.saved.generators,original.generators);assert.deepEqual(f.saved.objects,original.objects);
 });
+
+test('furnished Room and barrier Path previews persist their settings and generated objects through UI history',async()=>{
+ const f=editorFixture(),c=f.control;await f.open();f.tools[2].onclick();c('room-floor').value='wood';c('room-theme').value='tavern';c('path-seed').value='17';
+ for(const [x,y] of [[-10,-8],[10,-8],[10,8],[-10,8]])f.canvas.click(x,y);
+ c('room-entrance').onclick();f.canvas.click(0,8);c('path-preview').onclick();assert.ok(f.rendered.objects.some(p=>p.kind==='bench'));
+ assert.equal(f.saved.objects.length,0);c('path-apply').onclick();await c('save').onclick();const tavern=copy(f.saved),id=f.saved.generators[0].id;
+ c('room-theme').value='library';c('room-theme').oninput();assert.equal(c('path-apply').disabled,true);
+ c('path-preview').onclick();assert.ok(f.rendered.objects.some(p=>p.kind==='bookshelf'));c('path-apply').onclick();await c('save').onclick();
+ assert.equal(f.saved.generators[0].id,id);assert.equal(f.saved.generators[0].params.furnishing,'library');
+ c('undo').onclick();assert.equal(c('room-theme').value,'tavern');await c('save').onclick();assert.deepEqual(f.saved.objects,tavern.objects);
+ c('redo').onclick();assert.equal(c('room-theme').value,'library');await c('save').onclick();await f.open();c('path-saved').value=id;c('path-saved').onchange();assert.equal(c('room-theme').value,'library');
+ f.tools[0].onclick();c('path-terrain').value='fence';c('path-width').value='15';c('path-seed').value='0';
+ f.canvas.click(-15,-12);f.canvas.click(15,-12);c('path-preview').onclick();assert.ok(f.rendered.objects.some(p=>p.kind==='fence'));
+ c('path-apply').onclick();await c('save').onclick();assert.equal(f.saved.generators.at(-1).params.width,1);
+ const barrierId=f.saved.generators.at(-1).id;await f.open();c('path-saved').value=barrierId;c('path-saved').onchange();assert.equal(c('path-terrain').value,'fence');
+ assert.equal(c('path-width-label').hidden,true);assert.equal(f.saved.generators.length,2);
+});
