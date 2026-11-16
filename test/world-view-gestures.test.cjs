@@ -119,3 +119,16 @@ test('contour rendering draws open paths, closed fills, numbered handles and a d
   calls.length=0;contour={...contour,closed:true,entrance:{x:4,y:0}};frame();
   assert.equal(calls.some(c=>c[0]==='close'),true);assert.equal(calls.filter(c=>c[0]==='fillRect').length,2,'background and entrance square');
 });
+
+test('marquee and modifier selection commit once, cancel on Escape and never become accidental clicks',()=>{
+  const handlers=new Map(),calls=[];let enabled=true;
+  const canvas={width:500,height:300,getContext:()=>({}),focus(){},setPointerCapture(){},getBoundingClientRect:()=>({left:0,top:0,width:500,height:300}),addEventListener:(n,fn)=>handlers.set(n,fn)};
+  const window={WorldMap:require('../remote/world-model'),WorldArt:{paintTile(){},paintProp(){}},addEventListener(){}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../remote/world-view.js'),'utf8'),{window,cancelAnimationFrame(){},requestAnimationFrame:()=>1,ResizeObserver:class{constructor(cb){this.cb=cb;}observe(){this.cb();}}});
+  window.createWorldView(canvas,{click:()=>calls.push('click'),marquee:()=>enabled,selectArea:(a,b,add)=>calls.push({a,b,add}),pickProp:(x,y,event)=>{calls.push(event.ctrlKey?'ctrl':'pick');}});
+  const event=(x,y,extra={})=>({pointerId:1,button:0,clientX:x,clientY:y,...extra});
+  handlers.get('pointerdown')(event(250,150));handlers.get('pointermove')(event(298,198));handlers.get('pointerup')(event(298,198));
+  assert.equal(calls.length,1);assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{a:{x:0,y:0},b:{x:2,y:2},add:false});
+  calls.length=0;handlers.get('pointerdown')(event(250,150));handlers.get('keydown')({key:'Escape',preventDefault(){}});handlers.get('pointerup')(event(300,200));assert.deepEqual(calls,[]);
+  enabled=false;handlers.get('pointerdown')(event(250,150,{ctrlKey:true}));handlers.get('pointerup')(event(250,150,{ctrlKey:true}));assert.deepEqual(calls,['ctrl']);
+});

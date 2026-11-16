@@ -171,7 +171,7 @@
 
   const cellKey = ({ x, y }) => x + ',' + y;
   const sameObject = (a, b) => !!a && !!b &&
-    ['id', 'kind', 'x', 'y', 'turn'].every(key => a[key] === b[key]) && !!a.hidden === !!b.hidden;
+    ['id', 'kind', 'x', 'y', 'turn','groupId','groupName'].every(key => a[key] === b[key]) && !!a.hidden === !!b.hidden;
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const terrainValue = value => value === null || typeof value === 'string' && Object.hasOwn(terrain, value);
 
@@ -715,7 +715,8 @@
         }
       }
       for (let y = bounds.top; y <= bounds.bottom; y++) for (let x = bounds.left; x <= bounds.right; x++) reserved.add(x + ',' + y);
-      return current;
+      const {groupId,groupName,...snapshot}=current;
+      return snapshot;
     });
     for (const cell of old?.tiles || []) {
       if ((get(draft.chunks, cell.x, cell.y) ?? null) !== cell.after) protectedTiles.set(cellKey(cell), { x: cell.x, y: cell.y });

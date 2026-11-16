@@ -189,7 +189,34 @@
     return {...area,width,height,pixelsPerCell};
   }
 
-  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, exportPlan, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
+  function selectionBounds(objects) {
+    if(!objects.length)return null;
+    const boxes=objects.map(cellBounds);
+    return {left:Math.min(...boxes.map(b=>b.left)),top:Math.min(...boxes.map(b=>b.top)),
+      right:Math.max(...boxes.map(b=>b.right)),bottom:Math.max(...boxes.map(b=>b.bottom))};
+  }
+  // Physical footprints rotate together on the existing grid. No migration or
+  // visual-only displacement of VTT collisions is introduced by group actions.
+  function transformObjects(objects, ids, {dx=0,dy=0,turns=0}={}) {
+    if(![dx,dy,turns].every(Number.isInteger))throw new RangeError('Сдвиг и поворот должны быть целыми');
+    const chosen=new Set(ids),members=objects.filter(p=>chosen.has(p.id));
+    if(!members.length)return objects;
+    const b=selectionBounds(members);
+    const n=(turns%4+4)%4;
+    return objects.map(prop=>{
+      if(!chosen.has(prop.id))return prop;
+      const center=footprint(prop);let x=center.x-b.left,y=center.y-b.top,w=b.right-b.left+1,h=b.bottom-b.top+1;
+      for(let i=0;i<n;i++){[x,y]=[h-y,x];[w,h]=[h,w];}
+      const turn=(prop.turn+n)%4,shape=footprint({...prop,x:0,y:0,turn});
+      const next={...prop,x:b.left+x+dx-shape.x,y:b.top+y+dy-shape.y,turn};
+      const bounds=cellBounds(next);
+      if(!valid(next.x)||!valid(next.y)||!valid(bounds.left)||!valid(bounds.right)||!valid(bounds.top)||!valid(bounds.bottom))
+        throw new RangeError('Вся группа должна оставаться внутри границ мира');
+      return next;
+    });
+  }
+
+  const api = { size, limit, tileLimit, objectLimit, terrain, props, valid, address, get, set, sample, wallCells, structures, sceneScope, locationMapId, exportPlan, selectionBounds, transformObjects, linkedSections, buildingKinds, furnitureKinds, propGroups, footprint, cellBounds, crownFrame, visualBounds, boundsIntersect };
   if (typeof module === 'object') module.exports = api;
   else root.WorldMap = api;
 })(globalThis);

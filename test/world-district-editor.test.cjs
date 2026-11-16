@@ -368,3 +368,27 @@ test('landscape UI restores biome and rows after switching recipes, regeneration
   await c('save').onclick();await f.open();f.tools.find(t=>t.dataset.tool==='generate-forest').onclick();c('path-saved').value=id;c('path-saved').onchange();
   assert.equal(c('plot-biome').value,'garden');assert.equal(c('plot-orientation').value,'0');
 });
+
+test('multi-selection creates named persistent groups, shifts and rotates atomically with Undo/Redo',async()=>{
+  const f=editorFixture(),c=f.control,items=[{id:'a',kind:'table',x:0,y:0,turn:0},{id:'b',kind:'bench',x:0,y:2,turn:0},{id:'outside',kind:'house',x:20,y:20,turn:0}];
+  f.seed({objects:items});await f.open();f.tools.find(t=>t.dataset.tool==='select').onclick();
+  f.canvas.selectArea({x:-2,y:-2},{x:4,y:4},false);assert.deepEqual(Array.from(f.canvas.selectedIds()),['a','b']);
+  c('group-name').value='Dining set';c('group').onclick();const grouped=copy(f.rendered);
+  assert.equal(grouped.objects[0].groupName,'Dining set');assert.equal(grouped.objects[0].groupId,grouped.objects[1].groupId);assert.equal(grouped.objects[2].groupId,undefined);
+  c('move-x').value='4';c('move-y').value='-3';c('move').onclick();const moved=copy(f.rendered);assert.equal(moved.objects[0].x,4);assert.equal(moved.objects[1].y,-1);
+  c('turn').onclick();const turned=copy(f.rendered);assert.equal(turned.objects[0].turn,1);assert.deepEqual(turned.objects[2],items[2]);
+  await c('undo').onclick();assert.deepEqual(f.rendered,moved);await c('redo').onclick();assert.deepEqual(f.rendered,turned);
+  await c('save').onclick();await f.open();f.tools.find(t=>t.dataset.tool==='select').onclick();const hit=world.footprint(f.rendered.objects[0]);f.canvas.pickProp(hit.x,hit.y);
+  assert.equal(f.canvas.selectedIds().length,2);c('ungroup').onclick();assert.ok(f.rendered.objects.every(p=>!p.groupId));
+  await c('undo').onclick();assert.equal(f.rendered.objects[0].groupName,'Dining set');
+});
+
+test('Ctrl selection toggles whole groups, copied collections receive fresh IDs and preserve relative offsets',async()=>{
+  const f=editorFixture(),c=f.control,items=[{id:'a',kind:'crate',x:0,y:0,turn:0,hidden:true,groupId:'source',groupName:'Storage'},{id:'b',kind:'barrel',x:2,y:0,turn:0,groupId:'source',groupName:'Storage'},{id:'c',kind:'chair',x:6,y:0,turn:0}];
+  f.seed({objects:items});await f.open();f.tools.find(t=>t.dataset.tool==='select').onclick();f.canvas.pickProp(.5,.5);assert.equal(f.canvas.selectedIds().length,2);
+  f.canvas.pickProp(6.5,.5,{ctrlKey:true});assert.equal(f.canvas.selectedIds().length,3);f.canvas.pickProp(6.5,.5,{ctrlKey:true});assert.equal(f.canvas.selectedIds().length,2);
+  c('copy').onclick();assert.equal(f.canvas.placementPreview(10,10).props.length,2);f.canvas.click(10,10);
+  const copies=f.rendered.objects.slice(3);assert.equal(copies.length,2);assert.equal(copies[1].x-copies[0].x,2);assert.equal(copies[0].hidden,true);
+  assert.notEqual(copies[0].groupId,'source');assert.equal(copies[0].groupId,copies[1].groupId);assert.equal(new Set(f.rendered.objects.map(p=>p.id)).size,5);
+  await c('undo').onclick();assert.deepEqual(f.rendered.objects,items);await c('redo').onclick();assert.equal(f.rendered.objects.length,5);
+});

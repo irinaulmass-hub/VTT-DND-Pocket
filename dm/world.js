@@ -37,13 +37,14 @@
           <button class="book-button" data-tool="generate-room">Room · Комната</button>
           <button class="book-button" data-tool="generate-district">District Plot · Район</button>
           <button class="book-button" data-tool="erase">Убрать тайл</button>
-          <button class="book-button" data-tool="select">Двигать объекты</button>
+          <button class="book-button" data-tool="select">Выделение и группы</button><label><input type="checkbox" data-world-marquee> Выделять рамкой</label>
           <button class="book-button" data-tool="delete-object">Удалять объекты</button>
           <label><input type="checkbox" data-world-rect> Заполнить прямоугольник</label>
         </div>
         <label class="world-library-search">Найти в библиотеке
           <input class="book-select" type="search" data-world-library-search placeholder="Дерево, стул, камень…" aria-label="Поиск по библиотеке">
         </label>
+        <select class="book-select world-category" data-world-library-category aria-label="Категория библиотеки"><option value="all">Вся библиотека</option><option value="terrain">Покрытия</option>${Object.keys(window.WorldMap.propGroups).map((title,i)=>`<option value="${i}">${title}</option>`).join('')}</select>
         <small class="world-library-count" data-world-library-count aria-live="polite"></small>
         <div class="world-palette" role="group" aria-label="Местность">
           <strong>Местность</strong>
@@ -60,13 +61,13 @@
           </div>`).join('')}
         </details>
         </aside><div class="world-workbench">
-        <div class="world-stage"><div class="world-canvas-toolbar"><div><strong data-world-map-name>Карта мира</strong><small>Колёсико — масштаб · Правая кнопка — перемещение</small></div><div class="book-toolbar">
+        <div class="world-stage"><div class="world-canvas-toolbar"><div><strong data-world-map-name>Карта мира</strong><small data-world-selection-summary>Колёсико — масштаб · Правая кнопка — перемещение</small></div><div class="book-toolbar">
           <label><input type="checkbox" data-world-grid> Сетка</label>
           <button class="book-button" data-world-frame>Вся карта</button><button class="book-button" data-world-undo>Отменить</button>
           <button class="book-button" data-world-redo>Повторить</button>
         </div></div>
         <canvas class="world-canvas" data-world-canvas tabindex="0" aria-label="Редактор карты мира"></canvas>
-        </div><aside class="world-inspector" aria-label="Свойства и действия"><h3>Свойства инструмента</h3><div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
+        </div><aside class="world-inspector" aria-label="Свойства и действия"><h3>Свойства инструмента</h3><label class="world-group-picker">Группы карты<select class="book-select" data-world-groups aria-label="Группы карты"></select></label><div class="book-toolbar" data-world-brush-controls aria-label="Кисть местности">
           <label>Размер кисти <select class="book-select" data-world-brush-size>
             ${[1, 3, 5, 9, 15].map(width => `<option value="${width}">${width} кл.</option>`).join('')}
           </select></label>
@@ -129,7 +130,15 @@
           </div>
         </section>
         <div class="book-toolbar" data-world-object hidden>
-          <span data-world-size></span>
+          <strong data-world-size></strong>
+          <ul class="world-selection-list" data-world-selection-list aria-label="Состав выделения"></ul>
+          <small>Ctrl/⌘ + клик — добавить · стрелки — сдвиг · R — поворот</small>
+          <div class="world-selection-move"><label>ΔX <input class="book-select" type="number" step="1" value="0" data-world-move-x aria-label="Сдвиг выделения по X"></label><label>ΔY <input class="book-select" type="number" step="1" value="0" data-world-move-y aria-label="Сдвиг выделения по Y"></label></div>
+          <button class="book-button" data-world-move>Сдвинуть выделение</button>
+          <input class="book-select" maxlength="80" data-world-group-name placeholder="Название группы" aria-label="Название группы объектов">
+          <button class="book-button" data-world-group>Объединить в группу</button>
+          <button class="book-button" data-world-ungroup>Разгруппировать</button>
+          <button class="book-button" data-world-group-rename>Переименовать группу</button>
           <button class="book-button" data-world-turn>Повернуть</button>
           <button class="book-button" data-world-copy>Копировать</button>
           <button class="book-button" data-world-delete>Удалить выбранный</button>
@@ -205,26 +214,40 @@
   function filterLibrary() {
     const query = e('library-search').value.trim().toLocaleLowerCase('ru').replaceAll('ё','е');
     if (query && libraryWasExpanded === undefined) libraryWasExpanded = e('library-extra').open;
-    if (query) e('library-extra').open = true;
+    if (query || !['all','terrain',''].includes(e('library-category').value)) e('library-extra').open = true;
     else if (libraryWasExpanded !== undefined) { e('library-extra').open = libraryWasExpanded; libraryWasExpanded = undefined; }
+    const category=e('library-category').value || 'all',group=Object.values(window.WorldMap.propGroups)[Number(category)];
     let found = 0;
     editor.querySelectorAll('.world-palette [data-tool]').forEach(button => {
       const id = button.dataset.tool, label = (terrain[id] || props[id])[0];
-      button.hidden = !!query && ![label,id].join(' ').toLocaleLowerCase('ru').replaceAll('ё','е').includes(query);
+      button.hidden = (!!query && ![label,id].join(' ').toLocaleLowerCase('ru').replaceAll('ё','е').includes(query)) || (category==='terrain' ? !terrain[id] : category!=='all' && !group?.includes(id));
       if (!button.hidden) found++;
     });
     editor.querySelectorAll('.world-palette').forEach(group => {
       group.hidden = ![...group.querySelectorAll('[data-tool]')].some(button => !button.hidden);
     });
-    e('library-count').textContent = query ? found ? 'Найдено: ' + found : 'Ничего не найдено. Измени запрос.' :
+    e('library-count').textContent = query || category!=='all' ? found ? 'Найдено: ' + found : 'Ничего не найдено. Измени запрос.' :
       Object.keys(props).length + ' объектов · ' + Object.keys(terrain).length + ' покрытий';
   }
   e('library-search').oninput = filterLibrary;
+  e('library-category').onchange=filterLibrary;
   filterLibrary();
   const json = (method, data) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   let draft, tool = 'grass', first, selected, dirty = false, busy = false;
   let brushStroke = null, brushDraft, strokeError;
-  let copyTemplate = null, placementTurn = 0;
+  let copyTemplate = null, placementTurn = 0, batchCopy = null;
+  let selection = new Set();
+  const selectedMembers=()=>draft ? draft.objects.filter(p=>selection.size ? selection.has(p.id) : p.id===selected) : [];
+  function selectItems(ids){
+    const wanted=new Set(ids),groups=new Set(draft.objects.filter(p=>wanted.has(p.id)&&p.groupId).map(p=>p.groupId));
+    selection=new Set(draft.objects.filter(p=>wanted.has(p.id)||groups.has(p.groupId)).map(p=>p.id));
+    selected=[...selection].at(-1);
+  }
+  function freshId(extra=[]){
+    const used=new Set([...draft.objects.flatMap(p=>[p.id,p.groupId]),...extra]);
+    for(let i=0;i<8;i++){const id=crypto.randomUUID?.() || 'item-'+Date.now()+'-'+Math.random().toString(36).slice(2);if(!used.has(id))return id;}
+    throw new RangeError('Не удалось создать уникальный ID. Повтори действие.');
+  }
   const placing = () => tool === 'place-copy' || !!props[tool];
   const placementSettings = () => copyTemplate || { kind: tool, turn: placementTurn, hidden: false };
   const undo = [], redo = [];
@@ -383,26 +406,35 @@
     } else editorView.data(draft);
     paintGeneratorControls();
     e('map-name').textContent = draft.name;
+    const members=selectedMembers();
     const object = draft.objects.find(item => item.id === selected);
+    e('selection-summary').textContent=members.length ? 'Выделено '+members.length+' · Ctrl/⌘ + клик добавляет · Alt + клик выбирает перекрытый объект' : 'Колёсико — масштаб · Правая кнопка — перемещение';
+    e('selection-list').replaceChildren(...members.slice(0,40).map(p=>{const li=document.createElement('li');li.textContent=props[p.kind][0]+' · '+p.x+', '+p.y+(p.hidden?' · Только мастеру':'');return li;}));
+    const groups=new Map();for(const p of draft.objects)if(p.groupId){const group=groups.get(p.groupId)||{name:p.groupName || 'Группа',count:0};group.count++;groups.set(p.groupId,group);}
+    const common=members.length && members.every(p=>p.groupId && p.groupId===members[0].groupId) ? members[0].groupId : '';
+    e('groups').replaceChildren(new Option('Выбрать группу · '+groups.size,''),...[...groups].map(([id,g])=>new Option(g.name+' · '+g.count,id)));e('groups').value=common;
+    e('group').disabled=busy || members.length<2;e('ungroup').disabled=e('group-rename').disabled=busy || !common;
+    e('group-name').placeholder=common ? members[0].groupName || 'Название группы' : 'Название новой группы';
     e('object').hidden = !object || placing();
-    e('copy').disabled = busy || !!brushStroke || draft.objects.length >= window.WorldMap.objectLimit;
+    e('copy').disabled = busy || !!brushStroke || draft.objects.length + members.length > window.WorldMap.objectLimit;
     e('placement').hidden = !placing();
     for (const name of ['placement-repeat','placement-turn','placement-stop']) e(name).disabled = busy || !!brushStroke;
     if (placing()) {
       const settings = placementSettings();
-      e('placement-name').textContent = (copyTemplate ? 'Копия: ' : '') + props[settings.kind][0] +
+      e('placement-name').textContent = (batchCopy ? 'Копия набора · '+batchCopy.length+' объектов · ' : copyTemplate ? 'Копия: ' : '') + props[settings.kind][0] +
         (settings.hidden ? ' · Только мастеру' : '');
       e('placement-info').textContent = draft.objects.length >= window.WorldMap.objectLimit
         ? 'Достигнут лимит 3 000 объектов. Отмени лишний объект или заверши расстановку.'
         : 'Нажми на карту, чтобы поставить объект. Поворот: ' + settings.turn * 90 + '°.';
     }
-    e('building-link').hidden = !object || !buildingKinds.has(object.kind);
+    e('building-link').hidden = members.length!==1 || !object || !buildingKinds.has(object.kind);
     updateBuildings();
     if (object) {
       const { width, height } = window.WorldMap.footprint(object);
-      e('size').textContent = props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
+      e('size').textContent = members.length>1 ? 'Выделено: '+members.length+' объектов' : props[object.kind][0] + ' · ' + width + ' × ' + height + ' кл.';
     }
-    e('secret').checked = !!object?.hidden;
+    e('secret').checked = members.length>0 && members.every(p=>p.hidden);
+    e('secret').indeterminate=members.some(p=>p.hidden) && !members.every(p=>p.hidden);
     e('undo').disabled = busy || !!brushStroke || !(contourUndo.length || undo.length);
     e('redo').disabled = busy || !!brushStroke || !(contourRedo.length || redo.length);
     e('undo').textContent = contourUndo.length ? 'Отменить точку' : 'Отменить';
@@ -453,8 +485,9 @@
   function objects(after) { edit({ objects: { before: draft.objects, after } }); }
   function beginCopy() {
     if (!draft || busy || brushStroke) return;
-    const object = draft.objects.find(item => item.id === selected);
+    const members=selectedMembers(),object=members[0];
     if (!object) return;
+    batchCopy=members.length>1 ? members.map(p=>({...p})) : null;
     if (draft.objects.length >= window.WorldMap.objectLimit) return status('Достигнут лимит 3 000 объектов');
     // A detached copy has no generator ownership or building/interior links.
     copyTemplate = { kind: object.kind, turn: object.turn, hidden: object.hidden === true };
@@ -464,16 +497,28 @@
   }
   function stopPlacement() {
     if (!placing() || busy) return;
-    copyTemplate = null; placementTurn = 0; tool = 'select'; paint();
+    copyTemplate = batchCopy = null; placementTurn = 0; tool = 'select'; paint();
     status('Расстановка завершена');
   }
   function turnPlacement() {
     if (!placing() || busy) return;
-    if (copyTemplate) copyTemplate = { ...copyTemplate, turn: (copyTemplate.turn + 1) % 4 };
+    if(batchCopy){try{batchCopy=window.WorldMap.transformObjects(batchCopy,batchCopy.map(p=>p.id),{turns:1});}catch(error){return status(error.message);}}
+    else if (copyTemplate) copyTemplate = { ...copyTemplate, turn: (copyTemplate.turn + 1) % 4 };
     else placementTurn = (placementTurn + 1) % 4;
     paint();
   }
   function placeObject(x, y) {
+    if(batchCopy){
+      if(draft.objects.length+batchCopy.length>window.WorldMap.objectLimit)return status('Для всего набора недостаточно места в лимите объектов');
+      try{
+        const b=window.WorldMap.selectionBounds(batchCopy),moved=window.WorldMap.transformObjects(batchCopy,batchCopy.map(p=>p.id),{dx:x-b.left,dy:y-b.top});
+        const groupId=freshId(),copyName=batchCopy.every(p=>p.groupName===batchCopy[0].groupName) && batchCopy[0].groupName ? batchCopy[0].groupName.slice(0,69)+' · копия' : 'Копия набора',used=[groupId],copies=moved.map(p=>{const id=freshId(used);used.push(id);return {id,kind:p.kind,x:p.x,y:p.y,turn:p.turn,hidden:!!p.hidden,groupId,groupName:copyName};});
+        selection=new Set(copies.map(p=>p.id));selected=copies.at(-1).id;
+        if(!e('placement-repeat').checked){batchCopy=copyTemplate=null;tool='select';}
+        objects([...draft.objects,...copies]);status('Набор скопирован. Связи с интерьерами и генераторами не копируются.');
+      }catch(error){status(error.message);}return;
+    }
+
     if (draft.objects.length >= window.WorldMap.objectLimit) return status('Достигнут лимит 3 000 объектов');
     const settings = placementSettings();
     let id;
@@ -484,7 +529,7 @@
     }
     if (!id) return status('Не удалось создать новый ID объекта. Повтори расстановку.');
     const item = { id, kind: settings.kind, x, y, turn: settings.turn, ...(settings.hidden ? { hidden: true } : {}) };
-    selected = id;
+    selected = id; selection=new Set([id]);
     if (!e('placement-repeat').checked) { copyTemplate = null; tool = 'select'; }
     objects([...draft.objects, item]);
     status(e('placement-repeat').checked ? 'Объект поставлен. Укажи следующее место или нажми Esc.' :
@@ -492,7 +537,8 @@
   }
   function updateSelected(patch) {
     if (!draft || busy || !draft.objects.some(item => item.id === selected)) return;
-    objects(draft.objects.map(item => item.id === selected ? { ...item, ...patch } : item));
+    const ids=new Set(selectedMembers().map(p=>p.id));
+    objects(draft.objects.map(item => ids.has(item.id) ? { ...item, ...patch } : item));
   }
   function objectAt(x, y) {
     return [...draft.objects].reverse().find(item => {
@@ -503,8 +549,9 @@
   }
   function removeObject(id) {
     if (!draft || busy || !draft.objects.some(item => item.id === id)) return;
-    selected = undefined;
-    objects(draft.objects.filter(item => item.id !== id));
+    const ids=selection.has(id) ? selection : new Set([id]);
+    selected = undefined;selection=new Set();
+    objects(draft.objects.filter(item => !ids.has(item.id)));
     status('Объект удалён. Вернуть его можно кнопкой «Отменить».');
   }
   const positionUrl = id => '/api/character-positions/' + encodeURIComponent(id);
@@ -693,7 +740,7 @@
     if (tool === 'select' || tool === 'delete-object') {
       const item = objectAt(point.x, point.y);
       if (tool === 'delete-object') return removeObject(item?.id);
-      selected = item?.id;
+      selectItems(item?[item.id]:[]);
       return paint();
     }
     if (placing()) return placeObject(x, y);
@@ -720,8 +767,17 @@
   const editorView = createWorldView(e('canvas'), {
     background:()=>editor.classList.contains('world-editor-expanded')?'#343c32':'#e8dec5',
     grid: () => e('grid').checked, click, pan: () => tool === 'pan', selected: () => selected,
+    selectedIds:()=>tool==='select' ? selectedMembers().map(p=>p.id) : [],
+    marquee:()=>tool==='select' && e('marquee').checked,
+    selectArea(a,b,additive){
+      if(busy || !draft)return;const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y);
+      const ids=draft.objects.filter(p=>{const c=window.WorldMap.footprint(p);return c.x>=left&&c.x<=right&&c.y>=top&&c.y<=bottom;}).map(p=>p.id);
+      selectItems(additive ? [...selectedMembers().map(p=>p.id),...ids] : ids);paint();
+    },
+    previewMove(item,x,y){try{return window.WorldMap.transformObjects(draft.objects,selectedMembers().map(p=>p.id),{dx:x-item.x,dy:y-item.y});}catch{return draft.objects;}},
     placementPreview(x, y) {
       if (!draft || busy || !placing() || !window.WorldMap.valid(x) || !window.WorldMap.valid(y)) return null;
+      if(batchCopy){try{const b=window.WorldMap.selectionBounds(batchCopy),props=window.WorldMap.transformObjects(batchCopy,batchCopy.map(p=>p.id),{dx:x-b.left,dy:y-b.top});return {prop:props[0],props,allowed:draft.objects.length+props.length<=window.WorldMap.objectLimit};}catch{return null;}}
       return { prop: { id: 'placement-preview', ...placementSettings(), x, y },
         allowed: draft.objects.length < window.WorldMap.objectLimit };
     },
@@ -778,16 +834,20 @@
       modifyContour({ type: handle.index === 'entrance' ? 'entrance' : 'move', index: handle.index, x, y });
     },
     cancelHandle() { dragContour = null; paint(); },
-    pickProp(x, y) {
+    pickProp(x, y,event={}) {
       if (!draft || busy || tool !== 'select') return;
-      const item = objectAt(x, y);
-      selected = item?.id;
-      paint();
-      return item;
+      let item = objectAt(x, y);
+      if(event.altKey){const hits=[...draft.objects].reverse().filter(p=>{const b=window.WorldMap.footprint(p);return x>=b.x-b.width/2&&x<b.x+b.width/2&&y>=b.y-b.height/2&&y<b.y+b.height/2;});item=hits[(hits.findIndex(p=>p.id===selected)+1)%hits.length];}
+      if(event.ctrlKey || event.metaKey || event.shiftKey){
+        const ids=new Set(selectedMembers().map(p=>p.id)),unit=item ? draft.objects.filter(p=>p.id===item.id || item.groupId && p.groupId===item.groupId).map(p=>p.id) : [];
+        const remove=item && ids.has(item.id);for(const id of unit)remove ? ids.delete(id) : ids.add(id);selectItems([...ids]);paint();return;
+      }
+      if(!item || !selectedMembers().some(p=>p.id===item.id))selectItems(item?[item.id]:[]);
+      selected=item?.id;paint();return item;
     },
     moveProp(item, x, y) {
       if (tool !== 'select' || item.id !== selected) return;
-      updateSelected({ x, y });
+      if(selectedMembers().length>1)moveSelection({dx:x-item.x,dy:y-item.y});else updateSelected({ x, y });
     },
   });
   e('canvas').addEventListener('keydown', event => {
@@ -803,6 +863,14 @@
     if (placing() && event.key === 'Escape') { event.preventDefault(); stopPlacement(); return; }
     if (placing() && event.key.toLowerCase() === 'r' && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault(); turnPlacement(); return;
+    }
+    if(tool==='select' && draft && (event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='a'){event.preventDefault();selectItems(draft.objects.map(p=>p.id));paint();return;}
+    if(tool==='select' && selectedMembers().length){
+      const key=event.key.toLowerCase();
+      if(key==='r'&&!event.ctrlKey&&!event.metaKey){event.preventDefault();e('turn').onclick();return;}
+      const direction={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
+      if(direction){event.preventDefault();moveSelection({dx:direction[0]*(event.shiftKey?10:1),dy:direction[1]*(event.shiftKey?10:1)});return;}
+      if(event.key==='Escape'){event.preventDefault();selection=new Set();selected=undefined;paint();return;}
     }
     if (event.key === 'Delete' && tool === 'select' && selected) {
       event.preventDefault();
@@ -844,7 +912,7 @@
     draft = data;
     dirty = false;
     first = selected = undefined;
-    copyTemplate = null; placementTurn = 0;
+    copyTemplate = batchCopy = null; selection=new Set(); placementTurn = 0;
     if (tool === 'place-copy') tool = 'select';
     generatorPoints = [];
     resetContourHistory();
@@ -936,7 +1004,7 @@
       clearGeneratorPreview(true);
     }
     tool = button.dataset.tool;
-    copyTemplate = null; placementTurn = 0;
+    copyTemplate = batchCopy = null; placementTurn = 0;
     if (tool === 'generate-room') status('Отметь углы комнаты и вход. Выбери назначение — мебель появится автоматически. Стороны идут по линиям сетки.');
     if (tool === 'generate-district') status('Укажи два противоположных угла района: от 11×11 до 4096 клеток. Затем выбери число домов и seed.');
     if (tool === 'generate-forest') status('Выбери тип участка, отметь вершины по порядку и нажми «Предпросмотр».');
@@ -946,7 +1014,7 @@
     if (tool === 'position') status('Выбери героя и нажми на клетку, чтобы перенести его');
     first = undefined;
     paint();
-    if (tool === 'select') status('Перетащи объект мышью. Щёлкни по нему, чтобы выделить.');
+    if (tool === 'select') status('Ctrl/⌘ + клик — добавить объект. Рамка выделяет набор. Группы выбираются целиком.');
     if (tool === 'delete-object') status('Щёлкни по объекту, который хочешь убрать.');
   });
   e('template-select').onchange = paintTemplates;
@@ -1060,7 +1128,7 @@
     Object.keys(a).every(key => Object.hasOwn(b, key) && sameDistrictValue(a[key], b[key])));
   const sameDistrictSnapshot = (a, b) => sameDistrictValue(a.chunks, b.chunks) &&
     sameDistrictValue(a.generators || [], b.generators || []) && a.objects.length === b.objects.length &&
-    a.objects.every((item, index) => ['id','kind','x','y','turn'].every(key => item[key] === b.objects[index][key]) &&
+    a.objects.every((item, index) => ['id','kind','x','y','turn','groupId','groupName'].every(key => item[key] === b.objects[index][key]) &&
       (item.hidden === true) === (b.objects[index].hidden === true));
   async function districtWrite(source, target, url, options, decode) {
     try {
@@ -1178,7 +1246,28 @@
   }
   e('undo').onclick = () => history(true);
   e('redo').onclick = () => history(false);
-  e('turn').onclick = () => { const item = draft.objects.find(prop => prop.id === selected); if (item) updateSelected({ turn: (item.turn + 1) % 4 }); };
+  function moveSelection(change){
+    if(!draft||busy||brushStroke)return;
+    try{const after=window.WorldMap.transformObjects(draft.objects,selectedMembers().map(p=>p.id),change);if(JSON.stringify(after)!==JSON.stringify(draft.objects))objects(after);}catch(error){status(error.message);}
+  }
+  e('turn').onclick = () => { const item = draft?.objects.find(prop => prop.id === selected); if(selectedMembers().length>1)moveSelection({turns:1});else if(item)updateSelected({turn:(item.turn+1)%4}); };
+  e('move').onclick=()=>moveSelection({dx:e('move-x').valueAsNumber,dy:e('move-y').valueAsNumber});
+  e('group').onclick=()=>{
+    if(!draft||busy||selectedMembers().length<2)return;
+    try{const groupId=freshId(),groupName=e('group-name').value.trim() || 'Группа объектов',ids=new Set(selectedMembers().map(p=>p.id));
+      objects(draft.objects.map(p=>ids.has(p.id)?{...p,groupId,groupName}:p));e('group-name').value='';status('Группа создана. Ручной состав сохранится при регенерации.');
+    }catch(error){status(error.message);}
+  };
+  e('ungroup').onclick=()=>{
+    if(!draft||busy)return;const ids=new Set(selectedMembers().map(p=>p.id));
+    objects(draft.objects.map(p=>{if(!ids.has(p.id))return p;const {groupId,groupName,...rest}=p;return rest;}));status('Объекты разгруппированы');
+  };
+  e('group-rename').onclick=()=>{
+    if(!draft||busy)return;const name=e('group-name').value.trim().slice(0,80);if(!name)return status('Введи название группы');
+    updateSelected({groupName:name});e('group-name').value='';
+  };
+  e('groups').onchange=()=>{if(!draft||busy)return;selectItems(draft.objects.filter(p=>p.groupId===e('groups').value).map(p=>p.id));tool='select';batchCopy=copyTemplate=null;paint();};
+
   e('delete').onclick = () => removeObject(selected);
   e('secret').onchange = () => updateSelected({ hidden: e('secret').checked });
   async function save() {

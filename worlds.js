@@ -101,6 +101,8 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     const ids = new Set();
     return body.objects.every(prop => {
       if (!object(prop) || typeof prop.id !== 'string' || prop.id.length > 64 || ids.has(prop.id) ||
+        (prop.groupId !== undefined && (typeof prop.groupId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(prop.groupId))) ||
+        (prop.groupName !== undefined && (typeof prop.groupName !== 'string' || !prop.groupId || prop.groupName.length > 80)) ||
         !Object.hasOwn(map.props, prop.kind) || !map.valid(prop.x) || !map.valid(prop.y) || ![0, 1, 2, 3].includes(prop.turn)) return false;
       ids.add(prop.id);
       return true;
@@ -295,7 +297,7 @@ module.exports = (app, { express, requireDm, gameFile, broadcast, loadCharacters
     if (generators !== undefined && !validGenerators(generators)) {
       return res.status(400).json({ error: 'Проверьте версии и параметры генераторов карты' });
     }
-    const objects = req.body.objects.map(({ id, kind, x, y, turn, hidden }) => ({ id, kind, x, y, turn, hidden: hidden === true }));
+    const objects = req.body.objects.map(({ id, kind, x, y, turn, hidden, groupId, groupName }) => ({ id, kind, x, y, turn, hidden: hidden === true, ...(groupId ? {groupId,...(groupName ? {groupName} : {})} : {}) }));
     const next = { ...data, revision: data.revision + 1, chunks: req.body.chunks, objects };
     if (generators !== undefined) next.generators = generators;
     districts.verifySave(data, next, req.body.districtGuard);

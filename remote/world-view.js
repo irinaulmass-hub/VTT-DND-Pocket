@@ -49,17 +49,35 @@
           for (let y = area.top; y <= area.bottom; y++) { ctx.moveTo(area.left, y); ctx.lineTo(area.right, y); }
           ctx.stroke();
         }
-        const objects = (data.objects || []).map(object => gesture?.prop?.id === object.id && gesture.destination
+        let objects = (data.objects || []).map(object => gesture?.prop?.id === object.id && gesture.destination
           ? { ...object, ...gesture.destination } : object);
+        if(gesture?.prop && gesture.destination && options.previewMove)
+          objects=options.previewMove(gesture.prop,gesture.destination.x,gesture.destination.y) || data.objects;
         const structures = window.WorldMap.structures(objects);
+        const selectedIds = options.selectedIds?.() || [options.selected?.()];
         for (const prop of objects) {
           if (!window.WorldMap.boundsIntersect(window.WorldMap.visualBounds(prop), area)) continue;
-          paintProp(ctx, prop, options.selected?.() === prop.id, structures);
+          paintProp(ctx, prop, selectedIds.includes(prop.id), structures);
+        }
+        const members=objects.filter(p=>selectedIds.includes(p.id));
+        if(members.length>1){
+          const b=window.WorldMap.selectionBounds(members),unit=1/camera.scale;
+          ctx.strokeStyle='#ead69c';ctx.lineWidth=1.5*unit;
+          ctx.strokeRect(b.left-.12,b.top-.12,b.right-b.left+1.24,b.bottom-b.top+1.24);
+          ctx.fillStyle='#f1e6c5';
+          for(const x of [b.left-.12,b.right+1.12])for(const y of [b.top-.12,b.bottom+1.12])ctx.fillRect(x-3*unit,y-3*unit,6*unit,6*unit);
+        }
+        if(gesture?.marquee){
+          const a=gesture.point,b=gesture.end || a;
+          ctx.fillStyle='#9abb6433';ctx.strokeStyle='#d1e9a4';ctx.lineWidth=1/camera.scale;
+          ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));
+          ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));
         }
         const placement = hover && options.placementPreview?.(Math.floor(hover.x), Math.floor(hover.y));
         if (placement) {
           ctx.save(); ctx.globalAlpha = .55;
-          paintProp(ctx, placement.prop, true, window.WorldMap.structures([...objects, placement.prop]));
+          const ghosts=placement.props || [placement.prop],layout=window.WorldMap.structures([...objects,...ghosts]);
+          for(const prop of ghosts)paintProp(ctx,prop,true,layout);
           ctx.restore();
           if (!placement.allowed) {
             const bounds = window.WorldMap.cellBounds(placement.prop);
@@ -169,6 +187,9 @@
       if (options.pickProp && event.button === 0) canvas.focus({ preventScroll: true });
       const p = point(event);
       hover = p;
+      if(event.button===0 && options.marquee?.() && !event.ctrlKey && !event.metaKey){
+        gesture={id:event.pointerId,point:p,marquee:true,additive:!!event.shiftKey};draw();return;
+      }
       const handle = event.button === 0 && options.pickHandle?.(p.x, p.y, 10 / camera.scale);
       if (handle) {
         gesture = { id: event.pointerId, handle, x: event.clientX, y: event.clientY, camera: { ...camera } };
@@ -180,12 +201,13 @@
         draw(); return;
       }
       gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, camera: { ...camera },
-        point: p, prop: event.button === 0 ? options.pickProp?.(p.x, p.y) : null,
+        point: p, selectOnly:!!options.pickProp && (event.ctrlKey || event.metaKey || event.shiftKey), prop: event.button === 0 ? options.pickProp?.(p.x, p.y,event) : null,
         pan: event.button !== 0 || options.pan?.() || !options.click,
         token: event.button === 0 && options.moveToken && (data.tokens || []).find(t => t.x === Math.floor(p.x) && t.y === Math.floor(p.y)) };
     });
     canvas.addEventListener('pointermove', event => {
       hover = point(event);
+      if(gesture?.marquee && gesture.id===event.pointerId){gesture.end=hover;draw();return;}
       if (gesture?.handle && gesture.id === event.pointerId) {
         const h = gesture.handle;
         options.previewHandle?.(h, h.x + Math.round((event.clientX - gesture.x) / gesture.camera.scale),
@@ -224,13 +246,14 @@
     canvas.addEventListener('pointercancel', cancelGesture);
     canvas.addEventListener('pointerleave', () => { if (!gesture) { hover = null; hoveringBrush = false; draw(); } });
     canvas.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && (gesture?.stroke || gesture?.handle)) { event.preventDefault(); cancelGesture(); }
+      if (event.key === 'Escape' && (gesture?.stroke || gesture?.handle || gesture?.marquee || gesture?.prop)) { event.preventDefault(); cancelGesture(); }
     });
     canvas.addEventListener('pointerup', event => {
       if (gesture?.id !== event.pointerId) return;
       const start = gesture;
       gesture = null;
       const p = point(event);
+      if(start.marquee){options.selectArea?.(start.point,p,start.additive);draw();return;}
       if (start.handle) {
         const h = start.handle;
         options.moveHandle?.(h, h.x + Math.round((event.clientX - start.x) / start.camera.scale),
@@ -241,6 +264,7 @@
         options.strokeTo?.(Math.floor(p.x), Math.floor(p.y));
         options.endStroke?.(true); draw(); return;
       }
+      if(start.selectOnly){draw();return;}
       if (start.prop) {
         draw();
         const prop = start.prop;

@@ -44,6 +44,15 @@ test('room presets, generated furniture and structural paths persist through aut
     assert.equal(draft.generators[0].params.furnishing,theme);assert.ok(draft.objects.length>30);
     assert.deepEqual((await request(base+'/api/worlds/'+draft.id)).generators,draft.generators);
   }
+  const groupedId='http-group',members=village.objects.slice(-3).map(p=>p.id);
+  village=await request(villageUrl,'PUT',{...village,objects:village.objects.map(p=>members.includes(p.id)?{...p,groupId:groupedId,groupName:'Private master group'}:p)});
+  const groupReload=await request(villageUrl);assert.equal(groupReload.objects.filter(p=>p.groupId===groupedId).length,3);
+  for(const metadata of [{groupId:{}},{groupId:'<bad>'},{groupId:'ok',groupName:7},{groupName:'orphan'}]){
+    const bad=structuredClone(village);Object.assign(bad.objects[0],metadata);await request(villageUrl,'PUT',bad,400);
+  }
+  await request(villageUrl+'/publish','POST',{revision:village.revision,fog:false});
+  const publicGroups=await request('http://127.0.0.1:'+upstreamPort+'/api/worlds/table?chunks='+Object.keys(village.chunks).join(';'));
+  assert.ok(publicGroups.objects.every(p=>p.groupId===undefined && p.groupName===undefined),'private group metadata stays in the editor');
   const count=(await request(base+'/api/worlds')).worlds.length;
   for(const preset of ['__proto__','bad','none',null,{}])await request(base+'/api/worlds','POST',{name:'Invalid preset',preset},400);
   await request(base+'/api/worlds','POST',{name:'Conflicting preset',preset:'tavern',sample:true},400);

@@ -10,8 +10,8 @@ const fields = (value, names) => value && typeof value === 'object' && !Array.is
   Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
 const validRecipe = recipe => fields(recipe, ['id', 'kind', 'version', 'seed', 'params']) &&
   recipe.kind === 'district' && validGenerators([recipe]);
-const normalizeObjects = objects => objects.map(({ id, kind, x, y, turn, hidden }) =>
-  ({ id, kind, x, y, turn, hidden: hidden === true }));
+const normalizeObjects = objects => objects.map(({ id, kind, x, y, turn, hidden, groupId, groupName }) =>
+  ({ id, kind, x, y, turn, hidden: hidden === true, ...(groupId ? {groupId,...(groupName ? {groupName} : {})} : {}) }));
 const chunkChanges = (next, tiles) => Object.fromEntries([...new Set(tiles.map(cell => address(cell.x, cell.y)[0]))]
   .map(key => [key, next.chunks[key] ?? null]));
 // Ownership markers may change during normal manual edits without regenerating a district.
